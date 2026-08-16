@@ -91,6 +91,9 @@ public class FriendService
         request.Status = 1; // 已接受
         await _fsql.Update<Friend>().SetSource(request).ExecuteAffrowsAsync();
 
+        // 实时通知双方（刷新好友列表）
+        _wsMessageHandler.NotifyFriendAcceptedAsync(request.UserId, request.FriendId);
+
         return ApiResponse.Ok("已添加为好友");
     }
 
@@ -107,6 +110,10 @@ public class FriendService
             return ApiResponse.Fail("无权操作此申请");
 
         await _fsql.Delete<Friend>().Where(f => f.Id == requestId).ExecuteAffrowsAsync();
+
+        // 实时通知申请人
+        _wsMessageHandler.NotifyFriendRejectedAsync(request.UserId, request.FriendId);
+
         return ApiResponse.Ok("已拒绝好友申请");
     }
 

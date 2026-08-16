@@ -24,6 +24,12 @@ public class GroupMember
     [Column(IsNullable = false)]
     public int Role { get; set; } = 2;
 
+    /// <summary>
+    /// 已读游标：该成员最后已读的群消息ID（0=从未同步过，跳过离线补发）
+    /// </summary>
+    [Column(IsNullable = false)]
+    public long LastReadMessageId { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
 }

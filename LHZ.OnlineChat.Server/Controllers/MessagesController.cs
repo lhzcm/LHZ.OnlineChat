@@ -51,6 +51,26 @@ public class MessagesController : ControllerBase
     }
 
     /// <summary>
+    /// 标记群消息已读（推进已读游标）
+    /// </summary>
+    [HttpPut("group/{groupId}/read")]
+    public async Task<IActionResult> MarkGroupAsRead(long groupId)
+    {
+        var result = await _messageService.MarkGroupAsReadAsync(groupId, GetCurrentUserId());
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 获取会话列表（私聊 + 群聊聚合）
+    /// </summary>
+    [HttpGet("sessions")]
+    public async Task<IActionResult> GetSessions()
+    {
+        var result = await _messageService.GetSessionsAsync(GetCurrentUserId());
+        return Ok(result);
+    }
+
+    /// <summary>
     /// 标记消息已读
     /// </summary>
     [HttpPut("{messageId}/read")]

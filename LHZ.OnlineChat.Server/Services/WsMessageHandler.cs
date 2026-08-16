@@ -278,15 +278,85 @@ public class WsMessageHandler
     /// </summary>
     public void NotifyFriendRequestAsync(long toUserId, long fromUserId)
     {
-        var client = _connectionManager.GetConnection(toUserId);
+        SendToUser(toUserId, WsMessageType.FriendRequest, fromUserId.ToString());
+    }
+
+    /// <summary>
+    /// 好友申请被接受：双向通知（双方刷新好友列表）
+    /// </summary>
+    public void NotifyFriendAcceptedAsync(long requesterId, long accepterId)
+    {
+        SendToUser(requesterId, WsMessageType.FriendAccepted, accepterId.ToString());
+        SendToUser(accepterId, WsMessageType.FriendAccepted, requesterId.ToString());
+    }
+
+    /// <summary>
+    /// 好友申请被拒绝：通知申请人
+    /// </summary>
+    public void NotifyFriendRejectedAsync(long requesterId, long accepterId)
+    {
+        SendToUser(requesterId, WsMessageType.FriendRejected, accepterId.ToString());
+    }
+
+    /// <summary>
+    /// 向指定用户推送一条 WS 消息（在线时）
+    /// </summary>
+    private void SendToUser(long userId, string type, string fromUserId)
+    {
+        var client = _connectionManager.GetConnection(userId);
         if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
         {
             client.SendMessage(JsonSerializer.Serialize(new WsMessage
             {
-                Type = WsMessageType.FriendRequest,
-                From = fromUserId.ToString(),
-                Content = "new_friend_request"
+                Type = type,
+                From = fromUserId,
+                Content = type
             }, JsonDefaults.Web));
+        }
+    }
+
+    /// <summary>
+    /// 用户上线后，补发各群已读游标之后的群消息（离线群消息）
+    /// </summary>
+    public async Task SendGroupOfflineMessagesAsync(long userId)
+    {
+        var members = await _fsql.Select<GroupMember>()
+            .Where(m => m.UserId == userId)
+            .ToListAsync();
+        if (members.Count == 0) return;
+
+        var client = _connectionManager.GetConnection(userId);
+        if (client == null || client.Status != LHZ.WebSocket.Enums.ClientStatus.Opend) return;
+
+        foreach (var member in members)
+        {
+            var msgs = await _fsql.Select<GroupMessage>()
+                .Where(gm => gm.GroupId == member.GroupId && gm.Id > member.LastReadMessageId)
+                .OrderBy(gm => gm.SentAt)
+                .Take(100) // 防止游标异常时一次性补发过多
+                .ToListAsync();
+            if (msgs.Count == 0) continue;
+
+            var senderIds = msgs.Select(m => m.SenderId).Distinct().ToList();
+            var users = await _fsql.Select<User>().Where(u => senderIds.Contains(u.Id)).ToListAsync();
+            var userDict = users.ToDictionary(u => u.Id);
+
+            foreach (var m in msgs)
+            {
+                var wsMsg = new WsMessage
+                {
+                    Type = WsMessageType.GroupMessage,
+                    From = m.SenderId.ToString(),
+                    To = member.GroupId.ToString(),
+                    Content = m.Content,
+                    MessageId = m.Id.ToString(),
+                    MessageType = m.MessageType,
+                    Timestamp = new DateTimeOffset(m.SentAt, TimeSpan.Zero).ToUnixTimeMilliseconds(),
+                    SenderName = userDict.TryGetValue(m.SenderId, out var u) ? u.Nickname : "未知",
+                    SenderAvatar = userDict.TryGetValue(m.SenderId, out var u2) ? u2.Avatar : null
+                };
+                client.SendMessage(JsonSerializer.Serialize(wsMsg, JsonDefaults.Web));
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ public class AppSettings
     public ConnectionStringsConfig ConnectionStrings { get; set; } = new();
     public RedisConfig Redis { get; set; } = new();
     public JwtConfig Jwt { get; set; } = new();
+    public CorsConfig Cors { get; set; } = new();
 }
 
 public class ConnectionStringsConfig
@@ -26,4 +27,12 @@ public class JwtConfig
     public string Issuer { get; set; } = "OnlineChat";
     public string Audience { get; set; } = "OnlineChat";
     public int ExpireMinutes { get; set; } = 1440;
+}
+
+public class CorsConfig
+{
+    /// <summary>
+    /// 允许的来源，多个用逗号分隔；"*" 表示允许所有来源（开发环境默认）
+    /// </summary>
+    public string AllowedOrigins { get; set; } = "*";
 }

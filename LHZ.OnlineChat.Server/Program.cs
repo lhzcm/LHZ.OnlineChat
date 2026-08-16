@@ -115,11 +115,21 @@ builder.Services.AddSwaggerGen(options =>
 // ==================== CORS ====================
 builder.Services.AddCors(options =>
 {
+    var origins = appSettings.Cors.AllowedOrigins;
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        if (string.IsNullOrWhiteSpace(origins) || origins == "*")
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
+        else
+        {
+            policy.WithOrigins(origins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
     });
 });
 
@@ -216,6 +226,9 @@ app.UseWebSocket(context =>
 
     // 广播上线状态给在线好友
     _ = messageHandler.NotifyFriendsStatusAsync(userId, online: true);
+
+    // 补发群离线消息（已读游标之后）
+    _ = messageHandler.SendGroupOfflineMessagesAsync(userId);
 
     Console.WriteLine($"[WS] 用户 {userId} WebSocket 握手完成");
 });

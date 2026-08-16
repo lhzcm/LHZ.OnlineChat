@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ChatSession, ChatType, WsMessage, MessageDto } from '@/types'
+import type { SessionInfo, ChatType, WsMessage, MessageDto } from '@/types'
 import { messageApi } from '@/api/message'
 
 export const useChatStore = defineStore('chat', () => {
-  const sessions = ref<ChatSession[]>([])
+  const sessions = ref<SessionInfo[]>([])
   const messages = ref<Map<string, WsMessage[]>>(new Map())
   // 未读数，key 与 messages 一致：`private_${id}` / `group_${id}`
   const unreadCounts = ref<Map<string, number>>(new Map())
@@ -44,6 +44,15 @@ export const useChatStore = defineStore('chat', () => {
     const isNew = !(msg.messageId && list.some(m => m.messageId === msg.messageId))
     if (isNew) {
       messages.value.set(key, mergeList(list, [msg]))
+      // 同步会话列表的最后消息预览
+      const idx = sessions.value.findIndex(s => s.type === sessionType && s.id === sessionId)
+      if (idx >= 0) {
+        sessions.value[idx] = {
+          ...sessions.value[idx],
+          lastMessage: msg.content,
+          lastTime: new Date(msg.timestamp).toISOString()
+        }
+      }
     }
     return { key, isNew }
   }
@@ -62,14 +71,29 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
-   * 打开会话：清空未读；私聊同时调用服务端标记已读。
+   * 打开会话：清空未读；私聊同步服务端已读标记，群聊推进已读游标。
    */
   async function markSessionRead(type: ChatType, id: number) {
     unreadCounts.value.set(sessionKey(type, id), 0)
-    if (type === 'private') {
-      try {
+    try {
+      if (type === 'private') {
         await messageApi.markAllAsRead(id)
-      } catch { /* 忽略失败，下次打开再试 */ }
+      } else {
+        await messageApi.markGroupRead(id)
+      }
+    } catch { /* 忽略失败，下次打开再试 */ }
+  }
+
+  /**
+   * 拉取会话列表（服务端聚合），并同步未读数
+   */
+  async function fetchSessions() {
+    const res = await messageApi.getSessions()
+    if (res.success && res.data) {
+      sessions.value = res.data
+      for (const s of res.data) {
+        if (s.unreadCount > 0) setUnreadCount(sessionKey(s.type, s.id), s.unreadCount)
+      }
     }
   }
 
@@ -155,7 +179,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     sessions, messages, unreadCounts, currentSession, currentMessages,
-    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionRead,
+    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionRead, fetchSessions,
     setCurrentSession, loadHistory, loadOfflineMessages
   }
 })

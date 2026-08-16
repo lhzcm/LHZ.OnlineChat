@@ -251,4 +251,127 @@ public class MessageService
         var maxId = Math.Max(userId1, userId2);
         return $"chat:private:{minId}:{maxId}";
     }
+
+    /// <summary>
+    /// 标记群消息已读：把该成员的已读游标推进到群内最新消息ID
+    /// </summary>
+    public async Task<ApiResponse> MarkGroupAsReadAsync(long groupId, long userId)
+    {
+        var member = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == userId)
+            .FirstAsync();
+
+        if (member == null)
+            return ApiResponse.Fail("你不是该群组成员");
+
+        var maxId = await _fsql.Select<GroupMessage>()
+            .Where(gm => gm.GroupId == groupId)
+            .MaxAsync(gm => gm.Id);
+
+        await _fsql.Update<GroupMember>()
+            .Set(m => m.LastReadMessageId, maxId)
+            .Where(m => m.Id == member.Id)
+            .ExecuteAffrowsAsync();
+
+        return ApiResponse.Ok("已标记群消息已读");
+    }
+
+    /// <summary>
+    /// 获取会话列表（私聊 + 群聊聚合，按最后消息时间倒序）
+    /// </summary>
+    public async Task<ApiResponse<List<SessionDto>>> GetSessionsAsync(long userId)
+    {
+        var sessions = new List<SessionDto>();
+
+        // ===== 私聊会话 =====
+        var recentPrivate = await _fsql.Select<PrivateMessage>()
+            .Where(m => m.SenderId == userId || m.ReceiverId == userId)
+            .OrderByDescending(m => m.SentAt)
+            .Take(500)
+            .ToListAsync();
+
+        var peerLast = new Dictionary<long, PrivateMessage>();
+        foreach (var m in recentPrivate)
+        {
+            var peer = m.SenderId == userId ? m.ReceiverId : m.SenderId;
+            if (!peerLast.ContainsKey(peer)) peerLast[peer] = m;
+        }
+
+        var unreadPrivate = new Dictionary<long, int>();
+        var unreadList = await _fsql.Select<PrivateMessage>()
+            .Where(m => m.ReceiverId == userId && !m.IsRead)
+            .ToListAsync();
+        foreach (var m in unreadList)
+            unreadPrivate[m.SenderId] = unreadPrivate.GetValueOrDefault(m.SenderId) + 1;
+
+        if (peerLast.Count > 0)
+        {
+            var peerIds = peerLast.Keys.ToList();
+            var users = await _fsql.Select<User>().Where(u => peerIds.Contains(u.Id)).ToListAsync();
+            var userDict = users.ToDictionary(u => u.Id);
+
+            foreach (var (peerId, last) in peerLast)
+            {
+                sessions.Add(new SessionDto
+                {
+                    Type = "private",
+                    Id = peerId,
+                    Name = userDict.GetValueOrDefault(peerId)?.Nickname ?? $"用户{peerId}",
+                    Avatar = userDict.GetValueOrDefault(peerId)?.Avatar,
+                    LastMessage = last.Content,
+                    LastTime = last.SentAt,
+                    UnreadCount = unreadPrivate.GetValueOrDefault(peerId)
+                });
+            }
+        }
+
+        // ===== 群聊会话 =====
+        var members = await _fsql.Select<GroupMember>()
+            .Where(m => m.UserId == userId)
+            .ToListAsync();
+
+        if (members.Count > 0)
+        {
+            var groupIds = members.Select(m => m.GroupId).ToList();
+            var groups = await _fsql.Select<Group_>().Where(g => groupIds.Contains(g.Id)).ToListAsync();
+            var groupDict = groups.ToDictionary(g => g.Id);
+            var memberDict = members.ToDictionary(m => m.GroupId);
+
+            var recentGroup = await _fsql.Select<GroupMessage>()
+                .Where(gm => groupIds.Contains(gm.GroupId))
+                .OrderByDescending(gm => gm.SentAt)
+                .Take(500)
+                .ToListAsync();
+            var groupLast = new Dictionary<long, GroupMessage>();
+            foreach (var m in recentGroup)
+                if (!groupLast.ContainsKey(m.GroupId)) groupLast[m.GroupId] = m;
+
+            foreach (var gid in groupIds)
+            {
+                var last = groupLast.GetValueOrDefault(gid);
+                var member = memberDict.GetValueOrDefault(gid);
+                var unread = 0;
+                if (member != null)
+                {
+                    unread = (int)await _fsql.Select<GroupMessage>()
+                        .Where(gm => gm.GroupId == gid && gm.Id > member.LastReadMessageId)
+                        .CountAsync();
+                }
+
+                sessions.Add(new SessionDto
+                {
+                    Type = "group",
+                    Id = gid,
+                    Name = groupDict.GetValueOrDefault(gid)?.Name ?? $"群{gid}",
+                    Avatar = groupDict.GetValueOrDefault(gid)?.Avatar,
+                    LastMessage = last?.Content ?? string.Empty,
+                    LastTime = last?.SentAt ?? DateTime.MinValue,
+                    UnreadCount = unread
+                });
+            }
+        }
+
+        sessions = sessions.OrderByDescending(s => s.LastTime).ToList();
+        return ApiResponse<List<SessionDto>>.Ok(sessions);
+    }
 }

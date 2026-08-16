@@ -16,6 +16,7 @@
 - 好友：申请 / 接受 / 拒绝 / 删除，实时通知（WS `friend_request`），在线状态实时广播（WS `online_status`）
 - 群组：创建 / 加入 / 退出 / 踢人 / 解散 / 成员列表（含在线状态）
 - 聊天：私聊 + 群聊（WS 实时收发）、历史消息分页、未读角标、已读标记、离线消息拉取、乐观发送（客户端 messageId 去重回显）
+- 会话列表：私聊/群聊聚合（最后消息、时间、未读数），群消息离线补发（已读游标）
 
 ## 目录结构
 
@@ -67,7 +68,59 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 
 ### 配置
 
-`LHZ.OnlineChat.Server/appsettings.json` 中的 `ConnectionStrings:Default`、`Redis:Connection`、`Jwt:Secret` 均可通过环境变量覆盖（ASP.NET Core 默认行为，如 `ConnectionStrings__Default`、`Redis__Connection`）。前端 WS 地址可用 `VITE_WS_URL` 覆盖（默认 `ws://localhost:5000`）。
+`LHZ.OnlineChat.Server/appsettings.json` 中的 `ConnectionStrings:Default`、`Redis:Connection`、`Jwt:Secret`、`Cors:AllowedOrigins` 均可通过环境变量覆盖（ASP.NET Core 默认行为，如 `ConnectionStrings__Default`、`Redis__Connection`）。前端 WS 地址可用 `VITE_WS_URL` 覆盖（默认 `ws://localhost:5000`）。
+
+## 生产部署
+
+建议：前端 `npm run build` 后由 Nginx/Caddy 托管静态文件，API 与 WebSocket 通过反向代理转发到后端，**HTTPS 在反向代理层终止（wss）**。
+
+```nginx
+# /etc/nginx/sites-available/onlinechat
+server {
+    listen 443 ssl http2;
+    server_name chat.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/chat.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chat.example.com/privkey.pem;
+
+    # 前端静态文件（lhz-onlinechat-web/dist）
+    root /var/www/onlinechat;
+    index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+
+    # REST API
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket（wss）
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+环境变量示例（systemd unit 或 docker compose）：
+
+```bash
+ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://127.0.0.1:5000
+ConnectionStrings__Default=Host=pg-host;Database=OnlineChat;Username=postgres;Password=***
+Redis__Connection=redis-host:6379
+Jwt__Secret=<强随机密钥，至少32字符>
+Cors__AllowedOrigins=https://chat.example.com   # 生产建议收敛来源，不要用 *
+```
+
+前端构建时注入：`VITE_WS_URL=wss://chat.example.com npm run build`（WS 走同域反代，`/` 路径由 Nginx 转发）。
 
 ## WebSocket 协议
 
@@ -82,8 +135,15 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 | `read_receipt` | 双向 | 已读回执（预留） |
 | `online_status` | 服务端→客户端 | 好友上下线通知（`content`: `online`/`offline`） |
 | `friend_request` | 服务端→客户端 | 收到新好友申请，前端刷新申请列表 |
+| `friend_accepted` | 服务端→客户端 | 好友申请被接受（双向通知，刷新好友列表） |
+| `friend_rejected` | 服务端→客户端 | 好友申请被拒绝（通知申请人） |
 
 字段：`from`（发送者ID）、`to`（接收者ID/群ID）、`content`、`messageId`（客户端生成则保留用于去重，否则用数据库ID）、`messageType`（0文字/1图片/2文件）、`timestamp`（毫秒）、`senderName`、`senderAvatar`。
+
+### 补充说明
+
+- **群离线补发**：`GroupMember.LastReadMessageId` 是群已读游标（加入群时初始化为当前最新消息ID）。用户上线时，服务端推送各群游标之后的消息（每群最多 100 条）；打开群聊（`PUT /api/messages/group/{groupId}/read`）推进游标。
+- **会话列表**：`GET /api/messages/sessions` 聚合私聊 + 群聊会话（最后消息、最后时间、未读数）。
 
 ## 数据表
 

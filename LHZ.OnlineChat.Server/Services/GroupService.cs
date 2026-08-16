@@ -75,12 +75,17 @@ public class GroupService
         if (exists)
             return ApiResponse.Fail("你已经是该群组成员");
 
-        // 加入群组
+        // 加入群组（已读游标设为当前最新消息，避免加入前的历史被当作离线消息补发）
+        var maxId = await _fsql.Select<GroupMessage>()
+            .Where(gm => gm.GroupId == groupId)
+            .MaxAsync(gm => gm.Id);
+
         var member = new GroupMember
         {
             GroupId = groupId,
             UserId = userId,
             Role = 2, // 普通成员
+            LastReadMessageId = maxId,
             JoinedAt = DateTime.UtcNow
         };
         await _fsql.Insert(member).ExecuteAffrowsAsync();

@@ -18,6 +18,9 @@
 
       <!-- Tab 切换 -->
       <div class="tabs">
+        <button :class="['tab', { active: activeTab === 'sessions' }]" @click="activeTab = 'sessions'">
+          会话
+        </button>
         <button :class="['tab', { active: activeTab === 'friends' }]" @click="activeTab = 'friends'">
           好友
         </button>
@@ -29,12 +32,30 @@
       <!-- 搜索/操作栏 -->
       <div class="action-bar">
         <button class="btn btn-primary btn-sm" @click="showAddModal = true">
-          {{ activeTab === 'friends' ? '+ 添加好友' : '+ 创建群组' }}
+          {{ activeTab === 'friends' ? '+ 添加好友' : activeTab === 'groups' ? '+ 创建群组' : '＋' }}
         </button>
       </div>
 
+      <!-- 会话列表 -->
+      <div class="contact-list" v-if="activeTab === 'sessions'">
+        <div v-for="s in sortedSessions" :key="s.type + '_' + s.id"
+          :class="['contact-item', { active: currentChat?.type === s.type && currentChat.id === s.id }]"
+          @click="selectSession(s)">
+          <span class="avatar-placeholder small">{{ s.type === 'group' ? '#' : s.name.charAt(0) }}</span>
+          <div class="contact-info">
+            <span class="contact-name">{{ s.name }}</span>
+            <span class="contact-meta">{{ previewFor(s) }}</span>
+          </div>
+          <div class="session-right">
+            <span class="session-time">{{ timeFor(s) }}</span>
+            <span v-if="unreadOf(s.type, s.id)" class="unread-badge">{{ unreadOf(s.type, s.id) }}</span>
+          </div>
+        </div>
+        <p class="empty" v-if="chatStore.sessions.length === 0">暂无会话</p>
+      </div>
+
       <!-- 好友列表 -->
-      <div class="contact-list" v-if="activeTab === 'friends'">
+      <div class="contact-list" v-else-if="activeTab === 'friends'">
         <div v-for="f in friendStore.friends" :key="f.userId"
           :class="['contact-item', { active: currentChat?.type === 'private' && currentChat.id === f.userId }]"
           @click="selectPrivateChat(f)">
@@ -143,7 +164,7 @@ import { useFriendStore } from '@/stores/friend'
 import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
-import type { FriendInfo, FriendRequestInfo, GroupInfo, WsMessage, ChatType } from '@/types'
+import type { FriendRequestInfo, WsMessage, ChatType, SessionInfo } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -152,7 +173,7 @@ const groupStore = useGroupStore()
 const chatStore = useChatStore()
 const ws = useWebSocketStore()
 
-const activeTab = ref<'friends' | 'groups'>('friends')
+const activeTab = ref<'sessions' | 'friends' | 'groups'>('friends')
 const inputText = ref('')
 const msgContainer = ref<HTMLElement | null>(null)
 const showAddModal = ref(false)
@@ -172,6 +193,11 @@ const currentMessages = computed(() => {
   const key = `${currentChat.value.type}_${currentChat.value.id}`
   return chatStore.messages.get(key) || []
 })
+
+// 会话列表按最后消息时间倒序
+const sortedSessions = computed(() =>
+  [...chatStore.sessions].sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime())
+)
 
 onMounted(async () => {
   if (!auth.isLoggedIn) {
@@ -193,7 +219,8 @@ onMounted(async () => {
   await Promise.all([
     friendStore.fetchFriends(),
     friendStore.fetchPendingRequests(),
-    groupStore.fetchGroups()
+    groupStore.fetchGroups(),
+    chatStore.fetchSessions()
   ])
 
   // 拉取离线消息并计入未读角标
@@ -229,7 +256,7 @@ function unreadOf(type: ChatType, id: number): number {
   return chatStore.unreadCounts.get(chatStore.sessionKey(type, id)) || 0
 }
 
-function selectPrivateChat(friend: FriendInfo) {
+function selectPrivateChat(friend: { userId: number; nickname: string }) {
   currentChat.value = { type: 'private', id: friend.userId, name: friend.nickname }
   chatStore.setCurrentSession('private', friend.userId, friend.nickname)
   chatStore.loadHistory('private', friend.userId)
@@ -237,7 +264,7 @@ function selectPrivateChat(friend: FriendInfo) {
   scrollToBottom()
 }
 
-function selectGroupChat(group: GroupInfo) {
+function selectGroupChat(group: { id: number; name: string }) {
   currentChat.value = { type: 'group', id: group.id, name: group.name }
   chatStore.setCurrentSession('group', group.id, group.name)
   chatStore.loadHistory('group', group.id)
@@ -245,10 +272,46 @@ function selectGroupChat(group: GroupInfo) {
   scrollToBottom()
 }
 
+function selectSession(s: SessionInfo) {
+  if (s.type === 'private') {
+    selectPrivateChat({ userId: s.id, nickname: s.name })
+  } else {
+    selectGroupChat({ id: s.id, name: s.name })
+  }
+}
+
+/** 会话预览：优先本地最新消息，否则用服务端会话数据 */
+function previewFor(s: SessionInfo): string {
+  const local = lastMessageFor(s.type, s.id)
+  return local || s.lastMessage || (s.type === 'group' ? '群组会话' : '暂无消息')
+}
+
+/** 会话时间：本地消息用毫秒时间戳，服务端数据用 ISO 字符串 */
+function timeFor(s: SessionInfo): string {
+  const key = chatStore.sessionKey(s.type, s.id)
+  const list = chatStore.messages.get(key)
+  const last = list && list.length ? list[list.length - 1] : null
+  const t = last ? last.timestamp : s.lastTime ? new Date(s.lastTime).getTime() : 0
+  if (!t) return ''
+  const d = new Date(t)
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  return sameDay
+    ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    : `${d.getMonth() + 1}/${d.getDate()}`
+}
+
 function handleWsMessage(msg: WsMessage) {
   // 新好友申请：刷新申请列表
   if (msg.type === 'friend_request') {
     friendStore.fetchPendingRequests()
+    return
+  }
+  // 好友申请被接受/拒绝：双方刷新好友与申请列表
+  if (msg.type === 'friend_accepted' || msg.type === 'friend_rejected') {
+    friendStore.fetchFriends()
+    friendStore.fetchPendingRequests()
+    chatStore.fetchSessions()
     return
   }
   // 在线状态已由 onStatusChange 处理
@@ -350,7 +413,8 @@ function handleLogout() {
 
 watch(activeTab, () => {
   if (activeTab.value === 'friends') friendStore.fetchFriends()
-  else groupStore.fetchGroups()
+  else if (activeTab.value === 'groups') groupStore.fetchGroups()
+  else chatStore.fetchSessions()
 })
 </script>
 
@@ -524,6 +588,19 @@ watch(activeTab, () => {
   line-height: 18px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.session-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.session-time {
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .empty {

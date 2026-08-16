@@ -114,7 +114,7 @@ export interface WsMessage {
 // ==================== 聊天会话 ====================
 export type ChatType = 'private' | 'group'
 
-export interface ChatSession {
+export interface SessionInfo {
   type: ChatType
   id: number
   name: string

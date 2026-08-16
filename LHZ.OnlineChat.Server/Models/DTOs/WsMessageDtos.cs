@@ -63,4 +63,6 @@ public static class WsMessageType
     public const string Heartbeat = "heartbeat";
     public const string OnlineStatus = "online_status";
     public const string FriendRequest = "friend_request";
+    public const string FriendAccepted = "friend_accepted";
+    public const string FriendRejected = "friend_rejected";
 }

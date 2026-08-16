@@ -78,8 +78,8 @@ public class AuthService
         var token = GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
 
-        // 存储 RefreshToken 到 Redis（24小时过期）
-        await _redis.SetStringAsync($"token:refresh:{user.Id}", refreshToken, TimeSpan.FromDays(7));
+        // 存储 RefreshToken 到 Redis（7天过期），并建立 token→userId 反查索引
+        await StoreRefreshTokenAsync(user.Id, refreshToken);
 
         var userInfo = new UserInfo
         {
@@ -105,37 +105,27 @@ public class AuthService
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
             return ApiResponse<LoginResponse>.Fail("RefreshToken 不能为空");
 
-        // 从 Redis 中查找对应的 userId
-        // 遍历所有 token:refresh:* 键来匹配
-        var server = _redis.Database.Multiplexer.GetServer(_redis.Database.Multiplexer.GetEndPoints().First());
-        var keys = server.Keys(pattern: "token:refresh:*").ToArray();
-
-        long? matchedUserId = null;
-        foreach (var key in keys)
-        {
-            var storedToken = await _redis.GetStringAsync(key.ToString());
-            if (storedToken == request.RefreshToken)
-            {
-                var userIdStr = key.ToString().Replace("token:refresh:", "");
-                if (long.TryParse(userIdStr, out var uid))
-                    matchedUserId = uid;
-                break;
-            }
-        }
-
-        if (matchedUserId == null)
+        // O(1) 反查：根据 token 哈希找到 userId（替代原来的 KEYS 全量扫描）
+        var lookupKey = GetRefreshLookupKey(request.RefreshToken);
+        var userIdStr = await _redis.GetStringAsync(lookupKey);
+        if (string.IsNullOrEmpty(userIdStr) || !long.TryParse(userIdStr, out var userId))
             return ApiResponse<LoginResponse>.Fail("RefreshToken 无效或已过期");
 
-        var user = await _fsql.Select<User>().Where(u => u.Id == matchedUserId).FirstAsync();
+        // 二次校验：确保该 token 仍是该用户当前有效的刷新令牌
+        var storedToken = await _redis.GetStringAsync($"token:refresh:{userId}");
+        if (storedToken != request.RefreshToken)
+            return ApiResponse<LoginResponse>.Fail("RefreshToken 无效或已过期");
+
+        var user = await _fsql.Select<User>().Where(u => u.Id == userId).FirstAsync();
         if (user == null)
             return ApiResponse<LoginResponse>.Fail("用户不存在");
 
-        // 生成新 Token
+        // 生成新 Token，轮换 RefreshToken（删除旧反查索引）
         var token = GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
 
-        // 更新 Redis
-        await _redis.SetStringAsync($"token:refresh:{user.Id}", refreshToken, TimeSpan.FromDays(7));
+        await _redis.DeleteKeyAsync(lookupKey);
+        await StoreRefreshTokenAsync(user.Id, refreshToken);
 
         return ApiResponse<LoginResponse>.Ok(new LoginResponse
         {
@@ -149,6 +139,24 @@ public class AuthService
                 Avatar = user.Avatar
             }
         });
+    }
+
+    /// <summary>
+    /// 存储 RefreshToken（用户维度 + token 哈希反查索引）
+    /// </summary>
+    private async Task StoreRefreshTokenAsync(long userId, string refreshToken)
+    {
+        await _redis.SetStringAsync($"token:refresh:{userId}", refreshToken, TimeSpan.FromDays(7));
+        await _redis.SetStringAsync(GetRefreshLookupKey(refreshToken), userId.ToString(), TimeSpan.FromDays(7));
+    }
+
+    /// <summary>
+    /// RefreshToken 反查索引 Key（SHA256 哈希）
+    /// </summary>
+    private static string GetRefreshLookupKey(string refreshToken)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken))).ToLowerInvariant();
+        return $"token:refresh:lookup:{hash}";
     }
 
     /// <summary>

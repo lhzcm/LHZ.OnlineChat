@@ -34,3 +34,20 @@ public class PagedResult<T>
     public int Page { get; set; }
     public int PageSize { get; set; }
 }
+
+/// <summary>
+/// 会话列表项（私聊/群聊聚合）
+/// </summary>
+public class SessionDto
+{
+    /// <summary>
+    /// private | group
+    /// </summary>
+    public string Type { get; set; } = string.Empty;
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public string LastMessage { get; set; } = string.Empty;
+    public DateTime LastTime { get; set; }
+    public int UnreadCount { get; set; }
+}

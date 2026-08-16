@@ -1,5 +1,5 @@
 import request from './request'
-import type { ApiResponse, MessageDto, GroupMessageDto, PagedResult } from '@/types'
+import type { ApiResponse, MessageDto, GroupMessageDto, PagedResult, SessionInfo } from '@/types'
 
 export const messageApi = {
   getPrivateHistory(friendId: number, page = 1, pageSize = 50): Promise<ApiResponse<PagedResult<MessageDto>>> {
@@ -7,6 +7,12 @@ export const messageApi = {
   },
   getGroupHistory(groupId: number, page = 1, pageSize = 50): Promise<ApiResponse<PagedResult<GroupMessageDto>>> {
     return request.get(`/messages/group/${groupId}`, { params: { page, pageSize } })
+  },
+  getSessions(): Promise<ApiResponse<SessionInfo[]>> {
+    return request.get('/messages/sessions')
+  },
+  markGroupRead(groupId: number): Promise<ApiResponse> {
+    return request.put(`/messages/group/${groupId}/read`)
   },
   markAsRead(messageId: number): Promise<ApiResponse> {
     return request.put(`/messages/${messageId}/read`)
