@@ -20,18 +20,18 @@ public class MessagesController : ControllerBase
         _messageService = messageService;
     }
 
-    private long GetCurrentUserId()
+    private int GetCurrentUserId()
     {
         var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return long.TryParse(claim, out var id) ? id : 0;
+        return int.TryParse(claim, out var id) ? id : 0;
     }
 
     /// <summary>
     /// 获取私聊历史消息
     /// </summary>
-    [HttpGet("private/{friendId}")]
+    [HttpGet("private/{friendId:int}")]
     public async Task<IActionResult> GetPrivateHistory(
-        long friendId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+        int friendId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         var result = await _messageService.GetPrivateHistoryAsync(
             GetCurrentUserId(), friendId, page, pageSize);
@@ -83,8 +83,8 @@ public class MessagesController : ControllerBase
     /// <summary>
     /// 批量标记某用户的消息已读
     /// </summary>
-    [HttpPut("read-all/{senderId}")]
-    public async Task<IActionResult> MarkAllAsRead(long senderId)
+    [HttpPut("read-all/{senderId:int}")]
+    public async Task<IActionResult> MarkAllAsRead(int senderId)
     {
         var result = await _messageService.MarkAllAsReadAsync(senderId, GetCurrentUserId());
         return result.Success ? Ok(result) : BadRequest(result);

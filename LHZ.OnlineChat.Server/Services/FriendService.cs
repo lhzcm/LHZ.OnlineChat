@@ -20,16 +20,16 @@ public class FriendService
     }
 
     /// <summary>
-    /// 发送好友申请
+    /// 发送好友申请（按账号 ID 查找目标用户）
     /// </summary>
-    public async Task<ApiResponse> SendFriendRequestAsync(long userId, string friendUsername)
+    public async Task<ApiResponse> SendFriendRequestAsync(int userId, int accountId)
     {
-        if (string.IsNullOrWhiteSpace(friendUsername))
-            return ApiResponse.Fail("好友用户名不能为空");
+        if (accountId <= 0)
+            return ApiResponse.Fail("请输入正确的账号 ID");
 
         // 查找目标用户
         var targetUser = await _fsql.Select<User>()
-            .Where(u => u.Username == friendUsername)
+            .Where(u => u.Id == accountId)
             .FirstAsync();
 
         if (targetUser == null)
@@ -76,7 +76,7 @@ public class FriendService
     /// <summary>
     /// 接受好友申请
     /// </summary>
-    public async Task<ApiResponse> AcceptFriendRequestAsync(long requestId, long currentUserId)
+    public async Task<ApiResponse> AcceptFriendRequestAsync(long requestId, int currentUserId)
     {
         var request = await _fsql.Select<Friend>().Where(f => f.Id == requestId).FirstAsync();
         if (request == null)
@@ -100,7 +100,7 @@ public class FriendService
     /// <summary>
     /// 拒绝好友申请
     /// </summary>
-    public async Task<ApiResponse> RejectFriendRequestAsync(long requestId, long currentUserId)
+    public async Task<ApiResponse> RejectFriendRequestAsync(long requestId, int currentUserId)
     {
         var request = await _fsql.Select<Friend>().Where(f => f.Id == requestId).FirstAsync();
         if (request == null)
@@ -120,7 +120,7 @@ public class FriendService
     /// <summary>
     /// 删除好友
     /// </summary>
-    public async Task<ApiResponse> DeleteFriendAsync(long userId, long friendId)
+    public async Task<ApiResponse> DeleteFriendAsync(int userId, int friendId)
     {
         var friendship = await _fsql.Select<Friend>()
             .Where(f =>
@@ -138,7 +138,7 @@ public class FriendService
     /// <summary>
     /// 获取好友列表（含在线状态）
     /// </summary>
-    public async Task<ApiResponse<List<FriendInfo>>> GetFriendsAsync(long userId)
+    public async Task<ApiResponse<List<FriendInfo>>> GetFriendsAsync(int userId)
     {
         // 查询所有已接受的好友关系
         var friendships = await _fsql.Select<Friend>()
@@ -167,7 +167,6 @@ public class FriendService
             result.Add(new FriendInfo
             {
                 UserId = user.Id,
-                Username = user.Username,
                 Nickname = user.Nickname,
                 Avatar = user.Avatar,
                 IsOnline = isOnline,
@@ -184,7 +183,7 @@ public class FriendService
     /// <summary>
     /// 获取待处理的好友申请（别人发给我的）
     /// </summary>
-    public async Task<ApiResponse<List<FriendRequestInfo>>> GetPendingRequestsAsync(long userId)
+    public async Task<ApiResponse<List<FriendRequestInfo>>> GetPendingRequestsAsync(int userId)
     {
         var requests = await _fsql.Select<Friend>()
             .Where(f => f.FriendId == userId && f.Status == 0)
@@ -204,9 +203,8 @@ public class FriendService
         {
             Id = r.Id,
             UserId = r.UserId,
-            Username = userDict.TryGetValue(r.UserId, out var u) ? u.Username : "未知",
-            Nickname = userDict.TryGetValue(r.UserId, out var u2) ? u2.Nickname : "未知",
-            Avatar = userDict.TryGetValue(r.UserId, out var u3) ? u3.Avatar : null,
+            Nickname = userDict.TryGetValue(r.UserId, out var u) ? u.Nickname : "未知",
+            Avatar = userDict.TryGetValue(r.UserId, out var u2) ? u2.Avatar : null,
             CreatedAt = r.CreatedAt
         }).ToList();
 

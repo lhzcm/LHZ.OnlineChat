@@ -6,9 +6,9 @@ namespace LHZ.OnlineChat.Server.Models.DTOs;
 public class AddFriendRequest
 {
     /// <summary>
-    /// 要添加的好友的用户名
+    /// 要添加的好友的账号 ID
     /// </summary>
-    public string Username { get; set; } = string.Empty;
+    public int AccountId { get; set; }
 }
 
 public class FriendRequestResponse
@@ -19,8 +19,7 @@ public class FriendRequestResponse
 
 public class FriendInfo
 {
-    public long UserId { get; set; }
-    public string Username { get; set; } = string.Empty;
+    public int UserId { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string? Avatar { get; set; }
     public bool IsOnline { get; set; }
@@ -30,8 +29,7 @@ public class FriendInfo
 public class FriendRequestInfo
 {
     public long Id { get; set; }
-    public long UserId { get; set; }
-    public string Username { get; set; } = string.Empty;
+    public int UserId { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string? Avatar { get; set; }
     public DateTime CreatedAt { get; set; }

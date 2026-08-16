@@ -21,10 +21,10 @@ public class GroupsController : ControllerBase
         _groupService = groupService;
     }
 
-    private long GetCurrentUserId()
+    private int GetCurrentUserId()
     {
         var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return long.TryParse(claim, out var id) ? id : 0;
+        return int.TryParse(claim, out var id) ? id : 0;
     }
 
     /// <summary>
@@ -80,8 +80,8 @@ public class GroupsController : ControllerBase
     /// <summary>
     /// 踢出成员
     /// </summary>
-    [HttpDelete("{groupId}/members/{userId}")]
-    public async Task<IActionResult> KickMember(long groupId, long userId)
+    [HttpDelete("{groupId}/members/{userId:int}")]
+    public async Task<IActionResult> KickMember(long groupId, int userId)
     {
         var result = await _groupService.KickMemberAsync(groupId, GetCurrentUserId(), userId);
         return result.Success ? Ok(result) : BadRequest(result);

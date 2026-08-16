@@ -3,16 +3,48 @@ namespace LHZ.OnlineChat.Server.Models.DTOs;
 /// <summary>
 /// 认证相关 DTO
 /// </summary>
+public class SendCodeRequest
+{
+    public string Email { get; set; } = string.Empty;
+}
+
+public class SendCodeResponse
+{
+    /// <summary>
+    /// 开发模式（未配置 SMTP）时返回验证码，便于本地调试；生产环境为 null
+    /// </summary>
+    public string? DevCode { get; set; }
+    public int CooldownSeconds { get; set; } = 60;
+}
+
 public class RegisterRequest
 {
-    public string Username { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
+    /// <summary>
+    /// 昵称（可重复）
+    /// </summary>
     public string Nickname { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    /// <summary>
+    /// 邮箱收到的 6 位数字验证码
+    /// </summary>
+    public string Code { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+}
+
+public class RegisterResponse
+{
+    /// <summary>
+    /// 注册成功自动分配的账号 ID（登录凭据）
+    /// </summary>
+    public int AccountId { get; set; }
 }
 
 public class LoginRequest
 {
-    public string Username { get; set; } = string.Empty;
+    /// <summary>
+    /// 账号 ID
+    /// </summary>
+    public int Account { get; set; }
     public string Password { get; set; } = string.Empty;
 }
 
@@ -30,8 +62,7 @@ public class RefreshTokenRequest
 
 public class UserInfo
 {
-    public long Id { get; set; }
-    public string Username { get; set; } = string.Empty;
+    public int Id { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string? Avatar { get; set; }
 }

@@ -25,7 +25,7 @@ public class WsMessageHandler
     /// <summary>
     /// 处理收到的 WebSocket 消息
     /// </summary>
-    public async Task HandleMessageAsync(IWebSocketClient sender, long userId, string rawMessage)
+    public async Task HandleMessageAsync(IWebSocketClient sender, int userId, string rawMessage)
     {
         WsMessage? message;
         try
@@ -69,9 +69,9 @@ public class WsMessageHandler
     /// <summary>
     /// 处理私聊消息
     /// </summary>
-    private async Task HandlePrivateMessageAsync(IWebSocketClient sender, long userId, WsMessage message)
+    private async Task HandlePrivateMessageAsync(IWebSocketClient sender, int userId, WsMessage message)
     {
-        if (!long.TryParse(message.To, out var receiverId)) return;
+        if (!int.TryParse(message.To, out var receiverId)) return;
 
         // 保存到数据库
         var privateMsg = new PrivateMessage
@@ -123,9 +123,9 @@ public class WsMessageHandler
     /// <summary>
     /// 处理群聊消息
     /// </summary>
-    private async Task HandleGroupMessageAsync(IWebSocketClient sender, long userId, WsMessage message)
+    private async Task HandleGroupMessageAsync(IWebSocketClient sender, int userId, WsMessage message)
     {
-        if (!long.TryParse(message.To, out var groupId)) return;
+        if (!int.TryParse(message.To, out var groupId)) return;
 
         // 验证发送者是否在群中
         var isMember = await _fsql.Select<GroupMember>()
@@ -207,9 +207,9 @@ public class WsMessageHandler
     /// <summary>
     /// 处理"正在输入"状态
     /// </summary>
-    private Task HandleTypingAsync(long userId, WsMessage message)
+    private Task HandleTypingAsync(int userId, WsMessage message)
     {
-        if (!long.TryParse(message.To, out var targetId)) return Task.CompletedTask;
+        if (!int.TryParse(message.To, out var targetId)) return Task.CompletedTask;
 
         var targetClient = _connectionManager.GetConnection(targetId);
         if (targetClient != null && targetClient.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
@@ -239,7 +239,7 @@ public class WsMessageHandler
     /// <summary>
     /// 获取私聊 Redis 缓存 Key（较小ID:较大ID）
     /// </summary>
-    private static string GetPrivateChatCacheKey(long userId1, long userId2)
+    private static string GetPrivateChatCacheKey(int userId1, int userId2)
     {
         var minId = Math.Min(userId1, userId2);
         var maxId = Math.Max(userId1, userId2);
@@ -249,7 +249,7 @@ public class WsMessageHandler
     /// <summary>
     /// 通知该用户的在线好友：ta 已上线/下线
     /// </summary>
-    public async Task NotifyFriendsStatusAsync(long userId, bool online)
+    public async Task NotifyFriendsStatusAsync(int userId, bool online)
     {
         var friendships = await _fsql.Select<Friend>()
             .Where(f => (f.UserId == userId || f.FriendId == userId) && f.Status == 1)
@@ -276,7 +276,7 @@ public class WsMessageHandler
     /// <summary>
     /// 通知目标用户收到新的好友申请
     /// </summary>
-    public void NotifyFriendRequestAsync(long toUserId, long fromUserId)
+    public void NotifyFriendRequestAsync(int toUserId, int fromUserId)
     {
         SendToUser(toUserId, WsMessageType.FriendRequest, fromUserId.ToString());
     }
@@ -284,7 +284,7 @@ public class WsMessageHandler
     /// <summary>
     /// 好友申请被接受：双向通知（双方刷新好友列表）
     /// </summary>
-    public void NotifyFriendAcceptedAsync(long requesterId, long accepterId)
+    public void NotifyFriendAcceptedAsync(int requesterId, int accepterId)
     {
         SendToUser(requesterId, WsMessageType.FriendAccepted, accepterId.ToString());
         SendToUser(accepterId, WsMessageType.FriendAccepted, requesterId.ToString());
@@ -293,7 +293,7 @@ public class WsMessageHandler
     /// <summary>
     /// 好友申请被拒绝：通知申请人
     /// </summary>
-    public void NotifyFriendRejectedAsync(long requesterId, long accepterId)
+    public void NotifyFriendRejectedAsync(int requesterId, int accepterId)
     {
         SendToUser(requesterId, WsMessageType.FriendRejected, accepterId.ToString());
     }
@@ -301,7 +301,7 @@ public class WsMessageHandler
     /// <summary>
     /// 向指定用户推送一条 WS 消息（在线时）
     /// </summary>
-    private void SendToUser(long userId, string type, string fromUserId)
+    private void SendToUser(int userId, string type, string fromUserId)
     {
         var client = _connectionManager.GetConnection(userId);
         if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
@@ -318,7 +318,7 @@ public class WsMessageHandler
     /// <summary>
     /// 用户上线后，补发各群已读游标之后的群消息（离线群消息）
     /// </summary>
-    public async Task SendGroupOfflineMessagesAsync(long userId)
+    public async Task SendGroupOfflineMessagesAsync(int userId)
     {
         var members = await _fsql.Select<GroupMember>()
             .Where(m => m.UserId == userId)

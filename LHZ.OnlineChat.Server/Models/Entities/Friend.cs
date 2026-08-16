@@ -13,10 +13,10 @@ public class Friend
     public long Id { get; set; }
 
     [Column(IsNullable = false)]
-    public long UserId { get; set; }
+    public int UserId { get; set; }
 
     [Column(IsNullable = false)]
-    public long FriendId { get; set; }
+    public int FriendId { get; set; }
 
     /// <summary>
     /// 0=待确认, 1=已接受, 2=已屏蔽

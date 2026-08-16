@@ -22,7 +22,7 @@ public class MessageService
     /// 获取私聊历史消息（分页）
     /// </summary>
     public async Task<ApiResponse<PagedResult<MessageDto>>> GetPrivateHistoryAsync(
-        long userId, long friendId, int page = 1, int pageSize = 50)
+        int userId, int friendId, int page = 1, int pageSize = 50)
     {
         // 验证好友关系
         var isFriend = await _fsql.Select<Friend>()
@@ -110,7 +110,7 @@ public class MessageService
     /// 获取群聊历史消息（分页）
     /// </summary>
     public async Task<ApiResponse<PagedResult<GroupMessageDto>>> GetGroupHistoryAsync(
-        long groupId, long userId, int page = 1, int pageSize = 50)
+        long groupId, int userId, int page = 1, int pageSize = 50)
     {
         // 验证是否群成员
         var isMember = await _fsql.Select<GroupMember>()
@@ -164,7 +164,7 @@ public class MessageService
     /// <summary>
     /// 标记消息已读
     /// </summary>
-    public async Task<ApiResponse> MarkAsReadAsync(long messageId, long currentUserId)
+    public async Task<ApiResponse> MarkAsReadAsync(long messageId, int currentUserId)
     {
         var msg = await _fsql.Select<PrivateMessage>()
             .Where(m => m.Id == messageId && m.ReceiverId == currentUserId)
@@ -184,7 +184,7 @@ public class MessageService
     /// <summary>
     /// 批量标记消息已读
     /// </summary>
-    public async Task<ApiResponse> MarkAllAsReadAsync(long senderId, long currentUserId)
+    public async Task<ApiResponse> MarkAllAsReadAsync(int senderId, int currentUserId)
     {
         await _fsql.Update<PrivateMessage>()
             .Set(p => p.IsRead, true)
@@ -197,7 +197,7 @@ public class MessageService
     /// <summary>
     /// 获取未读消息数
     /// </summary>
-    public async Task<ApiResponse<object>> GetUnreadCountAsync(long userId)
+    public async Task<ApiResponse<object>> GetUnreadCountAsync(int userId)
     {
         var privateUnread = await _fsql.Select<PrivateMessage>()
             .Where(m => m.ReceiverId == userId && !m.IsRead)
@@ -212,7 +212,7 @@ public class MessageService
     /// <summary>
     /// 获取离线消息（用户上线时调用）
     /// </summary>
-    public async Task<ApiResponse<List<MessageDto>>> GetOfflineMessagesAsync(long userId)
+    public async Task<ApiResponse<List<MessageDto>>> GetOfflineMessagesAsync(int userId)
     {
         // 获取未读私聊消息
         var messages = await _fsql.Select<PrivateMessage>()
@@ -245,7 +245,7 @@ public class MessageService
     /// <summary>
     /// 获取私聊 Redis 缓存 Key
     /// </summary>
-    private static string GetPrivateChatCacheKey(long userId1, long userId2)
+    private static string GetPrivateChatCacheKey(int userId1, int userId2)
     {
         var minId = Math.Min(userId1, userId2);
         var maxId = Math.Max(userId1, userId2);
@@ -255,7 +255,7 @@ public class MessageService
     /// <summary>
     /// 标记群消息已读：把该成员的已读游标推进到群内最新消息ID
     /// </summary>
-    public async Task<ApiResponse> MarkGroupAsReadAsync(long groupId, long userId)
+    public async Task<ApiResponse> MarkGroupAsReadAsync(long groupId, int userId)
     {
         var member = await _fsql.Select<GroupMember>()
             .Where(m => m.GroupId == groupId && m.UserId == userId)
@@ -279,7 +279,7 @@ public class MessageService
     /// <summary>
     /// 获取会话列表（私聊 + 群聊聚合，按最后消息时间倒序）
     /// </summary>
-    public async Task<ApiResponse<List<SessionDto>>> GetSessionsAsync(long userId)
+    public async Task<ApiResponse<List<SessionDto>>> GetSessionsAsync(int userId)
     {
         var sessions = new List<SessionDto>();
 
@@ -290,14 +290,14 @@ public class MessageService
             .Take(500)
             .ToListAsync();
 
-        var peerLast = new Dictionary<long, PrivateMessage>();
+        var peerLast = new Dictionary<int, PrivateMessage>();
         foreach (var m in recentPrivate)
         {
             var peer = m.SenderId == userId ? m.ReceiverId : m.SenderId;
             if (!peerLast.ContainsKey(peer)) peerLast[peer] = m;
         }
 
-        var unreadPrivate = new Dictionary<long, int>();
+        var unreadPrivate = new Dictionary<int, int>();
         var unreadList = await _fsql.Select<PrivateMessage>()
             .Where(m => m.ReceiverId == userId && !m.IsRead)
             .ToListAsync();

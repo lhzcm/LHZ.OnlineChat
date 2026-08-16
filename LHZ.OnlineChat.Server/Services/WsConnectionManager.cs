@@ -9,7 +9,7 @@ namespace LHZ.OnlineChat.Server.Services;
 /// </summary>
 public class WsConnectionManager
 {
-    private readonly ConcurrentDictionary<long, IWebSocketClient> _connections = new();
+    private readonly ConcurrentDictionary<int, IWebSocketClient> _connections = new();
     private readonly RedisService _redis;
 
     public WsConnectionManager(RedisService redis)
@@ -25,7 +25,7 @@ public class WsConnectionManager
     /// <summary>
     /// 添加连接
     /// </summary>
-    public async Task AddConnectionAsync(long userId, IWebSocketClient client)
+    public async Task AddConnectionAsync(int userId, IWebSocketClient client)
     {
         _connections[userId] = client;
 
@@ -44,7 +44,7 @@ public class WsConnectionManager
     /// 仅当字典中登记的就是该 client 时才移除并清理 Redis，
     /// 避免同一账号新连接已替换旧连接后，旧连接的关闭回调误删新连接。
     /// </summary>
-    public async Task<bool> RemoveConnectionAsync(long userId, IWebSocketClient client)
+    public async Task<bool> RemoveConnectionAsync(int userId, IWebSocketClient client)
     {
         if (!_connections.TryGetValue(userId, out var current) || !ReferenceEquals(current, client))
             return false;
@@ -61,7 +61,7 @@ public class WsConnectionManager
     /// <summary>
     /// 移除连接（不校验身份，仅保留兼容旧调用）
     /// </summary>
-    public async Task<bool> RemoveConnectionAsync(long userId)
+    public async Task<bool> RemoveConnectionAsync(int userId)
     {
         if (!_connections.TryGetValue(userId, out var current))
             return false;
@@ -71,7 +71,7 @@ public class WsConnectionManager
     /// <summary>
     /// 获取用户的 WebSocket 连接
     /// </summary>
-    public IWebSocketClient? GetConnection(long userId)
+    public IWebSocketClient? GetConnection(int userId)
     {
         _connections.TryGetValue(userId, out var client);
         return client;
@@ -80,18 +80,18 @@ public class WsConnectionManager
     /// <summary>
     /// 检查用户是否在线
     /// </summary>
-    public bool IsOnline(long userId)
+    public bool IsOnline(int userId)
         => _connections.ContainsKey(userId);
 
     /// <summary>
     /// 获取所有在线用户ID
     /// </summary>
-    public IEnumerable<long> GetOnlineUserIds()
+    public IEnumerable<int> GetOnlineUserIds()
         => _connections.Keys;
 
     /// <summary>
     /// 获取所有连接（快照）
     /// </summary>
-    public IReadOnlyDictionary<long, IWebSocketClient> GetAllConnections()
+    public IReadOnlyDictionary<int, IWebSocketClient> GetAllConnections()
         => _connections;
 }

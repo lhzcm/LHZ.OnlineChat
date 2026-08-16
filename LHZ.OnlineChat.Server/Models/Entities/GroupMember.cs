@@ -16,7 +16,7 @@ public class GroupMember
     public long GroupId { get; set; }
 
     [Column(IsNullable = false)]
-    public long UserId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 0=群主, 1=管理员, 2=成员

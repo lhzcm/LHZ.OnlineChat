@@ -21,8 +21,7 @@ public class GroupInfo
 
 public class GroupMemberInfo
 {
-    public long UserId { get; set; }
-    public string Username { get; set; } = string.Empty;
+    public int UserId { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string? Avatar { get; set; }
     public int Role { get; set; }

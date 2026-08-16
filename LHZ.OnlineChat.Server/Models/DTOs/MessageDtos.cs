@@ -6,7 +6,7 @@ namespace LHZ.OnlineChat.Server.Models.DTOs;
 public class MessageDto
 {
     public long Id { get; set; }
-    public long SenderId { get; set; }
+    public int SenderId { get; set; }
     public string SenderName { get; set; } = string.Empty;
     public string? SenderAvatar { get; set; }
     public string Content { get; set; } = string.Empty;
@@ -19,7 +19,7 @@ public class GroupMessageDto
 {
     public long Id { get; set; }
     public long GroupId { get; set; }
-    public long SenderId { get; set; }
+    public int SenderId { get; set; }
     public string SenderName { get; set; } = string.Empty;
     public string? SenderAvatar { get; set; }
     public string Content { get; set; } = string.Empty;

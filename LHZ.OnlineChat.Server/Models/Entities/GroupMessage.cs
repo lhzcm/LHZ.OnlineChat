@@ -16,7 +16,7 @@ public class GroupMessage
     public long GroupId { get; set; }
 
     [Column(IsNullable = false)]
-    public long SenderId { get; set; }
+    public int SenderId { get; set; }
 
     [Column(IsNullable = false, StringLength = -2)]
     public string Content { get; set; } = string.Empty;

@@ -20,7 +20,7 @@ public class GroupService
     /// <summary>
     /// 创建群组
     /// </summary>
-    public async Task<ApiResponse<GroupInfo>> CreateGroupAsync(long ownerId, CreateGroupRequest request)
+    public async Task<ApiResponse<GroupInfo>> CreateGroupAsync(int ownerId, CreateGroupRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             return ApiResponse<GroupInfo>.Fail("群组名称不能为空");
@@ -60,7 +60,7 @@ public class GroupService
     /// <summary>
     /// 加入群组
     /// </summary>
-    public async Task<ApiResponse> JoinGroupAsync(long groupId, long userId)
+    public async Task<ApiResponse> JoinGroupAsync(long groupId, int userId)
     {
         // 检查群组是否存在
         var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
@@ -96,7 +96,7 @@ public class GroupService
     /// <summary>
     /// 退出群组
     /// </summary>
-    public async Task<ApiResponse> LeaveGroupAsync(long groupId, long userId)
+    public async Task<ApiResponse> LeaveGroupAsync(long groupId, int userId)
     {
         var member = await _fsql.Select<GroupMember>()
             .Where(m => m.GroupId == groupId && m.UserId == userId)
@@ -118,7 +118,7 @@ public class GroupService
     /// <summary>
     /// 踢出成员（群主/管理员）
     /// </summary>
-    public async Task<ApiResponse> KickMemberAsync(long groupId, long operatorId, long targetUserId)
+    public async Task<ApiResponse> KickMemberAsync(long groupId, int operatorId, int targetUserId)
     {
         // 检查操作者权限
         var operatorMember = await _fsql.Select<GroupMember>()
@@ -155,7 +155,7 @@ public class GroupService
     /// <summary>
     /// 解散群组（仅群主）
     /// </summary>
-    public async Task<ApiResponse> DismissGroupAsync(long groupId, long userId)
+    public async Task<ApiResponse> DismissGroupAsync(long groupId, int userId)
     {
         var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
         if (group == null)
@@ -174,7 +174,7 @@ public class GroupService
     /// <summary>
     /// 获取我的群组列表
     /// </summary>
-    public async Task<ApiResponse<List<GroupInfo>>> GetMyGroupsAsync(long userId)
+    public async Task<ApiResponse<List<GroupInfo>>> GetMyGroupsAsync(int userId)
     {
         var memberGroups = await _fsql.Select<GroupMember>()
             .Where(m => m.UserId == userId)
@@ -237,7 +237,6 @@ public class GroupService
             result.Add(new GroupMemberInfo
             {
                 UserId = member.UserId,
-                Username = user?.Username ?? "未知",
                 Nickname = user?.Nickname ?? "未知",
                 Avatar = user?.Avatar,
                 Role = member.Role,

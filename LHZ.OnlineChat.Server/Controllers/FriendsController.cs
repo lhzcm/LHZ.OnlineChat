@@ -21,19 +21,19 @@ public class FriendsController : ControllerBase
         _friendService = friendService;
     }
 
-    private long GetCurrentUserId()
+    private int GetCurrentUserId()
     {
         var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return long.TryParse(claim, out var id) ? id : 0;
+        return int.TryParse(claim, out var id) ? id : 0;
     }
 
     /// <summary>
-    /// 发送好友申请
+    /// 发送好友申请（按账号 ID）
     /// </summary>
     [HttpPost("request")]
     public async Task<IActionResult> SendRequest([FromBody] AddFriendRequest request)
     {
-        var result = await _friendService.SendFriendRequestAsync(GetCurrentUserId(), request.Username);
+        var result = await _friendService.SendFriendRequestAsync(GetCurrentUserId(), request.AccountId);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
@@ -60,8 +60,8 @@ public class FriendsController : ControllerBase
     /// <summary>
     /// 删除好友
     /// </summary>
-    [HttpDelete("{friendId}")]
-    public async Task<IActionResult> DeleteFriend(long friendId)
+    [HttpDelete("{friendId:int}")]
+    public async Task<IActionResult> DeleteFriend(int friendId)
     {
         var result = await _friendService.DeleteFriendAsync(GetCurrentUserId(), friendId);
         return result.Success ? Ok(result) : BadRequest(result);

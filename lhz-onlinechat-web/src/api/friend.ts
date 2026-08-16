@@ -5,8 +5,8 @@ export const friendApi = {
   getFriends(): Promise<ApiResponse<FriendInfo[]>> {
     return request.get('/friends')
   },
-  sendRequest(username: string): Promise<ApiResponse> {
-    return request.post('/friends/request', { username })
+  sendRequest(accountId: number): Promise<ApiResponse> {
+    return request.post('/friends/request', { accountId })
   },
   acceptRequest(requestId: number): Promise<ApiResponse> {
     return request.put(`/friends/accept/${requestId}`)

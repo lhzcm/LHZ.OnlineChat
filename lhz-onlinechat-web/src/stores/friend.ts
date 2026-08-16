@@ -21,8 +21,8 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
-  async function sendRequest(username: string) {
-    return await friendApi.sendRequest(username)
+  async function sendRequest(accountId: number) {
+    return await friendApi.sendRequest(accountId)
   }
 
   async function acceptRequest(requestId: number) {

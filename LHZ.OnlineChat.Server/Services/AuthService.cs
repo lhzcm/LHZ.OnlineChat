@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using LHZ.OnlineChat.Server.Config;
 using LHZ.OnlineChat.Server.Models.DTOs;
 using LHZ.OnlineChat.Server.Models.Entities;
@@ -11,68 +12,116 @@ namespace LHZ.OnlineChat.Server.Services;
 
 /// <summary>
 /// 用户认证服务
+/// 账号 = User.Id（int 自增，起始 10000）
 /// </summary>
 public class AuthService
 {
+    private static readonly Regex EmailRegex = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
+
     private readonly IFreeSql _fsql;
     private readonly RedisService _redis;
     private readonly AppSettings _appSettings;
+    private readonly EmailService _emailService;
 
-    public AuthService(IFreeSql fsql, RedisService redis, AppSettings appSettings)
+    public AuthService(IFreeSql fsql, RedisService redis, AppSettings appSettings, EmailService emailService)
     {
         _fsql = fsql;
         _redis = redis;
         _appSettings = appSettings;
+        _emailService = emailService;
     }
 
     /// <summary>
-    /// 用户注册
+    /// 发送邮箱验证码（6 位数字，5 分钟有效，60 秒冷却）
     /// </summary>
-    public async Task<ApiResponse> RegisterAsync(RegisterRequest request)
+    public async Task<ApiResponse<SendCodeResponse>> SendCodeAsync(SendCodeRequest request)
     {
-        // 校验参数
-        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
-            return ApiResponse.Fail("用户名和密码不能为空");
+        if (string.IsNullOrWhiteSpace(request.Email) || !EmailRegex.IsMatch(request.Email))
+            return ApiResponse<SendCodeResponse>.Fail("邮箱格式不正确");
 
-        if (request.Username.Length < 3 || request.Username.Length > 50)
-            return ApiResponse.Fail("用户名长度需在 3-50 个字符之间");
+        var email = request.Email.Trim().ToLowerInvariant();
 
+        // 冷却：已有未过期的验证码则拒绝重复发送
+        var key = GetEmailCodeKey(email);
+        if (await _redis.KeyExistsAsync(key))
+            return ApiResponse<SendCodeResponse>.Fail("验证码已发送，请稍后再试");
+
+        var code = Random.Shared.Next(100000, 1000000).ToString();
+        await _redis.SetStringAsync(key, code, TimeSpan.FromMinutes(5));
+
+        // 发送邮件；未配置 SMTP 时返回 DevCode 便于本地调试
+        var sent = await _emailService.SendCodeAsync(email, code);
+
+        return ApiResponse<SendCodeResponse>.Ok(new SendCodeResponse
+        {
+            DevCode = sent ? null : code,
+            CooldownSeconds = 60
+        }, "验证码已发送");
+    }
+
+    /// <summary>
+    /// 用户注册（昵称 + 邮箱验证码 + 密码），成功自动分配账号 ID
+    /// </summary>
+    public async Task<ApiResponse<RegisterResponse>> RegisterAsync(RegisterRequest request)
+    {
+        var email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        // ===== 参数校验 =====
+        if (string.IsNullOrWhiteSpace(request.Nickname))
+            return ApiResponse<RegisterResponse>.Fail("昵称不能为空");
+        if (request.Nickname.Length > 50)
+            return ApiResponse<RegisterResponse>.Fail("昵称长度不能超过 50 个字符");
+        if (string.IsNullOrWhiteSpace(email) || !EmailRegex.IsMatch(email))
+            return ApiResponse<RegisterResponse>.Fail("邮箱格式不正确");
         if (request.Password.Length < 6)
-            return ApiResponse.Fail("密码长度不能少于 6 个字符");
+            return ApiResponse<RegisterResponse>.Fail("密码长度不能少于 6 个字符");
 
-        // 检查用户名唯一性
-        var exists = await _fsql.Select<User>().Where(u => u.Username == request.Username).AnyAsync();
+        // ===== 验证码校验 =====
+        var codeKey = GetEmailCodeKey(email);
+        var storedCode = await _redis.GetStringAsync(codeKey);
+        if (string.IsNullOrEmpty(storedCode) || storedCode != request.Code)
+            return ApiResponse<RegisterResponse>.Fail("验证码错误或已过期");
+
+        // ===== 邮箱唯一性 =====
+        var exists = await _fsql.Select<User>().Where(u => u.Email == email).AnyAsync();
         if (exists)
-            return ApiResponse.Fail("用户名已存在");
+            return ApiResponse<RegisterResponse>.Fail("该邮箱已注册");
 
-        // 创建用户
+        // ===== 创建用户（Id 自增分配，起始 10000）=====
         var user = new User
         {
-            Username = request.Username,
+            Email = email,
+            Nickname = request.Nickname.Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            Nickname = string.IsNullOrWhiteSpace(request.Nickname) ? request.Username : request.Nickname,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
+        // ExecuteIdentityAsync 返回自增主键并回填到实体
+        user.Id = (int)await _fsql.Insert(user).ExecuteIdentityAsync();
 
-        await _fsql.Insert(user).ExecuteAffrowsAsync();
-        return ApiResponse.Ok("注册成功");
+        // 验证码一次性使用
+        await _redis.DeleteKeyAsync(codeKey);
+
+        return ApiResponse<RegisterResponse>.Ok(new RegisterResponse
+        {
+            AccountId = user.Id
+        }, $"注册成功，你的账号是 {user.Id}，请牢记");
     }
 
     /// <summary>
-    /// 用户登录
+    /// 用户登录（账号 ID + 密码）
     /// </summary>
     public async Task<ApiResponse<LoginResponse>> LoginAsync(LoginRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
-            return ApiResponse<LoginResponse>.Fail("用户名和密码不能为空");
+        if (request.Account <= 0 || string.IsNullOrWhiteSpace(request.Password))
+            return ApiResponse<LoginResponse>.Fail("请输入账号和密码");
 
-        var user = await _fsql.Select<User>().Where(u => u.Username == request.Username).FirstAsync();
+        var user = await _fsql.Select<User>().Where(u => u.Id == request.Account).FirstAsync();
         if (user == null)
-            return ApiResponse<LoginResponse>.Fail("用户名或密码错误");
+            return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-            return ApiResponse<LoginResponse>.Fail("用户名或密码错误");
+            return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 
         // 生成 Token
         var token = GenerateJwtToken(user);
@@ -81,19 +130,16 @@ public class AuthService
         // 存储 RefreshToken 到 Redis（7天过期），并建立 token→userId 反查索引
         await StoreRefreshTokenAsync(user.Id, refreshToken);
 
-        var userInfo = new UserInfo
-        {
-            Id = user.Id,
-            Username = user.Username,
-            Nickname = user.Nickname,
-            Avatar = user.Avatar
-        };
-
         return ApiResponse<LoginResponse>.Ok(new LoginResponse
         {
             Token = token,
             RefreshToken = refreshToken,
-            User = userInfo
+            User = new UserInfo
+            {
+                Id = user.Id,
+                Nickname = user.Nickname,
+                Avatar = user.Avatar
+            }
         });
     }
 
@@ -105,10 +151,10 @@ public class AuthService
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
             return ApiResponse<LoginResponse>.Fail("RefreshToken 不能为空");
 
-        // O(1) 反查：根据 token 哈希找到 userId（替代原来的 KEYS 全量扫描）
+        // O(1) 反查：根据 token 哈希找到 userId
         var lookupKey = GetRefreshLookupKey(request.RefreshToken);
         var userIdStr = await _redis.GetStringAsync(lookupKey);
-        if (string.IsNullOrEmpty(userIdStr) || !long.TryParse(userIdStr, out var userId))
+        if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out var userId))
             return ApiResponse<LoginResponse>.Fail("RefreshToken 无效或已过期");
 
         // 二次校验：确保该 token 仍是该用户当前有效的刷新令牌
@@ -134,7 +180,6 @@ public class AuthService
             User = new UserInfo
             {
                 Id = user.Id,
-                Username = user.Username,
                 Nickname = user.Nickname,
                 Avatar = user.Avatar
             }
@@ -144,7 +189,7 @@ public class AuthService
     /// <summary>
     /// 存储 RefreshToken（用户维度 + token 哈希反查索引）
     /// </summary>
-    private async Task StoreRefreshTokenAsync(long userId, string refreshToken)
+    private async Task StoreRefreshTokenAsync(int userId, string refreshToken)
     {
         await _redis.SetStringAsync($"token:refresh:{userId}", refreshToken, TimeSpan.FromDays(7));
         await _redis.SetStringAsync(GetRefreshLookupKey(refreshToken), userId.ToString(), TimeSpan.FromDays(7));
@@ -160,6 +205,11 @@ public class AuthService
     }
 
     /// <summary>
+    /// 邮箱验证码 Key
+    /// </summary>
+    private static string GetEmailCodeKey(string email) => $"email:code:{email}";
+
+    /// <summary>
     /// 生成 JWT Token
     /// </summary>
     private string GenerateJwtToken(User user)
@@ -171,7 +221,7 @@ public class AuthService
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Name, user.Nickname),
             new Claim("nickname", user.Nickname)
         };
 

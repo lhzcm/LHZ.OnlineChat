@@ -8,20 +8,33 @@ export interface ApiResponse<T = any> {
 // ==================== 用户 ====================
 export interface UserInfo {
   id: number
-  username: string
   nickname: string
   avatar: string | null
 }
 
+export interface SendCodeRequest {
+  email: string
+}
+
+export interface SendCodeResponse {
+  devCode: string | null
+  cooldownSeconds: number
+}
+
 export interface LoginRequest {
-  username: string
+  account: number
   password: string
 }
 
 export interface RegisterRequest {
-  username: string
-  password: string
   nickname: string
+  email: string
+  code: string
+  password: string
+}
+
+export interface RegisterResponse {
+  accountId: number
 }
 
 export interface LoginResponse {
@@ -33,7 +46,6 @@ export interface LoginResponse {
 // ==================== 好友 ====================
 export interface FriendInfo {
   userId: number
-  username: string
   nickname: string
   avatar: string | null
   isOnline: boolean
@@ -43,7 +55,6 @@ export interface FriendInfo {
 export interface FriendRequestInfo {
   id: number
   userId: number
-  username: string
   nickname: string
   avatar: string | null
   createdAt: string

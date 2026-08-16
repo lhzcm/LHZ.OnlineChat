@@ -20,6 +20,16 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// 发送邮箱验证码（6 位数字）
+    /// </summary>
+    [HttpPost("send-code")]
+    public async Task<IActionResult> SendCode([FromBody] SendCodeRequest request)
+    {
+        var result = await _authService.SendCodeAsync(request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 用户注册
     /// </summary>
     [HttpPost("register")]
@@ -57,7 +67,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> GetCurrentUser()
     {
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim) || !long.TryParse(userIdClaim, out var userId))
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
             return Unauthorized(ApiResponse.Fail("无效的 Token"));
 
         var fsql = HttpContext.RequestServices.GetRequiredService<IFreeSql>();
@@ -71,7 +81,6 @@ public class AuthController : ControllerBase
         return Ok(ApiResponse<UserInfo>.Ok(new UserInfo
         {
             Id = user.Id,
-            Username = user.Username,
             Nickname = user.Nickname,
             Avatar = user.Avatar
         }));

@@ -188,7 +188,7 @@
           <span class="avatar small" :style="{ background: avatarGradient(r.nickname) }">{{ avatarInitial(r.nickname) }}</span>
           <div class="request-info">
             <span class="request-name">{{ r.nickname }}</span>
-            <span class="request-meta">@{{ r.username }}</span>
+            <span class="request-meta">账号 {{ r.userId }}</span>
           </div>
           <div class="request-actions">
             <button class="btn btn-sm btn-primary" :disabled="handlingRequestId === r.id" @click="acceptRequest(r)">接受</button>
@@ -205,7 +205,7 @@
       <div class="modal">
         <h3>{{ activeTab === 'friends' ? '添加好友' : '创建群组' }}</h3>
         <template v-if="activeTab === 'friends'">
-          <input v-model="addFriendUsername" class="input" placeholder="输入好友用户名" @keyup.enter="addFriend" />
+          <input v-model="addFriendAccount" class="input" type="text" inputmode="numeric" placeholder="输入对方账号 ID" @keyup.enter="addFriend" />
           <button class="btn btn-primary" @click="addFriend">发送申请</button>
         </template>
         <template v-else>
@@ -243,7 +243,7 @@ const inputText = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
 const showAddModal = ref(false)
-const addFriendUsername = ref('')
+const addFriendAccount = ref('')
 const newGroupName = ref('')
 const modalError = ref('')
 const modalSuccess = ref('')
@@ -541,11 +541,17 @@ function openRequestsModal() {
 }
 
 async function addFriend() {
-  const res = await friendStore.sendRequest(addFriendUsername.value)
+  const account = Number(addFriendAccount.value.trim())
+  if (!account || account <= 0) {
+    modalError.value = '请输入正确的账号 ID'
+    modalSuccess.value = ''
+    return
+  }
+  const res = await friendStore.sendRequest(account)
   if (res.success) {
     modalSuccess.value = '好友申请已发送'
     modalError.value = ''
-    addFriendUsername.value = ''
+    addFriendAccount.value = ''
   } else {
     modalError.value = res.message
     modalSuccess.value = ''

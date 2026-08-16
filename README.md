@@ -12,8 +12,8 @@
 
 ## 功能
 
-- 注册 / 登录 / JWT + RefreshToken（Redis 存储）
-- 好友：申请 / 接受 / 拒绝 / 删除，实时通知（WS `friend_request`），在线状态实时广播（WS `online_status`）
+- 注册：昵称（可重复）+ 邮箱（6 位数字验证码）+ 密码，注册成功自动分配**账号 ID**（int，起始 10000 自增），登录仅需账号 + 密码
+- 好友：按账号 ID 申请 / 接受 / 拒绝 / 删除，实时通知（WS `friend_request`/`friend_accepted`/`friend_rejected`），在线状态实时广播（WS `online_status`）
 - 群组：创建 / 加入 / 退出 / 踢人 / 解散 / 成员列表（含在线状态）
 - 聊天：私聊 + 群聊（WS 实时收发）、历史消息分页、未读角标、已读标记、离线消息拉取、乐观发送（客户端 messageId 去重回显）
 - 会话列表：私聊/群聊聚合（最后消息、时间、未读数），群消息离线补发（已读游标）
@@ -68,7 +68,19 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 
 ### 配置
 
-`LHZ.OnlineChat.Server/appsettings.json` 中的 `ConnectionStrings:Default`、`Redis:Connection`、`Jwt:Secret`、`Cors:AllowedOrigins` 均可通过环境变量覆盖（ASP.NET Core 默认行为，如 `ConnectionStrings__Default`、`Redis__Connection`）。前端 WS 地址可用 `VITE_WS_URL` 覆盖（默认 `ws://localhost:5000`）。
+`LHZ.OnlineChat.Server/appsettings.json` 中的 `ConnectionStrings:Default`、`Redis:Connection`、`Jwt:Secret`、`Cors:AllowedOrigins`、`Smtp:*` 均可通过环境变量覆盖（ASP.NET Core 默认行为，如 `ConnectionStrings__Default`、`Redis__Connection`、`Smtp__Host`）。前端 WS 地址可用 `VITE_WS_URL` 覆盖（默认 `ws://localhost:5000`）。
+
+### 邮箱验证码（SMTP）
+
+注册需要邮箱验证码。未配置 `Smtp` 时（开发/演示模式），验证码**打印到服务端控制台**，并随 `POST /api/auth/send-code` 响应返回 `devCode` 字段（前端会展示提示）；配置 SMTP 后改为真实发送邮件，`devCode` 不再返回。
+
+```json
+"Smtp": { "Host": "smtp.example.com", "Port": 465, "EnableSsl": true, "User": "xxx", "Password": "***", "From": "no-reply@example.com" }
+```
+
+### 账号 ID
+
+账号即 `User_.Id`：int 类型，起始 **10000**，每次注册自增 1。服务启动时自动迁移（列类型 bigint→integer、序列起始值 ≥10000、幂等）。
 
 ## 生产部署
 
@@ -147,7 +159,7 @@ Cors__AllowedOrigins=https://chat.example.com   # 生产建议收敛来源，不
 
 ## 数据表
 
-`User_`、`Friend`（0待确认/1已接受/2已屏蔽）、`Group_`、`GroupMember`（0群主/1管理员/2成员）、`PrivateMessage`、`GroupMessage`。
+`User_`（Id=账号，Email 唯一）、`Friend`（0待确认/1已接受/2已屏蔽）、`Group_`、`GroupMember`（0群主/1管理员/2成员）、`PrivateMessage`、`GroupMessage`。
 
 ## License
 

@@ -3,9 +3,9 @@
     <div class="login-card">
       <div class="login-logo">💬</div>
       <h1>OnlineChat</h1>
-      <p class="subtitle">在线聊天系统</p>
+      <p class="subtitle">使用注册时分配的账号 ID 登录</p>
       <form @submit.prevent="handleLogin">
-        <input v-model="username" class="input" placeholder="用户名" required />
+        <input v-model="account" class="input" type="text" inputmode="numeric" placeholder="账号 ID" required />
         <input v-model="password" class="input" type="password" placeholder="密码" required />
         <button type="submit" class="btn btn-primary" :disabled="loading">
           {{ loading ? '登录中...' : '登 录' }}
@@ -20,25 +20,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWebSocketStore } from '@/stores/websocket'
 
+const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const ws = useWebSocketStore()
 
-const username = ref('')
+const account = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
 
+onMounted(() => {
+  // 注册成功后跳转携带的账号预填
+  const q = route.query.account
+  if (q && typeof q === 'string') account.value = q
+})
+
 async function handleLogin() {
+  const acc = Number(account.value.trim())
+  if (!acc || acc <= 0) {
+    error.value = '请输入正确的账号 ID'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
-    const res = await auth.login({ username: username.value, password: password.value })
+    const res = await auth.login({ account: acc, password: password.value })
     if (res.success) {
       ws.connect(auth.token)
       router.push('/chat')
@@ -127,7 +139,7 @@ async function handleLogin() {
   text-align: center;
   color: var(--text-secondary);
   margin-bottom: 24px;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .input {

@@ -18,7 +18,7 @@ public class Group_
     public string? Avatar { get; set; }
 
     [Column(IsNullable = false)]
-    public long OwnerId { get; set; }
+    public int OwnerId { get; set; }
 
     [Column(IsNullable = false)]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
