@@ -5,36 +5,48 @@
 }
 
 :root {
-  --primary: #4f46e5;
-  --primary-light: #818cf8;
-  --bg: #f3f4f6;
+  --primary: #5b6cff;
+  --primary-deep: #4a58e0;
+  --primary-light: #7c8cff;
+  --bg: #f0f2f7;
   --bg-white: #ffffff;
-  --text: #1f2937;
-  --text-secondary: #6b7280;
-  --border: #e5e7eb;
-  --online: #22c55e;
-  --offline: #9ca3af;
-  --danger: #ef4444;
-  --radius: 8px;
+  --bg-hover: #f5f6fa;
+  --text: #1f2329;
+  --text-secondary: #8f959e;
+  --border: #e8eaef;
+  --online: #34c759;
+  --offline: #c0c4cc;
+  --danger: #f56c6c;
+  --success: #34c759;
+  --radius: 10px;
+  --shadow-sm: 0 2px 8px rgba(31, 35, 41, 0.06);
+  --shadow: 0 8px 30px rgba(31, 35, 41, 0.14);
+  --mine-bubble: linear-gradient(135deg, #5b6cff 0%, #7c5cff 100%);
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   background: var(--bg);
   color: var(--text);
   height: 100vh;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #app {
   height: 100vh;
 }
 
-input, button {
+input,
+button,
+textarea {
   font-family: inherit;
   font-size: 14px;
 }
 
+/* ==================== 按钮 ==================== */
 .btn {
   padding: 10px 20px;
   border: none;
@@ -44,18 +56,23 @@ input, button {
   transition: all 0.2s;
 }
 
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   background: var(--primary);
   color: white;
+  box-shadow: 0 4px 12px rgba(91, 108, 255, 0.35);
 }
 
 .btn-primary:hover {
-  background: var(--primary-light);
-}
-
-.btn-danger {
-  background: var(--danger);
-  color: white;
+  background: var(--primary-deep);
 }
 
 .btn-ghost {
@@ -64,24 +81,73 @@ input, button {
 }
 
 .btn-ghost:hover {
-  background: var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+/* ==================== 输入框 ==================== */
 .input {
   width: 100%;
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   outline: none;
-  transition: border-color 0.2s;
+  background: var(--bg-hover);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
 .input:focus {
   border-color: var(--primary);
+  background: var(--bg-white);
+  box-shadow: 0 0 0 3px rgba(91, 108, 255, 0.12);
 }
 
-.flex-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.input::placeholder {
+  color: #b0b6c0;
+}
+
+/* ==================== 滚动条 ==================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d3d8e0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b9bfc9;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ==================== 动画 ==================== */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

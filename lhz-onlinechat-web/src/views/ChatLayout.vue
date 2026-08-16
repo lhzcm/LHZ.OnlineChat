@@ -1,37 +1,42 @@
 <template>
   <div class="chat-layout">
     <!-- 侧边栏 -->
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ 'is-hidden': mobileChatOpen }">
       <div class="sidebar-header">
         <div class="user-info">
-          <span class="avatar-placeholder">{{ auth.user?.nickname?.charAt(0) }}</span>
+          <span class="avatar" :style="{ background: avatarGradient(auth.user?.nickname || '') }">
+            {{ avatarInitial(auth.user?.nickname || '') }}
+          </span>
           <span class="nickname">{{ auth.user?.nickname }}</span>
         </div>
         <div class="header-actions">
-          <button class="btn btn-ghost btn-icon" @click="openRequestsModal" title="好友申请">
-            🔔
+          <button class="icon-btn" @click="openRequestsModal" title="好友申请">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
             <span v-if="friendStore.pendingRequests.length" class="badge">{{ friendStore.pendingRequests.length }}</span>
           </button>
-          <button class="btn btn-ghost btn-icon" @click="handleLogout" title="退出">⚙</button>
+          <button class="icon-btn" @click="handleLogout" title="退出登录">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
         </div>
       </div>
 
       <!-- Tab 切换 -->
       <div class="tabs">
-        <button :class="['tab', { active: activeTab === 'sessions' }]" @click="activeTab = 'sessions'">
-          会话
-        </button>
-        <button :class="['tab', { active: activeTab === 'friends' }]" @click="activeTab = 'friends'">
-          好友
-        </button>
-        <button :class="['tab', { active: activeTab === 'groups' }]" @click="activeTab = 'groups'">
-          群组
-        </button>
+        <button :class="['tab', { active: activeTab === 'sessions' }]" @click="activeTab = 'sessions'">会话</button>
+        <button :class="['tab', { active: activeTab === 'friends' }]" @click="activeTab = 'friends'">好友</button>
+        <button :class="['tab', { active: activeTab === 'groups' }]" @click="activeTab = 'groups'">群组</button>
       </div>
 
-      <!-- 搜索/操作栏 -->
+      <!-- 操作栏 -->
       <div class="action-bar">
-        <button class="btn btn-primary btn-sm" @click="openAddModal">
+        <button class="btn btn-primary" @click="openAddModal">
           {{ activeTab === 'friends' ? '+ 添加好友' : activeTab === 'groups' ? '+ 创建群组' : '＋' }}
         </button>
       </div>
@@ -41,17 +46,22 @@
         <div v-for="s in sortedSessions" :key="s.type + '_' + s.id"
           :class="['contact-item', { active: currentChat?.type === s.type && currentChat.id === s.id }]"
           @click="selectSession(s)">
-          <span class="avatar-placeholder small">{{ s.type === 'group' ? '#' : s.name.charAt(0) }}</span>
+          <span class="avatar small" :style="{ background: avatarGradient(s.name) }">{{ avatarInitial(s.name) }}</span>
           <div class="contact-info">
-            <span class="contact-name">{{ s.name }}</span>
-            <span class="contact-meta">{{ previewFor(s) }}</span>
-          </div>
-          <div class="session-right">
-            <span class="session-time">{{ timeFor(s) }}</span>
-            <span v-if="unreadOf(s.type, s.id)" class="unread-badge">{{ unreadOf(s.type, s.id) }}</span>
+            <div class="info-top">
+              <span class="contact-name">{{ s.name }}</span>
+              <span class="session-time">{{ timeFor(s) }}</span>
+            </div>
+            <div class="info-bottom">
+              <span class="contact-meta">{{ previewFor(s) }}</span>
+              <span v-if="unreadOf(s.type, s.id)" class="unread-badge">{{ unreadOf(s.type, s.id) }}</span>
+            </div>
           </div>
         </div>
-        <p class="empty" v-if="chatStore.sessions.length === 0">暂无会话</p>
+        <div class="empty" v-if="chatStore.sessions.length === 0">
+          <span class="empty-icon">💬</span>
+          <span>暂无会话，去添加好友开始聊天吧</span>
+        </div>
       </div>
 
       <!-- 好友列表 -->
@@ -59,15 +69,24 @@
         <div v-for="f in friendStore.friends" :key="f.userId"
           :class="['contact-item', { active: currentChat?.type === 'private' && currentChat.id === f.userId }]"
           @click="selectPrivateChat(f)">
-          <span :class="['status-dot', f.isOnline ? 'online' : 'offline']"></span>
-          <span class="avatar-placeholder small">{{ f.nickname.charAt(0) }}</span>
-          <div class="contact-info">
-            <span class="contact-name">{{ f.nickname }}</span>
-            <span class="contact-meta">{{ lastMessageFor('private', f.userId) || (f.isOnline ? '在线' : '离线') }}</span>
+          <div class="avatar-wrap">
+            <span class="avatar small" :style="{ background: avatarGradient(f.nickname) }">{{ avatarInitial(f.nickname) }}</span>
+            <span :class="['status-dot', f.isOnline ? 'online' : 'offline']"></span>
           </div>
-          <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
+          <div class="contact-info">
+            <div class="info-top">
+              <span class="contact-name">{{ f.nickname }}</span>
+              <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
+            </div>
+            <div class="info-bottom">
+              <span class="contact-meta">{{ lastMessageFor('private', f.userId) || (f.isOnline ? '在线' : '离线') }}</span>
+            </div>
+          </div>
         </div>
-        <p class="empty" v-if="friendStore.friends.length === 0">暂无好友</p>
+        <div class="empty" v-if="friendStore.friends.length === 0">
+          <span class="empty-icon">👥</span>
+          <span>暂无好友，点击上方按钮添加</span>
+        </div>
       </div>
 
       <!-- 群组列表 -->
@@ -75,41 +94,66 @@
         <div v-for="g in groupStore.groups" :key="g.id"
           :class="['contact-item', { active: currentChat?.type === 'group' && currentChat.id === g.id }]"
           @click="selectGroupChat(g)">
-          <span class="avatar-placeholder small">#</span>
+          <span class="avatar small" :style="{ background: avatarGradient(g.name) }">#</span>
           <div class="contact-info">
-            <span class="contact-name">{{ g.name }}</span>
-            <span class="contact-meta">{{ lastMessageFor('group', g.id) || `${g.memberCount} 人` }}</span>
+            <div class="info-top">
+              <span class="contact-name">{{ g.name }}</span>
+              <span v-if="unreadOf('group', g.id)" class="unread-badge">{{ unreadOf('group', g.id) }}</span>
+            </div>
+            <div class="info-bottom">
+              <span class="contact-meta">{{ lastMessageFor('group', g.id) || `${g.memberCount} 人` }}</span>
+            </div>
           </div>
-          <span v-if="unreadOf('group', g.id)" class="unread-badge">{{ unreadOf('group', g.id) }}</span>
         </div>
-        <p class="empty" v-if="groupStore.groups.length === 0">暂无群组</p>
+        <div class="empty" v-if="groupStore.groups.length === 0">
+          <span class="empty-icon">🗂️</span>
+          <span>暂无群组，点击上方按钮创建</span>
+        </div>
       </div>
     </aside>
 
     <!-- 聊天区域 -->
-    <main class="chat-main">
+    <main class="chat-main" :class="{ 'is-show': mobileChatOpen }">
       <!-- 未选择会话 -->
       <div class="no-chat" v-if="!currentChat">
+        <span class="empty-icon">💬</span>
         <p>选择一个会话开始聊天</p>
       </div>
 
       <!-- 聊天窗口 -->
       <template v-else>
         <div class="chat-header">
-          <span>{{ currentChat.name }}</span>
-        </div>
-        <div class="chat-messages" ref="msgContainer">
-          <div v-for="msg in currentMessages" :key="msg.messageId"
-            :class="['message', { mine: Number(msg.from) === auth.user?.id }]">
-            <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
-              {{ msg.senderName }}
-            </span>
-            <div class="msg-bubble">{{ msg.content }}</div>
+          <button class="back-btn" @click="backToList" title="返回">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <span class="avatar small" :style="{ background: avatarGradient(currentChat.name) }">{{ avatarInitial(currentChat.name) }}</span>
+          <div class="chat-title">
+            <span class="chat-name">{{ currentChat.name }}</span>
+            <span class="chat-sub">{{ chatSub }}</span>
           </div>
         </div>
+
+        <div class="chat-messages" ref="msgContainer">
+          <div v-for="msg in currentMessages" :key="msg.messageId"
+            :class="['msg-row', { mine: Number(msg.from) === auth.user?.id }]">
+            <span class="avatar msg-avatar" :style="{ background: avatarGradient(msg.senderName || currentChat.name) }">
+              {{ avatarInitial(msg.senderName || currentChat.name) }}
+            </span>
+            <div class="msg-body">
+              <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
+                {{ msg.senderName }}
+              </span>
+              <div class="msg-bubble">{{ msg.content }}</div>
+              <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="chat-input-bar">
-          <input v-model="inputText" class="input" placeholder="输入消息..." @keyup.enter="send" />
-          <button class="btn btn-primary" @click="send">发送</button>
+          <input v-model="inputText" class="input" placeholder="输入消息…" @keyup.enter="send" />
+          <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
         </div>
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
       </template>
@@ -119,12 +163,15 @@
     <div class="modal-overlay" v-if="showRequestsModal" @click.self="showRequestsModal = false">
       <div class="modal">
         <h3>好友申请</h3>
-        <p class="empty" v-if="friendStore.pendingRequests.length === 0">暂无待处理的申请</p>
+        <div class="empty" v-if="friendStore.pendingRequests.length === 0">
+          <span class="empty-icon">📭</span>
+          <span>暂无待处理的申请</span>
+        </div>
         <div v-for="r in friendStore.pendingRequests" :key="r.id" class="request-item">
-          <span class="avatar-placeholder small">{{ r.nickname.charAt(0) }}</span>
+          <span class="avatar small" :style="{ background: avatarGradient(r.nickname) }">{{ avatarInitial(r.nickname) }}</span>
           <div class="request-info">
             <span class="request-name">{{ r.nickname }}</span>
-            <span class="request-meta">{{ r.username }}</span>
+            <span class="request-meta">@{{ r.username }}</span>
           </div>
           <div class="request-actions">
             <button class="btn btn-sm btn-primary" :disabled="handlingRequestId === r.id" @click="acceptRequest(r)">接受</button>
@@ -141,11 +188,11 @@
       <div class="modal">
         <h3>{{ activeTab === 'friends' ? '添加好友' : '创建群组' }}</h3>
         <template v-if="activeTab === 'friends'">
-          <input v-model="addFriendUsername" class="input" placeholder="输入好友用户名" />
+          <input v-model="addFriendUsername" class="input" placeholder="输入好友用户名" @keyup.enter="addFriend" />
           <button class="btn btn-primary" @click="addFriend">发送申请</button>
         </template>
         <template v-else>
-          <input v-model="newGroupName" class="input" placeholder="输入群组名称" />
+          <input v-model="newGroupName" class="input" placeholder="输入群组名称" @keyup.enter="createGroup" />
           <button class="btn btn-primary" @click="createGroup">创建</button>
         </template>
         <p class="modal-error" v-if="modalError">{{ modalError }}</p>
@@ -185,6 +232,8 @@ const showRequestsModal = ref(false)
 const handlingRequestId = ref<number | null>(null)
 const requestError = ref('')
 const sendHint = ref('')
+// 移动端：聊天窗口全屏开关
+const mobileChatOpen = ref(false)
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -198,6 +247,55 @@ const currentMessages = computed(() => {
 const sortedSessions = computed(() =>
   [...chatStore.sessions].sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime())
 )
+
+// 聊天窗口副标题：私聊显示在线状态，群聊显示人数
+const chatSub = computed(() => {
+  if (!currentChat.value) return ''
+  if (currentChat.value.type === 'private') {
+    const f = friendStore.friends.find(x => x.userId === currentChat.value!.id)
+    return f ? (f.isOnline ? '在线' : '离线') : ''
+  }
+  const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
+  return g ? `${g.memberCount} 人` : ''
+})
+
+// ==================== 头像 ====================
+const avatarColors = [
+  'linear-gradient(135deg, #5b6cff, #9c6bff)',
+  'linear-gradient(135deg, #00c6fb, #005bea)',
+  'linear-gradient(135deg, #f093fb, #f5576c)',
+  'linear-gradient(135deg, #4facfe, #00f2fe)',
+  'linear-gradient(135deg, #43e97b, #38b6f9)',
+  'linear-gradient(135deg, #fa709a, #fee140)',
+  'linear-gradient(135deg, #a18cd1, #fbc2eb)',
+  'linear-gradient(135deg, #f83600, #f9d423)'
+]
+
+/** 按名称哈希生成稳定的渐变头像背景 */
+function avatarGradient(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return avatarColors[h % avatarColors.length]
+}
+
+function avatarInitial(name: string): string {
+  return (name || '?').charAt(0).toUpperCase()
+}
+
+// ==================== 时间 ====================
+function pad(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function formatMsgTime(ts: number): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (d.toDateString() === now.toDateString()) return hm
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`
+}
 
 onMounted(async () => {
   if (!auth.isLoggedIn) {
@@ -261,6 +359,7 @@ function selectPrivateChat(friend: { userId: number; nickname: string }) {
   chatStore.setCurrentSession('private', friend.userId, friend.nickname)
   chatStore.loadHistory('private', friend.userId)
   chatStore.markSessionRead('private', friend.userId)
+  mobileChatOpen.value = true
   scrollToBottom()
 }
 
@@ -269,6 +368,7 @@ function selectGroupChat(group: { id: number; name: string }) {
   chatStore.setCurrentSession('group', group.id, group.name)
   chatStore.loadHistory('group', group.id)
   chatStore.markSessionRead('group', group.id)
+  mobileChatOpen.value = true
   scrollToBottom()
 }
 
@@ -278,6 +378,11 @@ function selectSession(s: SessionInfo) {
   } else {
     selectGroupChat({ id: s.id, name: s.name })
   }
+}
+
+/** 移动端：返回会话列表 */
+function backToList() {
+  mobileChatOpen.value = false
 }
 
 /** 会话预览：优先本地最新消息，否则用服务端会话数据 */
@@ -297,7 +402,7 @@ function timeFor(s: SessionInfo): string {
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
   return sameDay
-    ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    ? `${pad(d.getHours())}:${pad(d.getMinutes())}`
     : `${d.getMonth() + 1}/${d.getDate()}`
 }
 
@@ -433,136 +538,168 @@ watch(activeTab, () => {
 .chat-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
 }
 
-/* Sidebar */
+/* ==================== 侧边栏 ==================== */
 .sidebar {
-  width: 300px;
+  width: 320px;
   background: var(--bg-white);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.btn-icon {
-  position: relative;
-  padding: 6px 8px;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--danger);
-  color: white;
-  font-size: 11px;
-  line-height: 16px;
-  text-align: center;
+  padding: 14px 16px;
 }
 
 .user-info {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.avatar-placeholder {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: 18px;
-}
-
-.avatar-placeholder.small {
-  width: 36px;
-  height: 36px;
-  font-size: 16px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .nickname {
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: white;
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+  border: 1.5px solid var(--bg-white);
+}
+
+/* Tab 切换 */
 .tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  padding: 2px 12px 10px;
 }
 
 .tab {
   flex: 1;
-  padding: 12px;
+  padding: 8px 0;
   border: none;
-  background: none;
+  border-radius: 10px;
+  background: transparent;
   cursor: pointer;
   font-size: 14px;
+  font-weight: 500;
   color: var(--text-secondary);
   transition: all 0.2s;
 }
 
+.tab:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
 .tab.active {
+  background: #eef1ff;
   color: var(--primary);
-  border-bottom: 2px solid var(--primary);
+  font-weight: 600;
 }
 
+/* 操作栏 */
 .action-bar {
-  padding: 12px;
+  padding: 0 12px 12px;
 }
 
-.btn-sm {
+.action-bar .btn {
   width: 100%;
-  padding: 8px 16px;
-  font-size: 13px;
+  background: var(--mine-bubble);
+  box-shadow: 0 4px 12px rgba(91, 108, 255, 0.28);
 }
 
+.action-bar .btn:hover {
+  filter: brightness(1.06);
+}
+
+/* 列表 */
 .contact-list {
   flex: 1;
   overflow-y: auto;
+  padding-bottom: 8px;
 }
 
 .contact-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: 2px 10px;
+  border-radius: 12px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
-.contact-item:hover { background: var(--bg); }
-.contact-item.active { background: #eef2ff; }
+.contact-item:hover {
+  background: var(--bg-hover);
+}
+
+.contact-item.active {
+  background: #eef1ff;
+}
+
+.avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  flex-shrink: 0;
+  border: 2px solid var(--bg-white);
 }
 
 .status-dot.online { background: var(--online); }
@@ -570,22 +707,40 @@ watch(activeTab, () => {
 
 .contact-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 3px;
+}
+
+.info-top,
+.info-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .contact-name {
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .contact-meta {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-time {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .unread-badge {
@@ -601,29 +756,26 @@ watch(activeTab, () => {
   flex-shrink: 0;
 }
 
-.session-right {
+.empty {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.session-time {
-  font-size: 11px;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 20px;
   color: var(--text-secondary);
-}
-
-.empty {
+  font-size: 13.5px;
   text-align: center;
-  padding: 40px;
-  color: var(--text-secondary);
-  font-size: 14px;
 }
 
-/* Chat Main */
+.empty-icon {
+  font-size: 40px;
+  opacity: 0.55;
+}
+
+/* ==================== 聊天区域 ==================== */
 .chat-main {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -632,79 +784,182 @@ watch(activeTab, () => {
 .no-chat {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .chat-header {
-  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
   background: var(--bg-white);
   border-bottom: 1px solid var(--border);
-  font-weight: 500;
+  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.04);
+  z-index: 1;
+}
+
+.back-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--bg-hover);
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.back-btn:active {
+  background: var(--border);
+}
+
+.chat-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-name {
+  font-weight: 600;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  background: linear-gradient(180deg, #f2f4f9 0%, #e9edf5 100%);
 }
 
-.message {
+/* 消息行 */
+.msg-row {
   display: flex;
-  flex-direction: column;
-  max-width: 60%;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 78%;
 }
 
-.message.mine {
+.msg-row.mine {
   align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.msg-avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
+}
+
+.msg-row.mine .msg-avatar {
+  display: none;
+}
+
+.msg-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.msg-row.mine .msg-body {
+  align-items: flex-end;
 }
 
 .msg-sender {
   font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 2px;
-  margin-left: 4px;
+  margin-left: 2px;
 }
 
 .msg-bubble {
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.5;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  line-height: 1.55;
   word-break: break-word;
+  box-shadow: var(--shadow-sm);
 }
 
-.message:not(.mine) .msg-bubble {
+.msg-row:not(.mine) .msg-bubble {
   background: var(--bg-white);
-  border: 1px solid var(--border);
   border-top-left-radius: 4px;
 }
 
-.message.mine .msg-bubble {
-  background: var(--primary);
+.msg-row.mine .msg-bubble {
+  background: var(--mine-bubble);
   color: white;
   border-top-right-radius: 4px;
 }
 
+.msg-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 0 4px;
+}
+
+/* 输入区 */
 .chat-input-bar {
   display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 14px 20px 4px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--bg-white);
   border-top: 1px solid var(--border);
 }
 
 .chat-input-bar .input {
   flex: 1;
+  border-radius: 20px;
+  background: var(--bg-hover);
+  border-color: transparent;
 }
 
-.chat-input-bar .btn {
-  padding: 10px 24px;
+.chat-input-bar .input:focus {
+  background: var(--bg-white);
+}
+
+.send-btn {
+  padding: 9px 22px;
+  border: none;
+  border-radius: 20px;
+  background: var(--mine-bubble);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(91, 108, 255, 0.35);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.send-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .send-hint {
@@ -714,33 +969,38 @@ watch(activeTab, () => {
   background: var(--bg-white);
 }
 
-/* Modal */
+/* ==================== 弹窗 ==================== */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(15, 18, 26, 0.45);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  animation: fade-in 0.2s;
 }
 
 .modal {
   background: var(--bg-white);
-  padding: 30px;
-  border-radius: 12px;
+  padding: 24px;
+  border-radius: 16px;
   width: 420px;
-  max-height: 70vh;
+  max-width: calc(100vw - 40px);
+  max-height: 72vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  box-shadow: var(--shadow);
+  animation: modal-in 0.25s;
 }
 
 .modal h3 { font-size: 18px; }
 
 .modal-error { color: var(--danger); font-size: 13px; }
-.modal-success { color: var(--online); font-size: 13px; }
+.modal-success { color: var(--success); font-size: 13px; }
 
 /* 好友申请列表 */
 .request-item {
@@ -757,13 +1017,14 @@ watch(activeTab, () => {
 
 .request-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .request-name {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 14px;
 }
 
@@ -780,5 +1041,69 @@ watch(activeTab, () => {
 .request-actions .btn {
   padding: 6px 14px;
   font-size: 12px;
+}
+
+/* ==================== 头像 ==================== */
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 18px;
+  flex-shrink: 0;
+  user-select: none;
+  box-shadow: inset 0 -2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.avatar.small {
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+}
+
+/* ==================== 移动端适配 ==================== */
+@media (max-width: 720px) {
+  .sidebar {
+    width: 100%;
+  }
+
+  .sidebar.is-hidden {
+    display: none;
+  }
+
+  .chat-main {
+    display: none;
+    width: 100%;
+  }
+
+  .chat-main.is-show {
+    display: flex;
+  }
+
+  .back-btn {
+    display: flex;
+  }
+
+  .msg-row {
+    max-width: 85%;
+  }
+
+  .chat-messages {
+    padding: 14px 12px;
+  }
+
+  .modal {
+    padding: 20px;
+  }
+}
+
+@media (min-width: 721px) {
+  .back-btn {
+    display: none;
+  }
 }
 </style>
