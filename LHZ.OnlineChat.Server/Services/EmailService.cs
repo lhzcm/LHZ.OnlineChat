@@ -1,12 +1,19 @@
 using System.Net;
-using System.Net.Mail;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using LHZ.OnlineChat.Server.Config;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 
 namespace LHZ.OnlineChat.Server.Services;
 
 /// <summary>
-/// 邮件发送服务。
+/// 邮件发送服务（基于 MailKit）。
 /// 未配置 SMTP 时（开发/演示模式），验证码打印到控制台，SendCodeAsync 返回 false。
+/// 部分网络环境 IPv6 路由不通会导致连接超时，因此优先解析 IPv4 建立连接，
+/// 同时以配置域名作为 TLS 证书校验目标（IP 直连会导致证书主机名校验失败）。
 /// </summary>
 public class EmailService
 {
@@ -30,26 +37,49 @@ public class EmailService
 
         try
         {
-#pragma warning disable SYSLIB0037 // System.Net.Mail.SmtpClient 已过时，但保持零额外依赖
-            using var client = new SmtpClient(_smtp.Host, _smtp.Port)
+            var message = new MimeMessage();
+            message.From.Add(MailboxAddress.Parse(_smtp.From));
+            message.To.Add(MailboxAddress.Parse(to));
+            message.Subject = "OnlineChat 注册验证码";
+            message.Body = new TextPart("plain")
             {
-                EnableSsl = _smtp.EnableSsl,
-                Timeout = 10000
+                Text = $"【OnlineChat】您的注册验证码是 {code}，5 分钟内有效，请勿泄露给他人。"
             };
-#pragma warning restore SYSLIB0037
+
+            using var client = new SmtpClient();
+
+            // 优先用 IPv4 地址建立 TCP 连接，再用配置域名完成 TLS（证书校验按域名）
+            var ipv4 = (await Dns.GetHostAddressesAsync(_smtp.Host))
+                .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
+
+            if (ipv4 != null)
+            {
+                var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                await socket.ConnectAsync(ipv4, _smtp.Port);
+
+                var sslStream = new SslStream(new NetworkStream(socket, ownsSocket: true));
+                await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                {
+                    TargetHost = _smtp.Host,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+                });
+
+                // 流已完成 TLS，通知 MailKit 无需再握手
+                await client.ConnectAsync(sslStream, _smtp.Host, _smtp.Port, SecureSocketOptions.None);
+            }
+            else
+            {
+                // 兜底：按域名连接
+                await client.ConnectAsync(_smtp.Host, _smtp.Port, SecureSocketOptions.SslOnConnect);
+            }
 
             if (!string.IsNullOrWhiteSpace(_smtp.User))
             {
-                client.Credentials = new NetworkCredential(_smtp.User, _smtp.Password);
+                await client.AuthenticateAsync(_smtp.User, _smtp.Password);
             }
 
-            var message = new MailMessage(_smtp.From, to)
-            {
-                Subject = "OnlineChat 注册验证码",
-                Body = $"【OnlineChat】您的注册验证码是 {code}，5 分钟内有效，请勿泄露给他人。"
-            };
-
-            await client.SendMailAsync(message);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
             Console.WriteLine($"[MAIL] 验证码已发送至 {to}");
             return true;
         }

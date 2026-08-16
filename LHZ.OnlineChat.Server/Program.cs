@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 var appSettings = new AppSettings();
 builder.Configuration.Bind(appSettings);
 builder.Services.AddSingleton(appSettings);
+Console.WriteLine($"[CFG] Smtp.Host='{appSettings.Smtp.Host}', Port={appSettings.Smtp.Port}, EnableSsl={appSettings.Smtp.EnableSsl}, User='{appSettings.Smtp.User}', From='{appSettings.Smtp.From}'");
 
 // ==================== 确保数据库存在 ====================
 EnsureDatabaseExists(appSettings.ConnectionStrings.Default);
