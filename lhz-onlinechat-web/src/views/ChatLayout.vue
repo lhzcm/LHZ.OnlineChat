@@ -152,7 +152,24 @@
         </div>
 
         <div class="chat-input-bar">
-          <input v-model="inputText" class="input" placeholder="输入消息…" @keyup.enter="send" />
+          <!-- 表情面板 -->
+          <div class="emoji-panel" ref="emojiPanelRef" v-if="showEmojiPanel" @click.stop>
+            <div class="emoji-group" v-for="g in emojiGroups" :key="g.name">
+              <div class="emoji-group-title">{{ g.name }}</div>
+              <div class="emoji-grid">
+                <button v-for="e in g.list" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
+              </div>
+            </div>
+          </div>
+          <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
+          <input ref="inputEl" v-model="inputText" class="input" placeholder="输入消息…" @keydown.enter="onInputEnter" />
           <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
         </div>
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
@@ -204,13 +221,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
 import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
+import { emojiGroups } from '@/constants/emojis'
 import type { FriendRequestInfo, WsMessage, ChatType, SessionInfo } from '@/types'
 
 const router = useRouter()
@@ -222,6 +240,7 @@ const ws = useWebSocketStore()
 
 const activeTab = ref<'sessions' | 'friends' | 'groups'>('friends')
 const inputText = ref('')
+const inputEl = ref<HTMLInputElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
 const showAddModal = ref(false)
 const addFriendUsername = ref('')
@@ -234,6 +253,10 @@ const requestError = ref('')
 const sendHint = ref('')
 // 移动端：聊天窗口全屏开关
 const mobileChatOpen = ref(false)
+// 表情面板
+const showEmojiPanel = ref(false)
+const emojiPanelRef = ref<HTMLElement | null>(null)
+const emojiBtnRef = ref<HTMLElement | null>(null)
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -330,7 +353,49 @@ onMounted(async () => {
       }
     }
   } catch { /* 离线消息拉取失败不阻塞界面 */ }
+
+  // 点击面板/按钮外部时关闭表情面板
+  document.addEventListener('click', onDocClick)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+})
+
+function onDocClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!emojiPanelRef.value?.contains(target) && !emojiBtnRef.value?.contains(target)) {
+    showEmojiPanel.value = false
+  }
+}
+
+// ==================== 表情 ====================
+function toggleEmojiPanel() {
+  showEmojiPanel.value = !showEmojiPanel.value
+}
+
+/** 在输入框光标位置插入表情，并恢复焦点与光标 */
+function insertEmoji(emoji: string) {
+  const el = inputEl.value
+  if (el) {
+    const start = el.selectionStart ?? inputText.value.length
+    const end = el.selectionEnd ?? inputText.value.length
+    inputText.value = inputText.value.slice(0, start) + emoji + inputText.value.slice(end)
+    nextTick(() => {
+      el.focus()
+      const pos = start + emoji.length
+      el.setSelectionRange(pos, pos)
+    })
+  } else {
+    inputText.value += emoji
+  }
+}
+
+/** 回车发送（中文输入法组词回车不误发） */
+function onInputEnter(e: KeyboardEvent) {
+  if (e.isComposing) return
+  send()
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -919,12 +984,96 @@ watch(activeTab, () => {
 
 /* 输入区 */
 .chat-input-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--bg-white);
   border-top: 1px solid var(--border);
+}
+
+.emoji-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.emoji-btn:hover {
+  background: var(--bg-hover);
+  color: #f7b731;
+}
+
+.emoji-btn:active {
+  transform: scale(0.92);
+}
+
+/* 表情面板 */
+.emoji-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 12px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px 12px;
+  z-index: 20;
+  animation: modal-in 0.18s;
+}
+
+.emoji-group-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 2px 4px;
+  font-weight: 500;
+}
+
+.emoji-group:first-child .emoji-group-title {
+  padding-top: 2px;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+}
+
+.emoji-item {
+  width: 100%;
+  aspect-ratio: 1;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 21px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emoji-item:hover {
+  background: var(--bg-hover);
+  transform: scale(1.15);
+}
+
+.emoji-item:active {
+  transform: scale(0.92);
 }
 
 .chat-input-bar .input {
@@ -1094,6 +1243,16 @@ watch(activeTab, () => {
 
   .chat-messages {
     padding: 14px 12px;
+  }
+
+  .emoji-panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+
+  .emoji-grid {
+    grid-template-columns: repeat(7, 1fr);
   }
 
   .modal {
