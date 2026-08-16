@@ -17,9 +17,12 @@ export const useWebSocketStore = defineStore('websocket', () => {
     if (!token) return
     if (ws?.readyState === WebSocket.OPEN) return
 
-    // 可通过 VITE_WS_URL 环境变量覆盖（如 wss://chat.example.com），默认本地开发地址
-    const baseUrl = (import.meta.env.VITE_WS_URL as string | undefined) || 'ws://localhost:5000'
-    const wsUrl = `${baseUrl}/?access_token=${token}`
+    // 生产:VITE_WS_URL 未配置时自动使用当前站点同域的 /ws 路径(经 nginx 反代);
+    // 开发:通过 .env.development 配置 VITE_WS_URL=ws://localhost:5000
+    const envWs = import.meta.env.VITE_WS_URL as string | undefined
+    const wsUrl = envWs
+      ? `${envWs}/?access_token=${token}`
+      : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?access_token=${token}`
     ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {

@@ -1,0 +1,71 @@
+services:
+  # ==================== PostgreSQL ====================
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${PG_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-56379}:6379"
+    volumes:
+      - redisdata:/data
+
+  # ==================== 后端 API + WebSocket ====================
+  backend:
+    build:
+      context: .
+      dockerfile: LHZ.OnlineChat.Server/Dockerfile
+    restart: unless-stopped
+    environment:
+      # 覆盖 appsettings.json 的本地开发配置
+      ConnectionStrings__Default: Host=postgres;Database=OnlineChat;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
+      Redis__Connection: redis:6379
+      Jwt__Secret: ${JWT_SECRET:-OnlineChat-SuperSecret-Key-AtLeast32Characters!}
+      Jwt__Issuer: OnlineChat
+      Jwt__Audience: OnlineChat
+      Cors__AllowedOrigins: ${CORS_ORIGINS:-*}
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-465}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+      Smtp__User: ${SMTP_USER:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__From: ${SMTP_FROM:-no-reply@onlinechat.local}
+      ASPNETCORE_ENVIRONMENT: Production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # ==================== 前端(nginx:静态文件 + API/WS 反代) ====================
+  frontend:
+    build:
+      context: .
+      dockerfile: lhz-onlinechat-web/Dockerfile
+      args:
+        VITE_WS_URL: ${VITE_WS_URL:-}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:

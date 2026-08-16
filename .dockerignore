@@ -1,0 +1,16 @@
+# ===== .NET =====
+**/bin/
+**/obj/
+**/artifacts/
+
+# ===== Node =====
+**/node_modules/
+**/dist/
+
+# ===== 其他 =====
+.git/
+.vscode/
+.idea/
+*.md
+*.log
+.env

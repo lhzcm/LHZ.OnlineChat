@@ -84,38 +84,60 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 
 ## 生产部署
 
-建议：前端 `npm run build` 后由 Nginx/Caddy 托管静态文件，API 与 WebSocket 通过反向代理转发到后端，**HTTPS 在反向代理层终止（wss）**。
+### Docker Compose(推荐)
+
+项目内置完整容器化方案:PostgreSQL + Redis + 后端 + 前端(nginx 托管静态文件并反代 API/WebSocket)。
+
+```bash
+# 1. 准备环境变量(修改数据库密码、JWT 密钥、SMTP、域名等)
+cp .env.example .env
+vim .env
+
+# 2. 构建并启动(首次构建约 5-10 分钟)
+docker compose up -d --build
+
+# 3. 查看状态
+docker compose ps
+docker compose logs -f backend
+```
+
+- 前端:`http://服务器IP:8080`(`.env` 中 `WEB_PORT` 可改,配 HTTPS 域名后建议用 nginx/caddy 反代到 80/443)
+- 后端 API/WS 仅容器内网访问(`backend:5000`),通过前端 nginx 统一反代
+- 数据库、Redis 数据持久化在 Docker volumes(`pgdata`/`redisdata`)
+- **HTTPS/wss**:在站点域名反代层终止 SSL,把 `wss://` 流量转发到 `WEB_PORT` 即可(前端 WS 自动走当前站点同域 `/ws` 路径)
+
+### 关键配置说明
+
+| 配置 | 说明 |
+|---|---|
+| `POSTGRES_PASSWORD` | 数据库密码(务必修改) |
+| `JWT_SECRET` | 至少 32 字符随机串(务必修改) |
+| `SMTP_HOST/USER/PASSWORD/FROM` | 邮箱验证码 SMTP;留空则验证码打印到后端日志并随 `send-code` 接口返回(`devCode`),仅限测试 |
+| `CORS_ORIGINS` | 允许的来源,多个逗号分隔;同域反代场景默认 `*` 即可 |
+| `VITE_WS_URL` | 前端 WS 地址,如 `wss://chat.example.com`;留空自动用当前站点同域 `/ws` |
+
+### 单机手动部署(无 Docker)
+
+前端 `npm run build` 产物由 nginx 托管,`/api` 与 `/ws` 反代到后端:
 
 ```nginx
-# /etc/nginx/sites-available/onlinechat
+# /etc/nginx/conf.d/onlinechat.conf
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
 server {
-    listen 443 ssl http2;
-    server_name chat.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/chat.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/chat.example.com/privkey.pem;
-
-    # 前端静态文件（lhz-onlinechat-web/dist）
+    listen 80;
     root /var/www/onlinechat;
     index index.html;
     location / { try_files $uri $uri/ /index.html; }
-
-    # REST API
-    location /api/ {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # WebSocket（wss）
-    location / {
-        proxy_pass http://127.0.0.1:5000;
+    location /api/ { proxy_pass http://127.0.0.1:5000; proxy_set_header Host $host; }
+    location /ws {
+        proxy_pass http://127.0.0.1:5000/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
+        proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 3600s;
     }
 }
@@ -131,8 +153,6 @@ Redis__Connection=redis-host:6379
 Jwt__Secret=<强随机密钥，至少32字符>
 Cors__AllowedOrigins=https://chat.example.com   # 生产建议收敛来源，不要用 *
 ```
-
-前端构建时注入：`VITE_WS_URL=wss://chat.example.com npm run build`（WS 走同域反代，`/` 路径由 Nginx 转发）。
 
 ## WebSocket 协议
 
