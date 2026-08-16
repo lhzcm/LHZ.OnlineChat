@@ -7,7 +7,7 @@
       <form @submit.prevent="handleRegister">
         <input v-model="nickname" class="input" placeholder="昵称（可重复）" required />
         <div class="code-row">
-          <input v-model="email" class="input" type="email" placeholder="邮箱地址" required :disabled="counting > 0" />
+          <input v-model="email" class="input" type="email" placeholder="邮箱地址" required />
           <button type="button" class="btn code-btn" :disabled="counting > 0 || !email || sending" @click="sendCode">
             {{ sending ? '发送中…' : counting > 0 ? `${counting}s 后重发` : '获取验证码' }}
           </button>
@@ -19,6 +19,7 @@
           {{ loading ? '注册中...' : '注 册' }}
         </button>
         <p class="error" v-if="error">{{ error }}</p>
+        <p class="info" v-if="info">{{ info }}</p>
         <p class="dev-tip" v-if="devCode">开发模式验证码：<b>{{ devCode }}</b>（未配置 SMTP 时显示）</p>
       </form>
       <p class="link">
@@ -29,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '@/api/auth'
 
@@ -44,8 +45,22 @@ const loading = ref(false)
 const sending = ref(false)
 const counting = ref(0)
 const error = ref('')
+const info = ref('')
 const devCode = ref('')
+// 验证码已发送到的邮箱（用于检测用户更换邮箱）
+const sentEmail = ref('')
 let countTimer: number | null = null
+
+// 邮箱变更后，旧验证码失效：清空验证码输入并提示重新获取
+watch(email, (val) => {
+  if (sentEmail.value && val.trim().toLowerCase() !== sentEmail.value) {
+    code.value = ''
+    devCode.value = ''
+    sentEmail.value = ''
+    error.value = ''
+    info.value = '邮箱已变更，请重新获取验证码'
+  }
+})
 
 function startCountdown() {
   counting.value = 60
@@ -62,10 +77,13 @@ async function sendCode() {
   if (!email.value || counting.value > 0 || sending.value) return
   sending.value = true
   error.value = ''
+  info.value = ''
   devCode.value = ''
   try {
     const res = await authApi.sendCode({ email: email.value.trim() })
     if (res.success) {
+      sentEmail.value = email.value.trim().toLowerCase()
+      info.value = `验证码已发送至 ${email.value.trim()}，5 分钟内有效`
       if (res.data?.devCode) devCode.value = res.data.devCode
       startCountdown()
     } else {
@@ -248,6 +266,13 @@ onUnmounted(() => {
   text-align: center;
   margin-top: 12px;
   font-size: 13px;
+}
+
+.info {
+  color: var(--success);
+  text-align: center;
+  margin-top: 10px;
+  font-size: 12.5px;
 }
 
 .dev-tip {
