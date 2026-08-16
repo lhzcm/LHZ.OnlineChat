@@ -42,7 +42,7 @@ public class MessageService
         if (cachedMessages.Length > 0 && page == 1)
         {
             var cachedList = cachedMessages
-                .Select(m => JsonSerializer.Deserialize<MessageDto>(m))
+                .Select(m => JsonSerializer.Deserialize<MessageDto>(m, JsonDefaults.Web))
                 .Where(m => m != null)
                 .Select(m => m!)
                 .OrderBy(m => m.SentAt)

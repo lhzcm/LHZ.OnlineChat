@@ -30,7 +30,7 @@ public class RedisService : IDisposable
 
     public async Task SetJsonAsync<T>(string key, T value, TimeSpan? expiry = null)
     {
-        var json = JsonSerializer.Serialize(value);
+        var json = JsonSerializer.Serialize(value, JsonDefaults.Web);
         await _db.StringSetAsync(key, json, expiry.HasValue ? (StackExchange.Redis.Expiration)expiry.Value : StackExchange.Redis.Expiration.Default);
     }
 
@@ -38,7 +38,7 @@ public class RedisService : IDisposable
     {
         var json = await _db.StringGetAsync(key);
         if (json.IsNullOrEmpty) return null;
-        return JsonSerializer.Deserialize<T>((string)json!);
+        return JsonSerializer.Deserialize<T>((string)json!, JsonDefaults.Web);
     }
 
     public async Task<bool> KeyExistsAsync(string key)

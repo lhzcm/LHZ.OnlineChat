@@ -30,7 +30,7 @@ public class WsMessageHandler
         WsMessage? message;
         try
         {
-            message = JsonSerializer.Deserialize<WsMessage>(rawMessage);
+            message = JsonSerializer.Deserialize<WsMessage>(rawMessage, JsonDefaults.Web);
         }
         catch
         {
@@ -90,7 +90,7 @@ public class WsMessageHandler
 
         // 写入 Redis 缓存（单聊：key 为较小ID:较大ID）
         var cacheKey = GetPrivateChatCacheKey(userId, receiverId);
-        var msgJson = JsonSerializer.Serialize(message);
+        var msgJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
         await _redis.ListLeftPushAsync(cacheKey, msgJson);
         await _redis.ListTrimAsync(cacheKey, 0, 49); // 保留最近 50 条
 
@@ -99,7 +99,7 @@ public class WsMessageHandler
         message.SenderName = senderUser?.Nickname ?? "未知";
         message.SenderAvatar = senderUser?.Avatar;
 
-        var responseJson = JsonSerializer.Serialize(message);
+        var responseJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
 
         // 如果接收者在线，直接转发
         var receiverClient = _connectionManager.GetConnection(receiverId);
@@ -150,7 +150,7 @@ public class WsMessageHandler
 
         // 写入 Redis 缓存
         var cacheKey = $"chat:group:{groupId}";
-        var msgJson = JsonSerializer.Serialize(message);
+        var msgJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
         await _redis.ListLeftPushAsync(cacheKey, msgJson);
         await _redis.ListTrimAsync(cacheKey, 0, 49); // 保留最近 50 条
 
@@ -159,7 +159,7 @@ public class WsMessageHandler
         message.SenderName = senderUser?.Nickname ?? "未知";
         message.SenderAvatar = senderUser?.Avatar;
 
-        var responseJson = JsonSerializer.Serialize(message);
+        var responseJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
 
         // 获取群所有成员
         var members = await _fsql.Select<GroupMember>()
@@ -216,7 +216,7 @@ public class WsMessageHandler
         {
             message.From = userId.ToString();
             message.SenderName = "";
-            targetClient.SendMessage(JsonSerializer.Serialize(message));
+            targetClient.SendMessage(JsonSerializer.Serialize(message, JsonDefaults.Web));
         }
 
         return Task.CompletedTask;
@@ -260,7 +260,7 @@ public class WsMessageHandler
             Type = WsMessageType.OnlineStatus,
             From = userId.ToString(),
             Content = online ? "online" : "offline"
-        });
+        }, JsonDefaults.Web);
 
         foreach (var f in friendships)
         {
@@ -286,7 +286,7 @@ public class WsMessageHandler
                 Type = WsMessageType.FriendRequest,
                 From = fromUserId.ToString(),
                 Content = "new_friend_request"
-            }));
+            }, JsonDefaults.Web));
         }
     }
 }

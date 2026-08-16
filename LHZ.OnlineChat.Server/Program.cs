@@ -186,7 +186,21 @@ app.UseWebSocket(context =>
     client.OnClientClose += (IWebSocketClient sender) =>
     {
         Console.WriteLine($"[WS] 连接断开: {userId}");
-        _ = connectionManager.RemoveConnectionAsync(userId, sender);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // 仅当该连接仍登记在册时清理并广播下线，避免重复触发
+                if (await connectionManager.RemoveConnectionAsync(userId, sender))
+                {
+                    await messageHandler.NotifyFriendsStatusAsync(userId, online: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WS] 下线清理失败: {userId} — {ex.Message}");
+            }
+        });
     };
 
     // 先登记新连接（覆盖旧映射），再关闭旧连接：
