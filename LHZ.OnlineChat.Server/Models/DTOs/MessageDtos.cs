@@ -13,6 +13,11 @@ public class MessageDto
     public int MessageType { get; set; }
     public bool IsRead { get; set; }
     public DateTime SentAt { get; set; }
+
+    /// <summary>
+    /// 客户端消息 ID（与 WS 推送一致，用于前端去重）；为空时前端回退数据库 ID
+    /// </summary>
+    public string? MessageId { get; set; }
 }
 
 public class GroupMessageDto
@@ -25,6 +30,11 @@ public class GroupMessageDto
     public string Content { get; set; } = string.Empty;
     public int MessageType { get; set; }
     public DateTime SentAt { get; set; }
+
+    /// <summary>
+    /// 客户端消息 ID（与 WS 推送一致，用于前端去重）；为空时前端回退数据库 ID
+    /// </summary>
+    public string? MessageId { get; set; }
 }
 
 public class PagedResult<T>

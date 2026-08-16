@@ -81,6 +81,7 @@ public class WsMessageHandler
             Content = message.Content,
             MessageType = message.MessageType,
             IsRead = false,
+            ClientMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId,
             SentAt = DateTime.UtcNow
         };
         var msgId = await _fsql.Insert(privateMsg).ExecuteIdentityAsync();
@@ -141,6 +142,7 @@ public class WsMessageHandler
             SenderId = userId,
             Content = message.Content,
             MessageType = message.MessageType,
+            ClientMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId,
             SentAt = DateTime.UtcNow
         };
         var msgId = await _fsql.Insert(groupMsg).ExecuteIdentityAsync();
@@ -349,7 +351,7 @@ public class WsMessageHandler
                     From = m.SenderId.ToString(),
                     To = member.GroupId.ToString(),
                     Content = m.Content,
-                    MessageId = m.Id.ToString(),
+                    MessageId = string.IsNullOrWhiteSpace(m.ClientMessageId) ? m.Id.ToString() : m.ClientMessageId,
                     MessageType = m.MessageType,
                     Timestamp = new DateTimeOffset(m.SentAt, TimeSpan.Zero).ToUnixTimeMilliseconds(),
                     SenderName = userDict.TryGetValue(m.SenderId, out var u) ? u.Nickname : "未知",

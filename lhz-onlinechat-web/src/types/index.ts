@@ -89,6 +89,8 @@ export interface MessageDto {
   messageType: number
   isRead: boolean
   sentAt: string
+  /** 客户端消息 ID，与 WS 推送一致（去重键）；为空时前端回退数据库 id */
+  messageId: string | null
 }
 
 export interface GroupMessageDto {
@@ -100,6 +102,7 @@ export interface GroupMessageDto {
   content: string
   messageType: number
   sentAt: string
+  messageId: string | null
 }
 
 export interface PagedResult<T> {

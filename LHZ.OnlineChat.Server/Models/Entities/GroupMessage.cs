@@ -18,6 +18,12 @@ public class GroupMessage
     [Column(IsNullable = false)]
     public int SenderId { get; set; }
 
+    /// <summary>
+    /// 客户端生成的消息 ID（乐观发送去重键）；为空时使用数据库 ID
+    /// </summary>
+    [Column(StringLength = 64)]
+    public string? ClientMessageId { get; set; }
+
     [Column(IsNullable = false, StringLength = -2)]
     public string Content { get; set; } = string.Empty;
 

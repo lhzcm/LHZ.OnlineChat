@@ -93,6 +93,7 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 IsRead = m.IsRead,
+                MessageId = m.ClientMessageId,
                 SentAt = m.SentAt
             })
             .ToList();
@@ -148,6 +149,7 @@ public class MessageService
                 SenderAvatar = userDict.TryGetValue(m.SenderId, out var u2) ? u2.Avatar : null,
                 Content = m.Content,
                 MessageType = m.MessageType,
+                MessageId = m.ClientMessageId,
                 SentAt = m.SentAt
             })
             .ToList();
@@ -235,6 +237,7 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 IsRead = m.IsRead,
+                MessageId = m.ClientMessageId,
                 SentAt = m.SentAt
             })
             .ToList();

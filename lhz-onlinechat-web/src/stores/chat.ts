@@ -123,7 +123,7 @@ export const useChatStore = defineStore('chat', () => {
           to: String(id),
           content: m.content,
           timestamp: new Date(m.sentAt).getTime(),
-          messageId: String(m.id),
+          messageId: m.messageId || String(m.id),
           messageType: m.messageType,
           senderName: m.senderName,
           senderAvatar: m.senderAvatar
@@ -141,7 +141,7 @@ export const useChatStore = defineStore('chat', () => {
           to: String(m.groupId),
           content: m.content,
           timestamp: new Date(m.sentAt).getTime(),
-          messageId: String(m.id),
+          messageId: m.messageId || String(m.id),
           messageType: m.messageType,
           senderName: m.senderName,
           senderAvatar: m.senderAvatar
@@ -168,7 +168,7 @@ export const useChatStore = defineStore('chat', () => {
         to: String(userId),
         content: m.content,
         timestamp: new Date(m.sentAt).getTime(),
-        messageId: String(m.id),
+        messageId: m.messageId || String(m.id),
         messageType: m.messageType,
         senderName: m.senderName,
         senderAvatar: m.senderAvatar
