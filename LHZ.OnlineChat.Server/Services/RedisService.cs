@@ -1,4 +1,4 @@
-using System.Text.Json;
+using LHZ.FastJson;
 using StackExchange.Redis;
 
 namespace LHZ.OnlineChat.Server.Services;
@@ -30,7 +30,7 @@ public class RedisService : IDisposable
 
     public async Task SetJsonAsync<T>(string key, T value, TimeSpan? expiry = null)
     {
-        var json = JsonSerializer.Serialize(value, JsonDefaults.Web);
+        var json = JsonConvert.Serialize(value);
         await _db.StringSetAsync(key, json, expiry.HasValue ? (StackExchange.Redis.Expiration)expiry.Value : StackExchange.Redis.Expiration.Default);
     }
 
@@ -38,7 +38,7 @@ public class RedisService : IDisposable
     {
         var json = await _db.StringGetAsync(key);
         if (json.IsNullOrEmpty) return null;
-        return JsonSerializer.Deserialize<T>((string)json!, JsonDefaults.Web);
+        return JsonConvert.Deserialize<T>((string)json!);
     }
 
     public async Task<bool> KeyExistsAsync(string key)

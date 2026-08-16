@@ -1,4 +1,4 @@
-using System.Text.Json;
+using LHZ.FastJson;
 using LHZ.OnlineChat.Server.Models.DTOs;
 using LHZ.OnlineChat.Server.Models.Entities;
 using LHZ.WebSocket.Interfaces;
@@ -30,7 +30,7 @@ public class WsMessageHandler
         WsMessage? message;
         try
         {
-            message = JsonSerializer.Deserialize<WsMessage>(rawMessage, JsonDefaults.Web);
+            message = JsonConvert.Deserialize<WsMessage>(rawMessage);
         }
         catch
         {
@@ -91,7 +91,7 @@ public class WsMessageHandler
 
         // 写入 Redis 缓存（单聊：key 为较小ID:较大ID）
         var cacheKey = GetPrivateChatCacheKey(userId, receiverId);
-        var msgJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
+        var msgJson = JsonConvert.Serialize(message);
         await _redis.ListLeftPushAsync(cacheKey, msgJson);
         await _redis.ListTrimAsync(cacheKey, 0, 49); // 保留最近 50 条
 
@@ -100,7 +100,7 @@ public class WsMessageHandler
         message.SenderName = senderUser?.Nickname ?? "未知";
         message.SenderAvatar = senderUser?.Avatar;
 
-        var responseJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
+        var responseJson = JsonConvert.Serialize(message);
 
         // 如果接收者在线，直接转发
         var receiverClient = _connectionManager.GetConnection(receiverId);
@@ -152,7 +152,7 @@ public class WsMessageHandler
 
         // 写入 Redis 缓存
         var cacheKey = $"chat:group:{groupId}";
-        var msgJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
+        var msgJson = JsonConvert.Serialize(message);
         await _redis.ListLeftPushAsync(cacheKey, msgJson);
         await _redis.ListTrimAsync(cacheKey, 0, 49); // 保留最近 50 条
 
@@ -161,7 +161,7 @@ public class WsMessageHandler
         message.SenderName = senderUser?.Nickname ?? "未知";
         message.SenderAvatar = senderUser?.Avatar;
 
-        var responseJson = JsonSerializer.Serialize(message, JsonDefaults.Web);
+        var responseJson = JsonConvert.Serialize(message);
 
         // 获取群所有成员
         var members = await _fsql.Select<GroupMember>()
@@ -218,7 +218,7 @@ public class WsMessageHandler
         {
             message.From = userId.ToString();
             message.SenderName = "";
-            targetClient.SendMessage(JsonSerializer.Serialize(message, JsonDefaults.Web));
+            targetClient.SendMessage(JsonConvert.Serialize(message));
         }
 
         return Task.CompletedTask;
@@ -257,12 +257,12 @@ public class WsMessageHandler
             .Where(f => (f.UserId == userId || f.FriendId == userId) && f.Status == 1)
             .ToListAsync();
 
-        var statusMsg = JsonSerializer.Serialize(new WsMessage
+        var statusMsg = JsonConvert.Serialize(new WsMessage
         {
             Type = WsMessageType.OnlineStatus,
             From = userId.ToString(),
             Content = online ? "online" : "offline"
-        }, JsonDefaults.Web);
+        });
 
         foreach (var f in friendships)
         {
@@ -308,12 +308,12 @@ public class WsMessageHandler
         var client = _connectionManager.GetConnection(userId);
         if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
         {
-            client.SendMessage(JsonSerializer.Serialize(new WsMessage
+            client.SendMessage(JsonConvert.Serialize(new WsMessage
             {
                 Type = type,
                 From = fromUserId,
                 Content = type
-            }, JsonDefaults.Web));
+            }));
         }
     }
 
@@ -357,7 +357,7 @@ public class WsMessageHandler
                     SenderName = userDict.TryGetValue(m.SenderId, out var u) ? u.Nickname : "未知",
                     SenderAvatar = userDict.TryGetValue(m.SenderId, out var u2) ? u2.Avatar : null
                 };
-                client.SendMessage(JsonSerializer.Serialize(wsMsg, JsonDefaults.Web));
+                client.SendMessage(JsonConvert.Serialize(wsMsg));
             }
         }
     }

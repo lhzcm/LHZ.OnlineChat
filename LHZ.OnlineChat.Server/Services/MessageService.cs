@@ -1,4 +1,4 @@
-using System.Text.Json;
+using LHZ.FastJson;
 using LHZ.OnlineChat.Server.Models.DTOs;
 using LHZ.OnlineChat.Server.Models.Entities;
 
@@ -41,8 +41,9 @@ public class MessageService
 
         if (cachedMessages.Length > 0 && page == 1)
         {
+            // 缓存内容为 WsMessage 快照（camelCase），解析后转换为 MessageDto
             var cachedList = cachedMessages
-                .Select(m => JsonSerializer.Deserialize<MessageDto>(m, JsonDefaults.Web))
+                .Select(m => TryParseCachedMessage(m))
                 .Where(m => m != null)
                 .Select(m => m!)
                 .OrderBy(m => m.SentAt)
@@ -376,5 +377,36 @@ public class MessageService
 
         sessions = sessions.OrderByDescending(s => s.LastTime).ToList();
         return ApiResponse<List<SessionDto>>.Ok(sessions);
+    }
+
+    /// <summary>
+    /// 解析 Redis 中缓存的 WsMessage 快照（camelCase JSON）为 MessageDto
+    /// </summary>
+    private static MessageDto? TryParseCachedMessage(string json)
+    {
+        try
+        {
+            var ws = JsonConvert.Deserialize<WsMessage>(json);
+            if (ws == null) return null;
+
+            return new MessageDto
+            {
+                SenderId = int.TryParse(ws.From, out var senderId) ? senderId : 0,
+                SenderName = ws.SenderName,
+                SenderAvatar = ws.SenderAvatar,
+                Content = ws.Content,
+                MessageType = ws.MessageType,
+                IsRead = false,
+                MessageId = ws.MessageId,
+                SentAt = ws.Timestamp > 0
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(ws.Timestamp).UtcDateTime
+                    : DateTime.MinValue
+            };
+        }
+        catch
+        {
+            // 单条缓存解析失败不影响整体
+            return null;
+        }
     }
 }
