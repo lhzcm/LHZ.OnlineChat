@@ -1,0 +1,92 @@
+using LHZ.OnlineChat.Server.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
+namespace LHZ.OnlineChat.Server.Controllers;
+
+/// <summary>
+/// 消息控制器
+/// </summary>
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class MessagesController : ControllerBase
+{
+    private readonly MessageService _messageService;
+
+    public MessagesController(MessageService messageService)
+    {
+        _messageService = messageService;
+    }
+
+    private long GetCurrentUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return long.TryParse(claim, out var id) ? id : 0;
+    }
+
+    /// <summary>
+    /// 获取私聊历史消息
+    /// </summary>
+    [HttpGet("private/{friendId}")]
+    public async Task<IActionResult> GetPrivateHistory(
+        long friendId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    {
+        var result = await _messageService.GetPrivateHistoryAsync(
+            GetCurrentUserId(), friendId, page, pageSize);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 获取群聊历史消息
+    /// </summary>
+    [HttpGet("group/{groupId}")]
+    public async Task<IActionResult> GetGroupHistory(
+        long groupId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    {
+        var result = await _messageService.GetGroupHistoryAsync(
+            groupId, GetCurrentUserId(), page, pageSize);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 标记消息已读
+    /// </summary>
+    [HttpPut("{messageId}/read")]
+    public async Task<IActionResult> MarkAsRead(long messageId)
+    {
+        var result = await _messageService.MarkAsReadAsync(messageId, GetCurrentUserId());
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 批量标记某用户的消息已读
+    /// </summary>
+    [HttpPut("read-all/{senderId}")]
+    public async Task<IActionResult> MarkAllAsRead(long senderId)
+    {
+        var result = await _messageService.MarkAllAsReadAsync(senderId, GetCurrentUserId());
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 获取未读消息数
+    /// </summary>
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount()
+    {
+        var result = await _messageService.GetUnreadCountAsync(GetCurrentUserId());
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// 获取离线消息（用户上线时调用）
+    /// </summary>
+    [HttpGet("offline")]
+    public async Task<IActionResult> GetOfflineMessages()
+    {
+        var result = await _messageService.GetOfflineMessagesAsync(GetCurrentUserId());
+        return Ok(result);
+    }
+}

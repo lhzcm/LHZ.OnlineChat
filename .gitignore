@@ -1,0 +1,24 @@
+# ===== .NET =====
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+
+# ===== Node =====
+node_modules/
+dist/
+*.local
+
+# ===== 环境/日志 =====
+.env
+.env.local
+*.log
+npm-debug.log*
+
+# ===== IDE =====
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

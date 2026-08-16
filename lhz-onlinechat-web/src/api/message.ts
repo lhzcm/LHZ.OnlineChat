@@ -1,0 +1,23 @@
+import request from './request'
+import type { ApiResponse, MessageDto, GroupMessageDto, PagedResult } from '@/types'
+
+export const messageApi = {
+  getPrivateHistory(friendId: number, page = 1, pageSize = 50): Promise<ApiResponse<PagedResult<MessageDto>>> {
+    return request.get(`/messages/private/${friendId}`, { params: { page, pageSize } })
+  },
+  getGroupHistory(groupId: number, page = 1, pageSize = 50): Promise<ApiResponse<PagedResult<GroupMessageDto>>> {
+    return request.get(`/messages/group/${groupId}`, { params: { page, pageSize } })
+  },
+  markAsRead(messageId: number): Promise<ApiResponse> {
+    return request.put(`/messages/${messageId}/read`)
+  },
+  markAllAsRead(senderId: number): Promise<ApiResponse> {
+    return request.put(`/messages/read-all/${senderId}`)
+  },
+  getUnreadCount(): Promise<ApiResponse<{ privateUnread: number }>> {
+    return request.get('/messages/unread-count')
+  },
+  getOfflineMessages(): Promise<ApiResponse<MessageDto[]>> {
+    return request.get('/messages/offline')
+  }
+}
