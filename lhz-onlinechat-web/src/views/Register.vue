@@ -6,11 +6,12 @@
       <p class="subtitle">注册成功后将自动分配账号 ID</p>
       <form @submit.prevent="handleRegister">
         <input v-model="nickname" class="input" placeholder="昵称（可重复）" required />
+        <input v-model="email" class="input" type="email" placeholder="邮箱地址" required />
         <div class="code-row">
-          <input v-model="email" class="input" type="email" placeholder="邮箱地址" required />
           <button type="button" class="btn code-btn" :disabled="counting > 0 || !email || sending" @click="sendCode">
             {{ sending ? '发送中…' : counting > 0 ? `${counting}s 后重发` : '获取验证码' }}
           </button>
+          <span class="code-hint">验证码将发送至该邮箱，5 分钟内有效</span>
         </div>
         <input v-model="code" class="input" placeholder="6 位数字验证码" required inputmode="numeric" maxlength="6" />
         <input v-model="password" class="input" type="password" placeholder="密码 (至少6位)" required />
@@ -214,24 +215,20 @@ onUnmounted(() => {
 
 .code-row {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 14px;
 }
 
-.code-row .input {
-  margin-bottom: 0;
-  flex: 1;
-  min-width: 0;
-}
-
 .code-btn {
-  flex-shrink: 0;
-  padding: 0 14px;
-  font-size: 13px;
+  width: 100%;
+  padding: 10px;
   border-radius: 10px;
   background: var(--bg-hover);
   color: var(--primary);
   border: 1px solid var(--border);
+  font-size: 14px;
+  transition: all 0.2s;
 }
 
 .code-btn:hover:not(:disabled) {
@@ -242,6 +239,12 @@ onUnmounted(() => {
 .code-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.code-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 .input {
