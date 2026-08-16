@@ -7,7 +7,10 @@
           <span class="avatar" :style="{ background: avatarGradient(auth.user?.nickname || '') }">
             {{ avatarInitial(auth.user?.nickname || '') }}
           </span>
-          <span class="nickname">{{ auth.user?.nickname }}</span>
+          <div class="user-text">
+            <span class="nickname">{{ auth.user?.nickname }}</span>
+            <span class="account-id" @click="copyAccountId" :title="copyTip">{{ copyTip }}</span>
+          </div>
         </div>
         <div class="header-actions">
           <button class="icon-btn" @click="openRequestsModal" title="好友申请">
@@ -257,6 +260,9 @@ const mobileChatOpen = ref(false)
 const showEmojiPanel = ref(false)
 const emojiPanelRef = ref<HTMLElement | null>(null)
 const emojiBtnRef = ref<HTMLElement | null>(null)
+// 账号 ID 复制提示
+const copyTip = ref('')
+let copyTipTimer: number | null = null
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -283,8 +289,7 @@ const chatSub = computed(() => {
 })
 
 // ==================== 头像 ====================
-const avatarColors = [
-  'linear-gradient(135deg, #5b6cff, #9c6bff)',
+const avatarColors = [  'linear-gradient(135deg, #5b6cff, #9c6bff)',
   'linear-gradient(135deg, #00c6fb, #005bea)',
   'linear-gradient(135deg, #f093fb, #f5576c)',
   'linear-gradient(135deg, #4facfe, #00f2fe)',
@@ -326,6 +331,7 @@ onMounted(async () => {
     return
   }
   await auth.fetchUser()
+  copyTip.value = auth.user ? `ID: ${auth.user.id}` : ''
 
   // 先注册回调，再建立连接，避免漏掉连接期间的消息
   ws.onMessage((msg) => {
@@ -360,6 +366,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
+  if (copyTipTimer) clearTimeout(copyTipTimer)
 })
 
 function onDocClick(e: MouseEvent) {
@@ -592,6 +599,21 @@ async function rejectRequest(r: FriendRequestInfo) {
   }
 }
 
+/** 点击账号 ID 复制到剪贴板 */
+async function copyAccountId() {
+  if (!auth.user) return
+  try {
+    await navigator.clipboard.writeText(String(auth.user.id))
+    copyTip.value = '已复制 ✅'
+  } catch {
+    copyTip.value = 'ID: ' + auth.user.id
+  }
+  if (copyTipTimer) clearTimeout(copyTipTimer)
+  copyTipTimer = window.setTimeout(() => {
+    copyTip.value = auth.user ? `ID: ${auth.user.id}` : ''
+  }, 2000)
+}
+
 function handleLogout() {
   ws.disconnect()
   auth.logout()
@@ -642,6 +664,28 @@ watch(activeTab, () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-id {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+
+.account-id:hover {
+  color: var(--primary);
 }
 
 .header-actions {
