@@ -10,11 +10,13 @@ public class GroupService
 {
     private readonly IFreeSql _fsql;
     private readonly RedisService _redis;
+    private readonly WsMessageHandler _wsMessageHandler;
 
-    public GroupService(IFreeSql fsql, RedisService redis)
+    public GroupService(IFreeSql fsql, RedisService redis, WsMessageHandler wsMessageHandler)
     {
         _fsql = fsql;
         _redis = redis;
+        _wsMessageHandler = wsMessageHandler;
     }
 
     /// <summary>
@@ -60,8 +62,7 @@ public class GroupService
     /// <summary>
     /// 加入群组
     /// </summary>
-    public async Task<ApiResponse> JoinGroupAsync(long groupId, int userId)
-    {
+    public async Task<ApiResponse> JoinGroupAsync(long groupId, int userId)    {
         // 检查群组是否存在
         var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
         if (group == null)
@@ -91,6 +92,76 @@ public class GroupService
         await _fsql.Insert(member).ExecuteAffrowsAsync();
 
         return ApiResponse.Ok("加入群组成功");
+    }
+
+    /// <summary>
+    /// 邀请好友加入群组（仅群主/管理员可邀请，且只能邀请自己的好友）
+    /// </summary>
+    public async Task<ApiResponse> InviteMembersAsync(long groupId, int operatorId, List<int> userIds)
+    {
+        if (userIds == null || userIds.Count == 0)
+            return ApiResponse.Fail("请选择要邀请的好友");
+
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群组不存在");
+
+        // 权限校验：群主(0)或管理员(1)
+        var operatorMember = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == operatorId)
+            .FirstAsync();
+        if (operatorMember == null)
+            return ApiResponse.Fail("你不是该群组成员");
+        if (operatorMember.Role > 1)
+            return ApiResponse.Fail("只有群主或管理员可以邀请成员");
+
+        var targetIds = userIds.Distinct().ToList();
+
+        // 只能邀请自己的好友
+        var friendIds = (await _fsql.Select<Friend>()
+            .Where(f => f.Status == 1 && (f.UserId == operatorId || f.FriendId == operatorId))
+            .ToListAsync())
+            .Select(f => f.UserId == operatorId ? f.FriendId : f.UserId)
+            .ToHashSet();
+
+        var notFriend = targetIds.Where(id => !friendIds.Contains(id)).ToList();
+        if (notFriend.Count > 0)
+            return ApiResponse.Fail("只能邀请自己的好友加入群组");
+
+        // 排除已在群中的
+        var existingIds = (await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && targetIds.Contains(m.UserId))
+            .ToListAsync())
+            .Select(m => m.UserId)
+            .ToHashSet();
+
+        var toInvite = targetIds.Where(id => !existingIds.Contains(id)).ToList();
+        if (toInvite.Count == 0)
+            return ApiResponse.Fail("所选好友都已在该群中");
+
+        // 批量加入（已读游标 = 当前最新消息，与普通加入一致）
+        var maxId = await _fsql.Select<GroupMessage>()
+            .Where(gm => gm.GroupId == groupId)
+            .MaxAsync(gm => gm.Id);
+
+        var members = toInvite.Select(uid => new GroupMember
+        {
+            GroupId = groupId,
+            UserId = uid,
+            Role = 2, // 普通成员
+            LastReadMessageId = maxId,
+            JoinedAt = DateTime.UtcNow
+        }).ToList();
+
+        await _fsql.Insert(members).ExecuteAffrowsAsync();
+
+        // 实时通知被邀请者
+        foreach (var uid in toInvite)
+        {
+            _wsMessageHandler.NotifyGroupInvitedAsync(uid, groupId);
+        }
+
+        return ApiResponse.Ok($"已邀请 {toInvite.Count} 位好友加入群组");
     }
 
     /// <summary>

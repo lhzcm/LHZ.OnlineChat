@@ -11,6 +11,9 @@ export const groupApi = {
   getMembers(groupId: number): Promise<ApiResponse<GroupMemberInfo[]>> {
     return request.get(`/groups/${groupId}/members`)
   },
+  inviteMembers(groupId: number, userIds: number[]): Promise<ApiResponse> {
+    return request.post(`/groups/${groupId}/invite`, { userIds })
+  },
   joinGroup(groupId: number): Promise<ApiResponse> {
     return request.post(`/groups/${groupId}/join`)
   },

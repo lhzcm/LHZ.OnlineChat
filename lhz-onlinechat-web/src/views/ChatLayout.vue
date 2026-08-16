@@ -136,6 +136,15 @@
             <span class="chat-name">{{ currentChat.name }}</span>
             <span class="chat-sub">{{ chatSub }}</span>
           </div>
+          <div class="header-spacer"></div>
+          <button v-if="currentChat.type === 'group'" class="icon-btn" @click="openMembersModal" title="群成员">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </button>
         </div>
 
         <div class="chat-messages" ref="msgContainer">
@@ -178,6 +187,58 @@
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
       </template>
     </main>
+
+    <!-- 群成员面板 -->
+    <div class="modal-overlay" v-if="showMembersModal" @click.self="showMembersModal = false">
+      <div class="modal">
+        <h3>{{ currentChat?.name }} · 群成员 ({{ groupStore.members.length }})</h3>
+        <div class="invite-bar" v-if="canInvite">
+          <button class="btn btn-primary btn-sm" @click="openInviteModal">+ 邀请好友</button>
+        </div>
+        <div class="empty" v-if="groupStore.members.length === 0">
+          <span class="empty-icon">👥</span>
+          <span>暂无成员</span>
+        </div>
+        <div v-for="m in groupStore.members" :key="m.userId" class="request-item">
+          <span class="avatar small" :style="{ background: avatarGradient(m.nickname) }">{{ avatarInitial(m.nickname) }}</span>
+          <div class="request-info">
+            <span class="request-name">
+              {{ m.nickname }}
+              <span class="role-tag" :class="'role-' + m.role">{{ roleText(m.role) }}</span>
+            </span>
+            <span class="request-meta">
+              <span :class="['status-dot', m.isOnline ? 'online' : 'offline']"></span>
+              {{ m.isOnline ? '在线' : '离线' }} · 账号 {{ m.userId }}
+            </span>
+          </div>
+          <button v-if="canKick(m)" class="btn btn-sm btn-ghost kick-btn" @click="kickGroupMember(m)">踢出</button>
+        </div>
+        <button class="btn btn-ghost" @click="showMembersModal = false">关闭</button>
+      </div>
+    </div>
+
+    <!-- 邀请好友弹窗 -->
+    <div class="modal-overlay" v-if="showInviteModal" @click.self="showInviteModal = false">
+      <div class="modal">
+        <h3>邀请好友加入群组</h3>
+        <div class="empty" v-if="invitableFriends.length === 0">
+          <span class="empty-icon">👥</span>
+          <span>没有可邀请的好友</span>
+        </div>
+        <label v-for="f in invitableFriends" :key="f.userId" class="friend-check">
+          <input type="checkbox" :value="f.userId" v-model="selectedInviteIds" />
+          <span class="avatar small" :style="{ background: avatarGradient(f.nickname) }">{{ avatarInitial(f.nickname) }}</span>
+          <span class="contact-name">{{ f.nickname }}</span>
+          <span class="request-meta">账号 {{ f.userId }}</span>
+        </label>
+        <button class="btn btn-primary" :disabled="selectedInviteIds.length === 0 || inviting" @click="doInvite">
+          {{ inviting ? '邀请中…' : `邀请 (${selectedInviteIds.length})` }}
+        </button>
+        <p class="modal-error" v-if="inviteError">{{ inviteError }}</p>
+        <p class="modal-success" v-if="inviteSuccess">{{ inviteSuccess }}</p>
+        <button class="btn btn-ghost" @click="showInviteModal = false">关闭</button>
+      </div>
+    </div>
 
     <!-- 好友申请弹窗 -->
     <div class="modal-overlay" v-if="showRequestsModal" @click.self="showRequestsModal = false">
@@ -232,7 +293,7 @@ import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { emojiGroups } from '@/constants/emojis'
-import type { FriendRequestInfo, WsMessage, ChatType, SessionInfo } from '@/types'
+import type { FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -263,6 +324,13 @@ const emojiBtnRef = ref<HTMLElement | null>(null)
 // 账号 ID 复制提示
 const copyTip = ref('')
 let copyTipTimer: number | null = null
+// 群成员管理
+const showMembersModal = ref(false)
+const showInviteModal = ref(false)
+const selectedInviteIds = ref<number[]>([])
+const inviting = ref(false)
+const inviteError = ref('')
+const inviteSuccess = ref('')
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -286,6 +354,22 @@ const chatSub = computed(() => {
   }
   const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
   return g ? `${g.memberCount} 人` : ''
+})
+
+// 当前用户是否可管理群组（群主或管理员）
+const canInvite = computed(() => {
+  if (!currentChat.value || currentChat.value.type !== 'group') return false
+  const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
+  if (!g) return false
+  if (g.ownerId === auth.user?.id) return true
+  const me = groupStore.members.find(m => m.userId === auth.user?.id)
+  return me ? me.role <= 1 : false
+})
+
+// 可邀请的好友：我的好友中不在当前群成员里的
+const invitableFriends = computed(() => {
+  const memberIds = new Set(groupStore.members.map(m => m.userId))
+  return friendStore.friends.filter(f => !memberIds.has(f.userId))
 })
 
 // ==================== 头像 ====================
@@ -491,6 +575,12 @@ function handleWsMessage(msg: WsMessage) {
     chatStore.fetchSessions()
     return
   }
+  // 被邀请加入群组：刷新群列表与会话
+  if (msg.type === 'group_invited') {
+    groupStore.fetchGroups()
+    chatStore.fetchSessions()
+    return
+  }
   // 在线状态已由 onStatusChange 处理
   if (msg.type === 'online_status') return
 
@@ -596,6 +686,68 @@ async function rejectRequest(r: FriendRequestInfo) {
     if (!res.success) requestError.value = res.message
   } finally {
     handlingRequestId.value = null
+  }
+}
+
+// ==================== 群成员管理 ====================
+function roleText(role: number): string {
+  return role === 0 ? '群主' : role === 1 ? '管理员' : ''
+}
+
+function canKick(m: GroupMemberInfo): boolean {
+  if (!canInvite.value) return false
+  if (m.userId === auth.user?.id) return false
+  if (m.role === 0) return false // 不能踢群主
+  const me = groupStore.members.find(x => x.userId === auth.user?.id)
+  if (me && me.role === 1 && m.role === 1) return false // 管理员不能踢管理员
+  return true
+}
+
+function openMembersModal() {
+  if (!currentChat.value) return
+  inviteError.value = ''
+  inviteSuccess.value = ''
+  showInviteModal.value = false
+  groupStore.fetchMembers(currentChat.value.id)
+  showMembersModal.value = true
+}
+
+function openInviteModal() {
+  selectedInviteIds.value = []
+  inviteError.value = ''
+  inviteSuccess.value = ''
+  showInviteModal.value = true
+}
+
+async function doInvite() {
+  if (!currentChat.value || selectedInviteIds.value.length === 0) return
+  inviting.value = true
+  inviteError.value = ''
+  inviteSuccess.value = ''
+  try {
+    const res = await groupStore.inviteMembers(currentChat.value.id, selectedInviteIds.value)
+    if (res.success) {
+      inviteSuccess.value = res.message
+      selectedInviteIds.value = []
+      await groupStore.fetchMembers(currentChat.value.id)
+      groupStore.fetchGroups()
+    } else {
+      inviteError.value = res.message
+    }
+  } finally {
+    inviting.value = false
+  }
+}
+
+async function kickGroupMember(m: GroupMemberInfo) {
+  if (!currentChat.value) return
+  if (!window.confirm(`确定将 ${m.nickname} 踢出群组？`)) return
+  const res = await groupStore.kickMember(currentChat.value.id, m.userId)
+  if (res.success) {
+    await groupStore.fetchMembers(currentChat.value.id)
+    groupStore.fetchGroups()
+  } else {
+    inviteError.value = res.message
   }
 }
 
@@ -942,6 +1094,10 @@ watch(activeTab, () => {
   min-width: 0;
 }
 
+.header-spacer {
+  flex: 1;
+}
+
 .chat-name {
   font-weight: 600;
   font-size: 16px;
@@ -1225,11 +1381,82 @@ watch(activeTab, () => {
 .request-name {
   font-weight: 600;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .request-meta {
   font-size: 12px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.request-meta .status-dot {
+  position: static;
+  width: 8px;
+  height: 8px;
+  border: none;
+}
+
+.role-tag {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.role-tag.role-0 {
+  background: #eef1ff;
+  color: var(--primary);
+}
+
+.role-tag.role-1 {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+/* 群成员管理 */
+.invite-bar {
+  padding: 2px 0 4px;
+}
+
+.invite-bar .btn {
+  width: 100%;
+}
+
+.kick-btn {
+  color: var(--danger);
+  flex-shrink: 0;
+}
+
+.kick-btn:hover {
+  background: rgba(245, 108, 108, 0.1);
+  color: var(--danger);
+}
+
+.friend-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.friend-check:hover {
+  background: var(--bg-hover);
+}
+
+.friend-check input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
 }
 
 .request-actions {

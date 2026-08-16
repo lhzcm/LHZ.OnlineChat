@@ -5,6 +5,7 @@ import type { GroupInfo, GroupMemberInfo } from '@/types'
 
 export const useGroupStore = defineStore('group', () => {
   const groups = ref<GroupInfo[]>([])
+  const members = ref<GroupMemberInfo[]>([])
 
   async function fetchGroups() {
     const res = await groupApi.getMyGroups()
@@ -18,6 +19,19 @@ export const useGroupStore = defineStore('group', () => {
     if (res.success && res.data) {
       groups.value.unshift(res.data)
     }
+    return res
+  }
+
+  async function fetchMembers(groupId: number) {
+    const res = await groupApi.getMembers(groupId)
+    if (res.success && res.data) {
+      members.value = res.data
+    }
+    return res
+  }
+
+  async function inviteMembers(groupId: number, userIds: number[]) {
+    const res = await groupApi.inviteMembers(groupId, userIds)
     return res
   }
 
@@ -37,6 +51,11 @@ export const useGroupStore = defineStore('group', () => {
     return res
   }
 
+  async function kickMember(groupId: number, userId: number) {
+    const res = await groupApi.kickMember(groupId, userId)
+    return res
+  }
+
   async function dismissGroup(groupId: number) {
     const res = await groupApi.dismissGroup(groupId)
     if (res.success) {
@@ -45,5 +64,5 @@ export const useGroupStore = defineStore('group', () => {
     return res
   }
 
-  return { groups, fetchGroups, createGroup, joinGroup, leaveGroup, dismissGroup }
+  return { groups, members, fetchGroups, createGroup, fetchMembers, inviteMembers, joinGroup, leaveGroup, kickMember, dismissGroup }
 })

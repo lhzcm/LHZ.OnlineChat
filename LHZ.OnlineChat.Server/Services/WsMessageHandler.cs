@@ -301,6 +301,14 @@ public class WsMessageHandler
     }
 
     /// <summary>
+    /// 被邀请加入群组：通知被邀请者（from 携带群组 ID）
+    /// </summary>
+    public void NotifyGroupInvitedAsync(int toUserId, long groupId)
+    {
+        SendToUser(toUserId, WsMessageType.GroupInvited, groupId.ToString());
+    }
+
+    /// <summary>
     /// 向指定用户推送一条 WS 消息（在线时）
     /// </summary>
     private void SendToUser(int userId, string type, string fromUserId)

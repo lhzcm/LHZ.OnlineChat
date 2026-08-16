@@ -78,4 +78,5 @@ public static class WsMessageType
     public const string FriendRequest = "friend_request";
     public const string FriendAccepted = "friend_accepted";
     public const string FriendRejected = "friend_rejected";
+    public const string GroupInvited = "group_invited";
 }

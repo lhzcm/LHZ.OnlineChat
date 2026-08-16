@@ -58,6 +58,16 @@ public class GroupsController : ControllerBase
     }
 
     /// <summary>
+    /// 邀请好友加入群组（仅群主/管理员）
+    /// </summary>
+    [HttpPost("{groupId}/invite")]
+    public async Task<IActionResult> InviteMembers(long groupId, [FromBody] InviteMembersRequest request)
+    {
+        var result = await _groupService.InviteMembersAsync(groupId, GetCurrentUserId(), request.UserIds);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 加入群组
     /// </summary>
     [HttpPost("{groupId}/join")]

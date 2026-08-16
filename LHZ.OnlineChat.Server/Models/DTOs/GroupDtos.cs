@@ -30,6 +30,8 @@ public class GroupMemberInfo
 
 public class InviteMembersRequest
 {
-    public long GroupId { get; set; }
-    public List<long> UserIds { get; set; } = new();
+    /// <summary>
+    /// 要邀请的好友账号 ID 列表（仅限邀请者自己的好友）
+    /// </summary>
+    public List<int> UserIds { get; set; } = new();
 }
