@@ -8,7 +8,7 @@
           <span class="nickname">{{ auth.user?.nickname }}</span>
         </div>
         <div class="header-actions">
-          <button class="btn btn-ghost btn-icon" @click="showRequestsModal = true" title="好友申请">
+          <button class="btn btn-ghost btn-icon" @click="openRequestsModal" title="好友申请">
             🔔
             <span v-if="friendStore.pendingRequests.length" class="badge">{{ friendStore.pendingRequests.length }}</span>
           </button>
@@ -31,7 +31,7 @@
 
       <!-- 搜索/操作栏 -->
       <div class="action-bar">
-        <button class="btn btn-primary btn-sm" @click="showAddModal = true">
+        <button class="btn btn-primary btn-sm" @click="openAddModal">
           {{ activeTab === 'friends' ? '+ 添加好友' : activeTab === 'groups' ? '+ 创建群组' : '＋' }}
         </button>
       </div>
@@ -357,6 +357,17 @@ function send() {
   ws.sendMessage(msg)
   inputText.value = ''
   scrollToBottom()
+}
+
+function openAddModal() {
+  modalError.value = ''
+  modalSuccess.value = ''
+  showAddModal.value = true
+}
+
+function openRequestsModal() {
+  requestError.value = ''
+  showRequestsModal.value = true
 }
 
 async function addFriend() {
