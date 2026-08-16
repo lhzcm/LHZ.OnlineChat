@@ -142,7 +142,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-app.Urls.Add("http://localhost:5000");
+app.Urls.Add("http://0.0.0.0:5000"); // 0.0.0.0:本地与 Docker 容器内均可访问
 // ==================== 中间件管道 ====================
 if (app.Environment.IsDevelopment())
 {
