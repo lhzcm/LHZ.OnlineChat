@@ -317,7 +317,7 @@ function handleWsMessage(msg: WsMessage) {
   // 在线状态已由 onStatusChange 处理
   if (msg.type === 'online_status') return
 
-  const { key, isNew } = chatStore.addMessage(msg)
+  const { key, isNew } = chatStore.addMessage(msg, auth.user?.id)
   const currentKey = currentChat.value ? chatStore.sessionKey(currentChat.value.type, currentChat.value.id) : ''
   if (key === currentKey) {
     // 当前会话：清未读、标记已读、滚到底部
@@ -353,7 +353,7 @@ function send() {
     senderName: auth.user.nickname,
     senderAvatar: auth.user.avatar
   }
-  chatStore.addMessage(msg) // 乐观插入，回显到达后自动去重
+  chatStore.addMessage(msg, auth.user.id) // 乐观插入，回显到达后自动去重
   ws.sendMessage(msg)
   inputText.value = ''
   scrollToBottom()

@@ -33,11 +33,21 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * 添加一条消息（按 messageId 去重）。
+   * myUserId 用于私聊会话归属：发送者视角（自己的消息/回显）归到 to，接收者视角归到 from。
    * 返回 { key, isNew }，isNew=false 表示与已有消息重复（如服务端回显）。
    */
-  function addMessage(msg: WsMessage): { key: string; isNew: boolean } {
-    const sessionType: ChatType = msg.type === 'group_message' ? 'group' : 'private'
-    const sessionId = sessionType === 'group' ? Number(msg.to) : Number(msg.from)
+  function addMessage(msg: WsMessage, myUserId?: number): { key: string; isNew: boolean } {
+    let sessionType: ChatType
+    let sessionId: number
+    if (msg.type === 'group_message') {
+      sessionType = 'group'
+      sessionId = Number(msg.to)
+    } else {
+      sessionType = 'private'
+      sessionId = myUserId !== undefined && Number(msg.from) === myUserId
+        ? Number(msg.to)
+        : Number(msg.from)
+    }
     const key = sessionKey(sessionType, sessionId)
 
     const list = messages.value.get(key) || []
