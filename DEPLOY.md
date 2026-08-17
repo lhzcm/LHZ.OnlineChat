@@ -27,19 +27,11 @@ docker compose version   # 应显示 v2.x
 
 **方式 A:git(推荐,方便后续更新)**
 
-在 GitHub/Gitee 创建私有仓库,把本地代码推上去:
-
-```bash
-# 本地执行一次
-git remote add origin https://github.com/<你>/LHZ.OnlineChat.git
-git push -u origin master
-```
-
-服务器上:
+拉取github在线代码到本地
 
 ```bash
 cd /opt
-git clone https://github.com/<你>/LHZ.OnlineChat.git onlinechat
+git clone https://github.com/lhzcm/LHZ.OnlineChat.git onlinechat
 cd onlinechat
 ```
 
