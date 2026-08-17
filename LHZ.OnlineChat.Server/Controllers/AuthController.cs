@@ -60,14 +60,47 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// 修改昵称
+    /// </summary>
+    [HttpPut("profile")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        var result = await _authService.UpdateProfileAsync(GetUserId(), request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 上传头像
+    /// </summary>
+    [HttpPost("avatar")]
+    [Authorize]
+    public async Task<IActionResult> UploadAvatar(IFormFile? file)
+    {
+        var result = await _authService.UploadAvatarAsync(GetUserId(), file);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 换绑邮箱（需新邮箱验证码，且不能与其他账号重复）
+    /// </summary>
+    [HttpPut("email")]
+    [Authorize]
+    public async Task<IActionResult> UpdateEmail([FromBody] UpdateEmailRequest request)
+    {
+        var result = await _authService.UpdateEmailAsync(GetUserId(), request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 获取当前用户信息（需要认证）
     /// </summary>
     [HttpGet("me")]
     [Authorize]
     public async Task<IActionResult> GetCurrentUser()
     {
-        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+        var userId = GetUserId();
+        if (userId <= 0)
             return Unauthorized(ApiResponse.Fail("无效的 Token"));
 
         var fsql = HttpContext.RequestServices.GetRequiredService<IFreeSql>();
@@ -82,7 +115,14 @@ public class AuthController : ControllerBase
         {
             Id = user.Id,
             Nickname = user.Nickname,
-            Avatar = user.Avatar
+            Avatar = user.Avatar,
+            Email = user.Email
         }));
+    }
+
+    private int GetUserId()
+    {
+        var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return int.TryParse(claim, out var id) ? id : 0;
     }
 }

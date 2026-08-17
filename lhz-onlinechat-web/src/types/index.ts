@@ -10,6 +10,7 @@ export interface UserInfo {
   id: number
   nickname: string
   avatar: string | null
+  email: string
 }
 
 export interface SendCodeRequest {

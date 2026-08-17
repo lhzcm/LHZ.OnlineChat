@@ -65,6 +65,29 @@ public class UserInfo
     public int Id { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string? Avatar { get; set; }
+    public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 修改昵称
+/// </summary>
+public class UpdateProfileRequest
+{
+    public string Nickname { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 换绑邮箱（需新邮箱验证码，且新邮箱未被其他账号绑定）
+/// </summary>
+public class UpdateEmailRequest
+{
+    public string NewEmail { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}
+
+public class AvatarResponse
+{
+    public string Avatar { get; set; } = string.Empty;
 }
 
 public class ApiResponse<T>

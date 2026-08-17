@@ -32,6 +32,8 @@ services:
       context: .
       dockerfile: LHZ.OnlineChat.Server/Dockerfile
     restart: unless-stopped
+    volumes:
+      - uploaddata:/app/uploads
     environment:
       # 覆盖 appsettings.json 的本地开发配置
       ConnectionStrings__Default: Host=postgres;Database=OnlineChat;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
@@ -69,3 +71,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploaddata:

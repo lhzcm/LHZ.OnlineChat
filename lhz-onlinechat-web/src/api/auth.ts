@@ -16,5 +16,16 @@ export const authApi = {
   },
   getMe(): Promise<ApiResponse<UserInfo>> {
     return request.get('/auth/me')
+  },
+  updateProfile(nickname: string): Promise<ApiResponse> {
+    return request.put('/auth/profile', { nickname })
+  },
+  uploadAvatar(file: File): Promise<ApiResponse<{ avatar: string }>> {
+    const form = new FormData()
+    form.append('file', file)
+    return request.post('/auth/avatar', form)
+  },
+  updateEmail(newEmail: string, code: string): Promise<ApiResponse> {
+    return request.put('/auth/email', { newEmail, code })
   }
 }

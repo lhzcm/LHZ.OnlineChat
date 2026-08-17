@@ -3,13 +3,11 @@
     <!-- 侧边栏 -->
     <aside class="sidebar" :class="{ 'is-hidden': mobileChatOpen }">
       <div class="sidebar-header">
-        <div class="user-info">
-          <span class="avatar" :style="{ background: avatarGradient(auth.user?.nickname || '') }">
-            {{ avatarInitial(auth.user?.nickname || '') }}
-          </span>
+        <div class="user-info" @click="openProfileModal" title="个人信息">
+          <Avatar :name="auth.user?.nickname || ''" :url="auth.user?.avatar" />
           <div class="user-text">
             <span class="nickname">{{ auth.user?.nickname }}</span>
-            <span class="account-id" @click="copyAccountId" :title="copyTip">{{ copyTip }}</span>
+            <span class="account-id" @click.stop="copyAccountId" :title="copyTip">{{ copyTip }}</span>
           </div>
         </div>
         <div class="header-actions">
@@ -49,7 +47,7 @@
         <div v-for="s in sortedSessions" :key="s.type + '_' + s.id"
           :class="['contact-item', { active: currentChat?.type === s.type && currentChat.id === s.id }]"
           @click="selectSession(s)">
-          <span class="avatar small" :style="{ background: avatarGradient(s.name) }">{{ avatarInitial(s.name) }}</span>
+          <Avatar :name="s.name" :url="s.avatar" size="sm" />
           <div class="contact-info">
             <div class="info-top">
               <span class="contact-name">{{ s.name }}</span>
@@ -73,7 +71,7 @@
           :class="['contact-item', { active: currentChat?.type === 'private' && currentChat.id === f.userId }]"
           @click="selectPrivateChat(f)">
           <div class="avatar-wrap">
-            <span class="avatar small" :style="{ background: avatarGradient(f.nickname) }">{{ avatarInitial(f.nickname) }}</span>
+            <Avatar :name="f.nickname" :url="f.avatar" size="sm" />
             <span :class="['status-dot', f.isOnline ? 'online' : 'offline']"></span>
           </div>
           <div class="contact-info">
@@ -97,7 +95,7 @@
         <div v-for="g in groupStore.groups" :key="g.id"
           :class="['contact-item', { active: currentChat?.type === 'group' && currentChat.id === g.id }]"
           @click="selectGroupChat(g)">
-          <span class="avatar small" :style="{ background: avatarGradient(g.name) }">#</span>
+          <Avatar :name="g.name" :url="g.avatar" size="sm" />
           <div class="contact-info">
             <div class="info-top">
               <span class="contact-name">{{ g.name }}</span>
@@ -131,7 +129,7 @@
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-          <span class="avatar small" :style="{ background: avatarGradient(currentChat.name) }">{{ avatarInitial(currentChat.name) }}</span>
+          <Avatar :name="currentChat.name" :url="chatAvatar" size="sm" />
           <div class="chat-title">
             <span class="chat-name">{{ currentChat.name }}</span>
             <span class="chat-sub">{{ chatSub }}</span>
@@ -150,9 +148,7 @@
         <div class="chat-messages" ref="msgContainer">
           <div v-for="msg in currentMessages" :key="msg.messageId"
             :class="['msg-row', { mine: Number(msg.from) === auth.user?.id }]">
-            <span class="avatar msg-avatar" :style="{ background: avatarGradient(msg.senderName || currentChat.name) }">
-              {{ avatarInitial(msg.senderName || currentChat.name) }}
-            </span>
+            <Avatar class="msg-avatar" :name="msg.senderName || currentChat.name" :url="msg.senderAvatar" size="sm" />
             <div class="msg-body">
               <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
                 {{ msg.senderName }}
@@ -167,7 +163,7 @@
           <!-- @ 成员选择浮层 -->
           <div class="mention-panel" v-if="mentionOpen && mentionFiltered.length" @click.stop>
             <button v-for="m in mentionFiltered" :key="m.userId" class="mention-item" @click="pickMention(m)">
-              <span class="avatar small" :style="{ background: avatarGradient(m.nickname) }">{{ avatarInitial(m.nickname) }}</span>
+              <Avatar :name="m.nickname" :url="m.avatar" size="sm" />
               <span class="contact-name">{{ m.nickname }}</span>
               <span class="mention-role" v-if="m.role === 0">群主</span>
             </button>
@@ -211,7 +207,7 @@
           <span>暂无成员</span>
         </div>
         <div v-for="m in groupStore.members" :key="m.userId" class="request-item">
-          <span class="avatar small" :style="{ background: avatarGradient(m.nickname) }">{{ avatarInitial(m.nickname) }}</span>
+          <Avatar :name="m.nickname" :url="m.avatar" size="sm" />
           <div class="request-info">
             <span class="request-name">
               {{ m.nickname }}
@@ -238,7 +234,7 @@
         </div>
         <label v-for="f in invitableFriends" :key="f.userId" class="friend-check">
           <input type="checkbox" :value="f.userId" v-model="selectedInviteIds" />
-          <span class="avatar small" :style="{ background: avatarGradient(f.nickname) }">{{ avatarInitial(f.nickname) }}</span>
+          <Avatar :name="f.nickname" :url="f.avatar" size="sm" />
           <span class="contact-name">{{ f.nickname }}</span>
           <span class="request-meta">账号 {{ f.userId }}</span>
         </label>
@@ -251,6 +247,55 @@
       </div>
     </div>
 
+    <!-- 个人资料弹窗 -->
+    <div class="modal-overlay" v-if="showProfileModal" @click.self="showProfileModal = false">
+      <div class="modal">
+        <h3>个人信息</h3>
+        <div class="profile-avatar">
+          <Avatar :name="auth.user?.nickname || ''" :url="auth.user?.avatar" size="lg" />
+          <button class="btn btn-sm btn-ghost" @click="triggerAvatarInput">更换头像</button>
+          <input ref="avatarInputRef" type="file" accept="image/*" class="hidden-file" @change="onAvatarChange" />
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">账号 ID</span>
+          <span class="profile-value">{{ auth.user?.id }}</span>
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">昵称</span>
+          <div class="profile-edit">
+            <input v-model="profileNickname" class="input" maxlength="50" />
+            <button class="btn btn-sm btn-primary" :disabled="savingProfile" @click="saveNickname">保存</button>
+          </div>
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">邮箱</span>
+          <div class="profile-edit">
+            <span class="profile-value profile-email">{{ auth.user?.email }}</span>
+            <button class="btn btn-sm btn-ghost" @click="showEmailEdit = !showEmailEdit">
+              {{ showEmailEdit ? '取消' : '修改' }}
+            </button>
+          </div>
+        </div>
+        <template v-if="showEmailEdit">
+          <div class="profile-edit email-edit">
+            <input v-model="newEmail" class="input" type="email" placeholder="新邮箱地址" />
+            <div class="email-code-row">
+              <input v-model="emailCode" class="input" placeholder="6 位验证码" inputmode="numeric" maxlength="6" />
+              <button class="btn btn-sm code-btn" :disabled="emailCounting > 0 || !newEmail || sendingEmailCode" @click="sendEmailCode">
+                {{ sendingEmailCode ? '发送中…' : emailCounting > 0 ? `${emailCounting}s 后重发` : '获取验证码' }}
+              </button>
+            </div>
+            <button class="btn btn-sm btn-primary" :disabled="!newEmail || !emailCode || savingEmail" @click="saveEmail">
+              {{ savingEmail ? '保存中…' : '确认修改' }}
+            </button>
+          </div>
+        </template>
+        <p class="modal-error" v-if="profileError">{{ profileError }}</p>
+        <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
+        <button class="btn btn-ghost" @click="showProfileModal = false">关闭</button>
+      </div>
+    </div>
+
     <!-- 好友申请弹窗 -->
     <div class="modal-overlay" v-if="showRequestsModal" @click.self="showRequestsModal = false">
       <div class="modal">
@@ -260,7 +305,7 @@
           <span>暂无待处理的申请</span>
         </div>
         <div v-for="r in friendStore.pendingRequests" :key="r.id" class="request-item">
-          <span class="avatar small" :style="{ background: avatarGradient(r.nickname) }">{{ avatarInitial(r.nickname) }}</span>
+          <Avatar :name="r.nickname" :url="r.avatar" size="sm" />
           <div class="request-info">
             <span class="request-name">{{ r.nickname }}</span>
             <span class="request-meta">账号 {{ r.userId }}</span>
@@ -304,6 +349,9 @@ import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { emojiGroups } from '@/constants/emojis'
+import Avatar from '@/components/Avatar.vue'
+import { avatarGradient, avatarInitial } from '@/utils/avatar'
+import { authApi } from '@/api/auth'
 import type { FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo } from '@/types'
 
 const router = useRouter()
@@ -345,6 +393,20 @@ const inviteSuccess = ref('')
 // @ 提及
 const mentionOpen = ref(false)
 const mentionQuery = ref('')
+// 个人资料
+const showProfileModal = ref(false)
+const profileNickname = ref('')
+const newEmail = ref('')
+const emailCode = ref('')
+const savingProfile = ref(false)
+const savingEmail = ref(false)
+const sendingEmailCode = ref(false)
+const emailCounting = ref(0)
+const showEmailEdit = ref(false)
+const profileError = ref('')
+const profileSuccess = ref('')
+const avatarInputRef = ref<HTMLInputElement | null>(null)
+let emailCountTimer: number | null = null
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -398,27 +460,14 @@ const inputPlaceholder = computed(() =>
   currentChat.value?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
 )
 
-// ==================== 头像 ====================
-const avatarColors = [  'linear-gradient(135deg, #5b6cff, #9c6bff)',
-  'linear-gradient(135deg, #00c6fb, #005bea)',
-  'linear-gradient(135deg, #f093fb, #f5576c)',
-  'linear-gradient(135deg, #4facfe, #00f2fe)',
-  'linear-gradient(135deg, #43e97b, #38b6f9)',
-  'linear-gradient(135deg, #fa709a, #fee140)',
-  'linear-gradient(135deg, #a18cd1, #fbc2eb)',
-  'linear-gradient(135deg, #f83600, #f9d423)'
-]
-
-/** 按名称哈希生成稳定的渐变头像背景 */
-function avatarGradient(name: string): string {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
-  return avatarColors[h % avatarColors.length]
-}
-
-function avatarInitial(name: string): string {
-  return (name || '?').charAt(0).toUpperCase()
-}
+// 当前会话头像（私聊=好友头像，群聊=群头像）
+const chatAvatar = computed(() => {
+  if (!currentChat.value) return null
+  if (currentChat.value.type === 'private') {
+    return friendStore.friends.find(x => x.userId === currentChat.value!.id)?.avatar ?? null
+  }
+  return groupStore.groups.find(x => x.id === currentChat.value!.id)?.avatar ?? null
+})
 
 // ==================== 时间 ====================
 function pad(n: number): string {
@@ -477,6 +526,7 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
   if (copyTipTimer) clearTimeout(copyTipTimer)
+  if (emailCountTimer) clearInterval(emailCountTimer)
 })
 
 function onDocClick(e: MouseEvent) {
@@ -926,6 +976,104 @@ function handleLogout() {
   router.push('/login')
 }
 
+// ==================== 个人资料 ====================
+function openProfileModal() {
+  profileNickname.value = auth.user?.nickname || ''
+  newEmail.value = ''
+  emailCode.value = ''
+  showEmailEdit.value = false
+  profileError.value = ''
+  profileSuccess.value = ''
+  showProfileModal.value = true
+}
+
+function triggerAvatarInput() {
+  avatarInputRef.value?.click()
+}
+
+async function onAvatarChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  profileError.value = ''
+  profileSuccess.value = ''
+  try {
+    const res = await auth.uploadAvatar(file)
+    if (res.success) profileSuccess.value = res.message || '头像修改成功'
+    else profileError.value = res.message
+  } catch (err: any) {
+    profileError.value = err?.message || '头像上传失败'
+  } finally {
+    input.value = ''
+  }
+}
+
+async function saveNickname() {
+  if (!profileNickname.value.trim()) {
+    profileError.value = '昵称不能为空'
+    return
+  }
+  savingProfile.value = true
+  profileError.value = ''
+  profileSuccess.value = ''
+  try {
+    const res = await auth.updateProfile(profileNickname.value)
+    if (res.success) profileSuccess.value = res.message
+    else profileError.value = res.message
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+function startEmailCountdown() {
+  emailCounting.value = 60
+  emailCountTimer = window.setInterval(() => {
+    emailCounting.value--
+    if (emailCounting.value <= 0 && emailCountTimer) {
+      clearInterval(emailCountTimer)
+      emailCountTimer = null
+    }
+  }, 1000)
+}
+
+async function sendEmailCode() {
+  if (!newEmail.value || emailCounting.value > 0 || sendingEmailCode.value) return
+  sendingEmailCode.value = true
+  profileError.value = ''
+  profileSuccess.value = ''
+  try {
+    const res = await authApi.sendCode({ email: newEmail.value.trim() })
+    if (res.success) {
+      profileSuccess.value = `验证码已发送至 ${newEmail.value.trim()}，5 分钟内有效`
+      startEmailCountdown()
+    } else {
+      profileError.value = res.message
+    }
+  } catch (err: any) {
+    profileError.value = err?.message || '验证码发送失败'
+  } finally {
+    sendingEmailCode.value = false
+  }
+}
+
+async function saveEmail() {
+  if (!newEmail.value || !emailCode.value) return
+  savingEmail.value = true
+  profileError.value = ''
+  profileSuccess.value = ''
+  try {
+    const res = await auth.updateEmail(newEmail.value.trim(), emailCode.value.trim())
+    if (res.success) {
+      profileSuccess.value = res.message
+      showEmailEdit.value = false
+    } else {
+      profileError.value = res.message
+    }
+  } finally {
+    savingEmail.value = false
+  }
+}
+
 watch(activeTab, () => {
   if (activeTab.value === 'friends') friendStore.fetchFriends()
   else if (activeTab.value === 'groups') groupStore.fetchGroups()
@@ -962,6 +1110,15 @@ watch(activeTab, () => {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+
+.user-info:hover {
+  background: var(--bg-hover);
 }
 
 .nickname {
@@ -1684,6 +1841,100 @@ watch(activeTab, () => {
   height: 16px;
   accent-color: var(--primary);
   flex-shrink: 0;
+}
+
+/* 个人资料弹窗 */
+.profile-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 10px;
+}
+
+.hidden-file {
+  display: none;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.profile-label {
+  width: 64px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.profile-value {
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-email {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.profile-edit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-edit .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-edit .btn {
+  flex-shrink: 0;
+}
+
+.email-edit {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px 0 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.email-code-row {
+  display: flex;
+  gap: 8px;
+}
+
+.email-code-row .input {
+  flex: 1;
+}
+
+.email-code-row .code-btn {
+  flex-shrink: 0;
+  padding: 0 12px;
+  font-size: 12.5px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--primary);
+  border: 1px solid var(--border);
+}
+
+.email-code-row .code-btn:hover:not(:disabled) {
+  background: #eef1ff;
+  border-color: var(--primary-light);
+}
+
+.email-code-row .code-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .request-actions {

@@ -39,6 +39,33 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** 修改昵称 */
+  async function updateProfile(nickname: string) {
+    const res = await authApi.updateProfile(nickname)
+    if (res.success && user.value) {
+      user.value.nickname = nickname.trim()
+    }
+    return res
+  }
+
+  /** 上传头像 */
+  async function uploadAvatar(file: File) {
+    const res = await authApi.uploadAvatar(file)
+    if (res.success && res.data && user.value) {
+      user.value.avatar = res.data.avatar
+    }
+    return res
+  }
+
+  /** 换绑邮箱 */
+  async function updateEmail(newEmail: string, code: string) {
+    const res = await authApi.updateEmail(newEmail, code)
+    if (res.success && user.value) {
+      user.value.email = newEmail.trim().toLowerCase()
+    }
+    return res
+  }
+
   function logout() {
     token.value = ''
     refreshToken.value = ''
@@ -47,5 +74,5 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('refreshToken')
   }
 
-  return { user, token, refreshToken, isLoggedIn, register, login, fetchUser, logout }
+  return { user, token, refreshToken, isLoggedIn, register, login, fetchUser, updateProfile, uploadAvatar, updateEmail, logout }
 })
