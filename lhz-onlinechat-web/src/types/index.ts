@@ -23,7 +23,8 @@ export interface SendCodeResponse {
 }
 
 export interface LoginRequest {
-  account: number
+  /** 账号 ID 或邮箱 */
+  account: string
   password: string
 }
 

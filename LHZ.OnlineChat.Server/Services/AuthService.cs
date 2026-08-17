@@ -113,14 +113,26 @@ public class AuthService
     }
 
     /// <summary>
-    /// 用户登录（账号 ID + 密码）
+    /// 用户登录（账号 ID 或邮箱 + 密码）
     /// </summary>
     public async Task<ApiResponse<LoginResponse>> LoginAsync(LoginRequest request)
     {
-        if (request.Account <= 0 || string.IsNullOrWhiteSpace(request.Password))
+        var account = request.Account?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(request.Password))
             return ApiResponse<LoginResponse>.Fail("请输入账号和密码");
 
-        var user = await _fsql.Select<User>().Where(u => u.Id == request.Account).FirstAsync();
+        // 纯数字按账号 ID 查询，否则按邮箱查询（邮箱统一小写）
+        User? user;
+        if (int.TryParse(account, out var accountId))
+        {
+            user = await _fsql.Select<User>().Where(u => u.Id == accountId).FirstAsync();
+        }
+        else
+        {
+            var email = account.ToLowerInvariant();
+            user = await _fsql.Select<User>().Where(u => u.Email == email).FirstAsync();
+        }
+
         if (user == null)
             return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 

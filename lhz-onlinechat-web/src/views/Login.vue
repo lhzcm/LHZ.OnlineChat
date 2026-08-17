@@ -3,9 +3,9 @@
     <div class="login-card">
       <div class="login-logo">💬</div>
       <h1>OnlineChat</h1>
-      <p class="subtitle">使用注册时分配的账号 ID 登录</p>
+      <p class="subtitle">使用账号 ID 或邮箱登录</p>
       <form @submit.prevent="handleLogin">
-        <input v-model="account" class="input" type="text" inputmode="numeric" placeholder="账号 ID" required />
+        <input v-model="account" class="input" type="text" placeholder="账号 ID 或邮箱" required />
         <input v-model="password" class="input" type="password" placeholder="密码" required />
         <button type="submit" class="btn btn-primary" :disabled="loading">
           {{ loading ? '登录中...' : '登 录' }}
@@ -42,9 +42,9 @@ onMounted(() => {
 })
 
 async function handleLogin() {
-  const acc = Number(account.value.trim())
-  if (!acc || acc <= 0) {
-    error.value = '请输入正确的账号 ID'
+  const acc = account.value.trim()
+  if (!acc) {
+    error.value = '请输入账号 ID 或邮箱'
     return
   }
   loading.value = true

@@ -42,9 +42,9 @@ public class RegisterResponse
 public class LoginRequest
 {
     /// <summary>
-    /// 账号 ID
+    /// 账号 ID 或邮箱（数字按账号 ID 查询，其余按邮箱查询）
     /// </summary>
-    public int Account { get; set; }
+    public string Account { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
 }
 
