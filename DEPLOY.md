@@ -62,9 +62,9 @@ vim .env
 SMTP_HOST=smtp.163.com        # 你已验证的 SMTP 服务器
 SMTP_PORT=465
 SMTP_ENABLE_SSL=true
-SMTP_USER=fastemail2026@163.com
+SMTP_USER=xxxxx@163.com
 SMTP_PASSWORD=你的授权码
-SMTP_FROM=fastemail2026@163.com
+SMTP_FROM=xxxxx@163.com
 ```
 
 > SMTP 留空时验证码会打印到后端日志并随接口返回(仅限测试)。
