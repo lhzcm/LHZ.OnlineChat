@@ -36,8 +36,8 @@ fsql.CodeFirst.SyncStructure(
     typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMessage)
 );
 
-// // 账号 ID 迁移：用户 ID 列改为 int，序列起始值 ≥ 10000（账号从 10000 开始自增）
-// EnsureAccountIdSchema(fsql);
+// 账号 ID 迁移：用户 ID 列改为 int，序列起始值 ≥ 10000（账号从 10000 开始自增）
+EnsureAccountIdSchema(fsql);
 
 builder.Services.AddSingleton(fsql);
 
@@ -282,39 +282,39 @@ static void EnsureDatabaseExists(string connectionString)
     }
 }
 
-// // ==================== 账号 ID 迁移（幂等）====================
-// // 用户 ID 列统一为 int；User_ 序列起始值设为 ≥10000，新账号从 10000 开始自增
-// static void EnsureAccountIdSchema(IFreeSql fsql)
-// {
-//     var sql = """
-//         DO $$
-//         BEGIN
-//           -- 用户 ID 相关列从 bigint 降为 integer（数据均在 int 范围内）
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='User_' AND column_name='Id' AND data_type='bigint') THEN
-//             ALTER TABLE "User_" ALTER COLUMN "Id" TYPE integer;
-//           END IF;
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='User_' AND column_name='Username') THEN
-//             ALTER TABLE "User_" DROP COLUMN "Username";
-//           END IF;
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='Friend' AND column_name='UserId' AND data_type='bigint') THEN
-//             ALTER TABLE "Friend" ALTER COLUMN "UserId" TYPE integer, ALTER COLUMN "FriendId" TYPE integer;
-//           END IF;
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='GroupMember' AND column_name='UserId' AND data_type='bigint') THEN
-//             ALTER TABLE "GroupMember" ALTER COLUMN "UserId" TYPE integer;
-//           END IF;
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='Group_' AND column_name='OwnerId' AND data_type='bigint') THEN
-//             ALTER TABLE "Group_" ALTER COLUMN "OwnerId" TYPE integer;
-//           END IF;
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='PrivateMessage' AND column_name='SenderId' AND data_type='bigint') THEN
-//             ALTER TABLE "PrivateMessage" ALTER COLUMN "SenderId" TYPE integer, ALTER COLUMN "ReceiverId" TYPE integer;
-//           END IF;
-//           IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='GroupMessage' AND column_name='SenderId' AND data_type='bigint') THEN
-//             ALTER TABLE "GroupMessage" ALTER COLUMN "SenderId" TYPE integer;
-//           END IF;
-//         END $$;
-//         SELECT setval(pg_get_serial_sequence('"User_"', 'Id'),
-//                       GREATEST((SELECT COALESCE(MAX("Id"), 0) FROM "User_"), 9999));
-//         """;
-//     fsql.Ado.ExecuteNonQuery(sql);
-//     Console.WriteLine("✅ 账号 ID 迁移完成（int 类型，起始 10000 自增）");
-// }
+// ==================== 账号 ID 迁移（幂等）====================
+// 用户 ID 列统一为 int；User_ 序列起始值设为 ≥10000，新账号从 10000 开始自增
+static void EnsureAccountIdSchema(IFreeSql fsql)
+{
+    var sql = """
+        DO $$
+        BEGIN
+          -- 用户 ID 相关列从 bigint 降为 integer（数据均在 int 范围内）
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='User_' AND column_name='Id' AND data_type='bigint') THEN
+            ALTER TABLE "User_" ALTER COLUMN "Id" TYPE integer;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='User_' AND column_name='Username') THEN
+            ALTER TABLE "User_" DROP COLUMN "Username";
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='Friend' AND column_name='UserId' AND data_type='bigint') THEN
+            ALTER TABLE "Friend" ALTER COLUMN "UserId" TYPE integer, ALTER COLUMN "FriendId" TYPE integer;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='GroupMember' AND column_name='UserId' AND data_type='bigint') THEN
+            ALTER TABLE "GroupMember" ALTER COLUMN "UserId" TYPE integer;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='Group_' AND column_name='OwnerId' AND data_type='bigint') THEN
+            ALTER TABLE "Group_" ALTER COLUMN "OwnerId" TYPE integer;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='PrivateMessage' AND column_name='SenderId' AND data_type='bigint') THEN
+            ALTER TABLE "PrivateMessage" ALTER COLUMN "SenderId" TYPE integer, ALTER COLUMN "ReceiverId" TYPE integer;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='GroupMessage' AND column_name='SenderId' AND data_type='bigint') THEN
+            ALTER TABLE "GroupMessage" ALTER COLUMN "SenderId" TYPE integer;
+          END IF;
+        END $$;
+        SELECT setval(pg_get_serial_sequence('"User_"', 'Id'),
+                      GREATEST((SELECT COALESCE(MAX("Id"), 0) FROM "User_"), 9999));
+        """;
+    fsql.Ado.ExecuteNonQuery(sql);
+    Console.WriteLine("✅ 账号 ID 迁移完成（int 类型，起始 10000 自增）");
+}
