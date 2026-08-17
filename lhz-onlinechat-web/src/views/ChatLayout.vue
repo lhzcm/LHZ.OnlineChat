@@ -181,6 +181,9 @@
               </div>
             </div>
           </div>
+          <button v-if="currentChat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionPicker" title="提及成员">
+            <span class="at-symbol">@</span>
+          </button>
           <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10" />
@@ -557,7 +560,7 @@ function pickMention(m: GroupMemberInfo) {
   if (!el) return
   const text = el.value
   const caret = el.selectionStart ?? text.length
-  const atIdx = text.lastIndexOf('@', caret - 1)
+  const atIdx = Math.max(text.lastIndexOf('@', caret - 1), text.lastIndexOf('＠', caret - 1))
   const insert = `@${m.nickname} `
   const start = atIdx >= 0 ? atIdx : caret
   inputText.value = text.slice(0, start) + insert + text.slice(caret)
@@ -567,6 +570,27 @@ function pickMention(m: GroupMemberInfo) {
     const pos = start + insert.length
     el.setSelectionRange(pos, pos)
   })
+}
+
+/** @ 快捷按钮：光标处插入 @ 并打开成员面板（不依赖键盘输入） */
+function openMentionPicker() {
+  if (!currentChat.value || currentChat.value.type !== 'group') return
+  if (groupStore.members.length === 0) {
+    groupStore.fetchMembers(currentChat.value.id)
+  }
+  const el = inputEl.value
+  if (el) {
+    const caret = el.selectionStart ?? inputText.value.length
+    const end = el.selectionEnd ?? caret
+    inputText.value = inputText.value.slice(0, caret) + '@' + inputText.value.slice(end)
+    nextTick(() => {
+      el.focus()
+      const pos = caret + 1
+      el.setSelectionRange(pos, pos)
+    })
+  }
+  mentionOpen.value = true
+  mentionQuery.value = ''
 }
 
 /** 解析文本中的 @昵称 为成员账号 ID 列表 */
@@ -596,6 +620,19 @@ function isMentioned(msg: WsMessage): boolean {
   if (!msg.mentions?.length || !auth.user) return false
   return msg.mentions.includes(auth.user.id)
 }
+
+// 诊断辅助（排障用）：浏览器控制台执行 window.__mentionDebug() 查看 @ 功能状态
+;(window as unknown as Record<string, unknown>).__mentionDebug = () => ({
+  path: location.pathname,
+  chatType: currentChat.value?.type,
+  chatId: currentChat.value?.id,
+  memberCount: groupStore.members.length,
+  members: groupStore.members.map(m => m.nickname),
+  mentionOpen: mentionOpen.value,
+  mentionQuery: mentionQuery.value,
+  inputValue: inputEl.value?.value ?? null,
+  hasInputEvents: true
+})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -1360,6 +1397,17 @@ watch(activeTab, () => {
   color: var(--primary);
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* @ 快捷按钮 */
+.mention-btn:hover {
+  color: var(--primary);
+}
+
+.at-symbol {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* 输入区 */
