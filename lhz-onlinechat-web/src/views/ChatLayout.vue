@@ -189,7 +189,7 @@
               <line x1="15" y1="9" x2="15.01" y2="9" />
             </svg>
           </button>
-          <input ref="inputEl" v-model="inputText" class="input" placeholder="输入消息… 输入 @ 可提及成员" @keydown.enter="onInputEnter" @input="onInputChange" />
+          <input ref="inputEl" v-model="inputText" class="input" placeholder="输入消息… 输入 @ 可提及成员" @keydown="onInputKeydown" @input="onInputChange" />
           <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
         </div>
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
@@ -507,7 +507,22 @@ function onInputEnter(e: KeyboardEvent) {
 }
 
 // ==================== @ 提及 ====================
-/** 输入变化时检测 @ 触发成员选择（仅群聊） */
+/** 输入框按键：@ 键直接打开成员面板（双保险，避免 input 事件异常），Enter 发送 */
+function onInputKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    onInputEnter(e)
+    return
+  }
+  if ((e.key === '@' || e.key === '＠') && currentChat.value?.type === 'group') {
+    mentionOpen.value = true
+    mentionQuery.value = ''
+    if (groupStore.members.length === 0) {
+      groupStore.fetchMembers(currentChat.value.id)
+    }
+  }
+}
+
+/** 输入变化时检测 @ 触发成员选择（仅群聊），兼容全角 ＠ */
 function onInputChange() {
   const el = inputEl.value
   if (!el || currentChat.value?.type !== 'group') {
@@ -516,8 +531,11 @@ function onInputChange() {
   }
   const text = el.value
   const caret = el.selectionStart ?? text.length
-  // 向前找最近的非邮箱 @（前面是空白或开头）
-  const atIdx = text.lastIndexOf('@', caret - 1)
+  // 向前找最近的非邮箱 @（前面是空白或开头；兼容全角 ＠）
+  const atIdx = Math.max(
+    text.lastIndexOf('@', caret - 1),
+    text.lastIndexOf('＠', caret - 1)
+  )
   if (atIdx >= 0 && (atIdx === 0 || /\s/.test(text[atIdx - 1]))) {
     const token = text.slice(atIdx + 1, caret)
     if (!token.includes(' ')) {
