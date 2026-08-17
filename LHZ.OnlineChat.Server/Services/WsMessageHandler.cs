@@ -143,6 +143,7 @@ public class WsMessageHandler
             Content = message.Content,
             MessageType = message.MessageType,
             ClientMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId,
+            Mentions = message.Mentions?.Count > 0 ? string.Join(',', message.Mentions) : null,
             SentAt = DateTime.UtcNow
         };
         var msgId = await _fsql.Insert(groupMsg).ExecuteIdentityAsync();
@@ -361,6 +362,7 @@ public class WsMessageHandler
                     Content = m.Content,
                     MessageId = string.IsNullOrWhiteSpace(m.ClientMessageId) ? m.Id.ToString() : m.ClientMessageId,
                     MessageType = m.MessageType,
+                    Mentions = ParseMentions(m.Mentions),
                     Timestamp = new DateTimeOffset(m.SentAt, TimeSpan.Zero).ToUnixTimeMilliseconds(),
                     SenderName = userDict.TryGetValue(m.SenderId, out var u) ? u.Nickname : "未知",
                     SenderAvatar = userDict.TryGetValue(m.SenderId, out var u2) ? u2.Avatar : null
@@ -368,5 +370,18 @@ public class WsMessageHandler
                 client.SendMessage(JsonConvert.Serialize(wsMsg));
             }
         }
+    }
+
+    /// <summary>
+    /// 解析逗号分隔的提及 ID 字符串为列表
+    /// </summary>
+    private static List<int> ParseMentions(string? mentions)
+    {
+        if (string.IsNullOrWhiteSpace(mentions)) return new List<int>();
+        return mentions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
     }
 }

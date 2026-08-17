@@ -103,6 +103,8 @@ export interface GroupMessageDto {
   messageType: number
   sentAt: string
   messageId: string | null
+  /** 被 @ 的成员账号 ID 列表 */
+  mentions: number[]
 }
 
 export interface PagedResult<T> {
@@ -123,6 +125,8 @@ export interface WsMessage {
   messageType: number
   senderName: string
   senderAvatar: string | null
+  /** 被 @ 的成员账号 ID 列表（群聊提及） */
+  mentions?: number[]
 }
 
 // ==================== 聊天会话 ====================

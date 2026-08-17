@@ -151,6 +151,7 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 MessageId = m.ClientMessageId,
+                Mentions = ParseMentions(m.Mentions),
                 SentAt = m.SentAt
             })
             .ToList();
@@ -408,5 +409,18 @@ public class MessageService
             // 单条缓存解析失败不影响整体
             return null;
         }
+    }
+
+    /// <summary>
+    /// 解析逗号分隔的提及 ID 字符串为列表
+    /// </summary>
+    private static List<int> ParseMentions(string? mentions)
+    {
+        if (string.IsNullOrWhiteSpace(mentions)) return new List<int>();
+        return mentions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
     }
 }

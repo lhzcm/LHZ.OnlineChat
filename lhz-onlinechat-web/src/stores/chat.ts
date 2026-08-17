@@ -144,7 +144,8 @@ export const useChatStore = defineStore('chat', () => {
           messageId: m.messageId || String(m.id),
           messageType: m.messageType,
           senderName: m.senderName,
-          senderAvatar: m.senderAvatar
+          senderAvatar: m.senderAvatar,
+          mentions: m.mentions || []
         } as WsMessage))
         messages.value.set(key, mergeList(existing, newMsgs))
       }

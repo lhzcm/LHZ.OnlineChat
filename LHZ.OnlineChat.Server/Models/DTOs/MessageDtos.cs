@@ -35,6 +35,11 @@ public class GroupMessageDto
     /// 客户端消息 ID（与 WS 推送一致，用于前端去重）；为空时前端回退数据库 ID
     /// </summary>
     public string? MessageId { get; set; }
+
+    /// <summary>
+    /// 被 @ 的成员账号 ID 列表（群聊提及）
+    /// </summary>
+    public List<int> Mentions { get; set; } = new();
 }
 
 public class PagedResult<T>

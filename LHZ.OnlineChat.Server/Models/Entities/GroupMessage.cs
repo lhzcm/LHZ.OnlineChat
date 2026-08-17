@@ -24,6 +24,12 @@ public class GroupMessage
     [Column(StringLength = 64)]
     public string? ClientMessageId { get; set; }
 
+    /// <summary>
+    /// 被 @ 的成员账号 ID，逗号分隔（如 "10000,10002"）；为空表示无提及
+    /// </summary>
+    [Column(StringLength = 500)]
+    public string? Mentions { get; set; }
+
     [Column(IsNullable = false, StringLength = -2)]
     public string Content { get; set; } = string.Empty;
 

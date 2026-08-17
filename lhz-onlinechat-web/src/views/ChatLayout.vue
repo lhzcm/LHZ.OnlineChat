@@ -157,13 +157,21 @@
               <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
                 {{ msg.senderName }}
               </span>
-              <div class="msg-bubble">{{ msg.content }}</div>
+              <div class="msg-bubble" :class="{ mentioned: isMentioned(msg) }" v-html="renderContent(msg.content)"></div>
               <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
             </div>
           </div>
         </div>
 
         <div class="chat-input-bar">
+          <!-- @ 成员选择浮层 -->
+          <div class="mention-panel" v-if="mentionOpen && mentionFiltered.length" @click.stop>
+            <button v-for="m in mentionFiltered" :key="m.userId" class="mention-item" @click="pickMention(m)">
+              <span class="avatar small" :style="{ background: avatarGradient(m.nickname) }">{{ avatarInitial(m.nickname) }}</span>
+              <span class="contact-name">{{ m.nickname }}</span>
+              <span class="mention-role" v-if="m.role === 0">群主</span>
+            </button>
+          </div>
           <!-- 表情面板 -->
           <div class="emoji-panel" ref="emojiPanelRef" v-if="showEmojiPanel" @click.stop>
             <div class="emoji-group" v-for="g in emojiGroups" :key="g.name">
@@ -181,7 +189,7 @@
               <line x1="15" y1="9" x2="15.01" y2="9" />
             </svg>
           </button>
-          <input ref="inputEl" v-model="inputText" class="input" placeholder="输入消息…" @keydown.enter="onInputEnter" />
+          <input ref="inputEl" v-model="inputText" class="input" placeholder="输入消息… 输入 @ 可提及成员" @keydown.enter="onInputEnter" @input="onInputChange" />
           <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
         </div>
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
@@ -331,6 +339,9 @@ const selectedInviteIds = ref<number[]>([])
 const inviting = ref(false)
 const inviteError = ref('')
 const inviteSuccess = ref('')
+// @ 提及
+const mentionOpen = ref(false)
+const mentionQuery = ref('')
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -370,6 +381,13 @@ const canInvite = computed(() => {
 const invitableFriends = computed(() => {
   const memberIds = new Set(groupStore.members.map(m => m.userId))
   return friendStore.friends.filter(f => !memberIds.has(f.userId))
+})
+
+// @ 成员选择：按输入过滤
+const mentionFiltered = computed(() => {
+  const q = mentionQuery.value.trim().toLowerCase()
+  const list = groupStore.members.filter(m => !q || m.nickname.toLowerCase().includes(q))
+  return list.slice(0, 8)
 })
 
 // ==================== 头像 ====================
@@ -486,6 +504,75 @@ function insertEmoji(emoji: string) {
 function onInputEnter(e: KeyboardEvent) {
   if (e.isComposing) return
   send()
+}
+
+// ==================== @ 提及 ====================
+/** 输入变化时检测 @ 触发成员选择（仅群聊） */
+function onInputChange() {
+  const el = inputEl.value
+  if (!el || currentChat.value?.type !== 'group') {
+    mentionOpen.value = false
+    return
+  }
+  const text = el.value
+  const caret = el.selectionStart ?? text.length
+  // 向前找最近的非邮箱 @（前面是空白或开头）
+  const atIdx = text.lastIndexOf('@', caret - 1)
+  if (atIdx >= 0 && (atIdx === 0 || /\s/.test(text[atIdx - 1]))) {
+    const token = text.slice(atIdx + 1, caret)
+    if (!token.includes(' ')) {
+      mentionOpen.value = true
+      mentionQuery.value = token
+      return
+    }
+  }
+  mentionOpen.value = false
+}
+
+/** 选择成员：替换 @token 为 @昵称，保留光标 */
+function pickMention(m: GroupMemberInfo) {
+  const el = inputEl.value
+  if (!el) return
+  const text = el.value
+  const caret = el.selectionStart ?? text.length
+  const atIdx = text.lastIndexOf('@', caret - 1)
+  const insert = `@${m.nickname} `
+  const start = atIdx >= 0 ? atIdx : caret
+  inputText.value = text.slice(0, start) + insert + text.slice(caret)
+  mentionOpen.value = false
+  nextTick(() => {
+    el.focus()
+    const pos = start + insert.length
+    el.setSelectionRange(pos, pos)
+  })
+}
+
+/** 解析文本中的 @昵称 为成员账号 ID 列表 */
+function parseMentions(text: string): number[] {
+  if (currentChat.value?.type !== 'group') return []
+  const ids: number[] = []
+  for (const m of groupStore.members) {
+    if (text.includes(`@${m.nickname}`) && !ids.includes(m.userId)) {
+      ids.push(m.userId)
+    }
+  }
+  return ids
+}
+
+/** 渲染消息内容：转义 HTML 后高亮 @提及（防 XSS） */
+function renderContent(content: string): string {
+  const esc = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+  return esc.replace(/@([^\s@，。！？!?,]+)/g, '<span class="mention">@$1</span>')
+}
+
+/** 该消息是否提及了当前用户 */
+function isMentioned(msg: WsMessage): boolean {
+  if (!msg.mentions?.length || !auth.user) return false
+  return msg.mentions.includes(auth.user.id)
 }
 
 function scrollToBottom() {
@@ -618,7 +705,8 @@ function send() {
     messageId: genId(), // 客户端 ID，服务端回显时保留，用于去重
     messageType: 0,
     senderName: auth.user.nickname,
-    senderAvatar: auth.user.avatar
+    senderAvatar: auth.user.avatar,
+    mentions: parseMentions(text) // 群聊 @ 提及
   }
   chatStore.addMessage(msg, auth.user.id) // 乐观插入，回显到达后自动去重
   ws.sendMessage(msg)
@@ -1186,6 +1274,68 @@ watch(activeTab, () => {
   font-size: 11px;
   color: var(--text-secondary);
   padding: 0 4px;
+}
+
+/* @ 提及高亮 */
+.mention {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 被 @ 的消息：主色描边标记 */
+.msg-bubble.mentioned {
+  outline: 2px solid rgba(91, 108, 255, 0.5);
+  outline-offset: -2px;
+}
+
+/* @ 成员选择浮层 */
+.mention-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 12px;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  z-index: 20;
+  animation: modal-in 0.15s;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.mention-item:hover {
+  background: var(--bg-hover);
+}
+
+.mention-item .avatar.small {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.mention-role {
+  font-size: 11px;
+  color: var(--primary);
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* 输入区 */

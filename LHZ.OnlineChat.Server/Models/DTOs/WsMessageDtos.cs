@@ -62,6 +62,12 @@ public class WsMessage
     /// </summary>
     [JsonProperty("senderAvatar")]
     public string? SenderAvatar { get; set; }
+
+    /// <summary>
+    /// 被 @ 的成员账号 ID 列表（群聊提及）
+    /// </summary>
+    [JsonProperty("mentions")]
+    public List<int> Mentions { get; set; } = new();
 }
 
 /// <summary>
