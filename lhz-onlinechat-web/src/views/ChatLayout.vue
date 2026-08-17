@@ -523,6 +523,10 @@ function onInputChange() {
     if (!token.includes(' ')) {
       mentionOpen.value = true
       mentionQuery.value = token
+      // 成员列表尚未加载时兜底拉取（进入群聊时通常已加载；拉取幂等）
+      if (groupStore.members.length === 0) {
+        groupStore.fetchMembers(currentChat.value.id)
+      }
       return
     }
   }
@@ -611,6 +615,8 @@ function selectGroupChat(group: { id: number; name: string }) {
   chatStore.setCurrentSession('group', group.id, group.name)
   chatStore.loadHistory('group', group.id)
   chatStore.markSessionRead('group', group.id)
+  // 预加载群成员（@ 选择器与成员面板共用）
+  groupStore.fetchMembers(group.id)
   mobileChatOpen.value = true
   scrollToBottom()
 }
