@@ -81,7 +81,7 @@
             </div>
             <div class="contact-info">
               <div class="info-top">
-                <span class="contact-name">{{ friendDisplayName(f) }}</span>
+                <span class="contact-name">{{ friendLabel(f) }}</span>
                 <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
               </div>
               <div class="info-bottom">
@@ -208,7 +208,7 @@
         <h3>好友设置</h3>
         <div class="friend-setting-head">
           <Avatar :name="friendSetting ? friendDisplayName(friendSetting) : ''" :url="friendSetting?.avatar" size="sm" />
-          <span class="request-name">{{ friendSetting ? friendDisplayName(friendSetting) : '' }}</span>
+          <span class="request-name">{{ friendSetting ? friendLabel(friendSetting) : '' }}</span>
           <span class="request-meta">账号 {{ friendSetting?.userId }}</span>
         </div>
         <label class="set-label">备注名</label>
@@ -465,12 +465,14 @@ const sortedSessions = computed(() =>
   [...chatStore.sessions].sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime())
 )
 
-// 聊天窗口副标题：私聊显示在线状态，群聊显示人数
+// 聊天窗口副标题：私聊显示原昵称+在线状态（有备注时），群聊显示人数
 const chatSub = computed(() => {
   if (!currentChat.value) return ''
   if (currentChat.value.type === 'private') {
     const f = friendStore.friends.find(x => x.userId === currentChat.value!.id)
-    return f ? (f.isOnline ? '在线' : '离线') : ''
+    if (!f) return ''
+    const status = f.isOnline ? '在线' : '离线'
+    return f.remark ? `${f.nickname} · ${status}` : status
   }
   const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
   return g ? `${g.memberCount} 人` : ''
@@ -516,6 +518,11 @@ const chatAvatar = computed(() => {
 // 好友显示名：备注优先，其次昵称
 function friendDisplayName(f: FriendInfo): string {
   return f.remark || f.nickname
+}
+
+// 好友显示名（含原昵称）：有备注时显示「备注名(原昵称)」
+function friendLabel(f: FriendInfo): string {
+  return f.remark ? `${f.remark}(${f.nickname})` : f.nickname
 }
 
 // 好友按分类分组（未分组放最后，其余按分类名排序）
