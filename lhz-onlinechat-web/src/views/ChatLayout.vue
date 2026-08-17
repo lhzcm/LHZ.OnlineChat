@@ -585,6 +585,11 @@ onMounted(async () => {
     chatStore.fetchSessions()
   ])
 
+  // 进入主页：有会话时默认显示会话列表，否则显示好友 Tab 引导添加
+  if (chatStore.sessions.length > 0) {
+    activeTab.value = 'sessions'
+  }
+
   // 拉取离线消息并计入未读角标
   try {
     if (auth.user) {
