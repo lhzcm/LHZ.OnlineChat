@@ -50,6 +50,26 @@ export const useFriendStore = defineStore('friend', () => {
     return res
   }
 
+  /** 设置好友备注（空 = 清除） */
+  async function setRemark(friendId: number, remark: string) {
+    const res = await friendApi.setRemark(friendId, remark)
+    if (res.success) {
+      const f = friends.value.find(x => x.userId === friendId)
+      if (f) f.remark = remark.trim() || null
+    }
+    return res
+  }
+
+  /** 设置好友分类（空 = 清除，未分组） */
+  async function setCategory(friendId: number, category: string) {
+    const res = await friendApi.setCategory(friendId, category)
+    if (res.success) {
+      const f = friends.value.find(x => x.userId === friendId)
+      if (f) f.category = category.trim() || null
+    }
+    return res
+  }
+
   function updateOnlineStatus(userId: number, isOnline: boolean) {
     const friend = friends.value.find(f => f.userId === userId)
     if (friend) {
@@ -57,5 +77,5 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
-  return { friends, pendingRequests, fetchFriends, fetchPendingRequests, sendRequest, acceptRequest, rejectRequest, deleteFriend, updateOnlineStatus }
+  return { friends, pendingRequests, fetchFriends, fetchPendingRequests, sendRequest, acceptRequest, rejectRequest, deleteFriend, setRemark, setCategory, updateOnlineStatus }
 })

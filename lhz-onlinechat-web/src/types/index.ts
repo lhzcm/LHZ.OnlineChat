@@ -51,6 +51,10 @@ export interface FriendInfo {
   avatar: string | null
   isOnline: boolean
   status: number
+  /** 我设置的备注（空显示对方昵称） */
+  remark: string | null
+  /** 我设置的分类标签（空为未分组） */
+  category: string | null
 }
 
 export interface FriendRequestInfo {

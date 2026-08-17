@@ -159,18 +159,27 @@ public class FriendService
             .Where(u => friendIds.Contains(u.Id))
             .ToListAsync();
 
+        // 查询我设置的备注/分类（设置者视角）
+        var tags = await _fsql.Select<FriendTag>()
+            .Where(t => t.UserId == userId && friendIds.Contains(t.FriendId))
+            .ToListAsync();
+        var tagDict = tags.ToDictionary(t => t.FriendId);
+
         // 检查在线状态
         var result = new List<FriendInfo>();
         foreach (var user in users)
         {
             var isOnline = await _redis.KeyExistsAsync($"ws:online:{user.Id}");
+            var tag = tagDict.GetValueOrDefault(user.Id);
             result.Add(new FriendInfo
             {
                 UserId = user.Id,
                 Nickname = user.Nickname,
                 Avatar = user.Avatar,
                 IsOnline = isOnline,
-                Status = 1
+                Status = 1,
+                Remark = tag?.Remark,
+                Category = tag?.Category
             });
         }
 
@@ -178,6 +187,82 @@ public class FriendService
         result = result.OrderByDescending(f => f.IsOnline).ThenBy(f => f.Nickname).ToList();
 
         return ApiResponse<List<FriendInfo>>.Ok(result);
+    }
+
+    /// <summary>
+    /// 设置好友备注（空 = 清除备注）
+    /// </summary>
+    public async Task<ApiResponse> SetFriendRemarkAsync(int userId, int friendId, string? remark)
+    {
+        if (!await IsFriendAsync(userId, friendId))
+            return ApiResponse.Fail("好友关系不存在");
+
+        remark = string.IsNullOrWhiteSpace(remark) ? null : remark.Trim();
+        if (remark != null && remark.Length > 50)
+            return ApiResponse.Fail("备注长度不能超过 50 个字符");
+
+        await UpsertTagAsync(userId, friendId, tag => _fsql.Update<FriendTag>()
+            .Set(t => t.Remark, remark)
+            .Where(t => t.Id == tag.Id)
+            .ExecuteAffrowsAsync());
+
+        return ApiResponse.Ok(remark == null ? "已清除备注" : "备注已保存");
+    }
+
+    /// <summary>
+    /// 设置好友分类标签（空 = 清除分类，未分组）
+    /// </summary>
+    public async Task<ApiResponse> SetFriendCategoryAsync(int userId, int friendId, string? category)
+    {
+        if (!await IsFriendAsync(userId, friendId))
+            return ApiResponse.Fail("好友关系不存在");
+
+        category = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+        if (category != null && category.Length > 30)
+            return ApiResponse.Fail("分类名称不能超过 30 个字符");
+
+        await UpsertTagAsync(userId, friendId, tag => _fsql.Update<FriendTag>()
+            .Set(t => t.Category, category)
+            .Where(t => t.Id == tag.Id)
+            .ExecuteAffrowsAsync());
+
+        return ApiResponse.Ok(category == null ? "已清除分类" : "分类已保存");
+    }
+
+    /// <summary>
+    /// 判断两人是否为好友（已接受）
+    /// </summary>
+    private async Task<bool> IsFriendAsync(int userId, int friendId)
+    {
+        if (userId == friendId) return false;
+        return await _fsql.Select<Friend>()
+            .Where(f => f.Status == 1 &&
+                ((f.UserId == userId && f.FriendId == friendId) ||
+                 (f.UserId == friendId && f.FriendId == userId)))
+            .AnyAsync();
+    }
+
+    /// <summary>
+    /// upsert 好友设置：存在则更新，不存在则创建
+    /// </summary>
+    private async Task UpsertTagAsync(int userId, int friendId, Func<FriendTag, Task> updateAction)
+    {
+        var tag = await _fsql.Select<FriendTag>()
+            .Where(t => t.UserId == userId && t.FriendId == friendId)
+            .FirstAsync();
+
+        if (tag == null)
+        {
+            await _fsql.Insert(new FriendTag { UserId = userId, FriendId = friendId }).ExecuteAffrowsAsync();
+            tag = await _fsql.Select<FriendTag>()
+                .Where(t => t.UserId == userId && t.FriendId == friendId)
+                .FirstAsync();
+        }
+
+        if (tag != null)
+        {
+            await updateAction(tag);
+        }
     }
 
     /// <summary>

@@ -29,6 +29,7 @@ var fsql = new FreeSql.FreeSqlBuilder()
 fsql.CodeFirst.SyncStructure(
     typeof(LHZ.OnlineChat.Server.Models.Entities.User),
     typeof(LHZ.OnlineChat.Server.Models.Entities.Friend),
+    typeof(LHZ.OnlineChat.Server.Models.Entities.FriendTag),
     typeof(LHZ.OnlineChat.Server.Models.Entities.Group_),
     typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMember),
     typeof(LHZ.OnlineChat.Server.Models.Entities.PrivateMessage),

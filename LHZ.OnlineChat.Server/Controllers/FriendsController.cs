@@ -68,6 +68,26 @@ public class FriendsController : ControllerBase
     }
 
     /// <summary>
+    /// 设置好友备注（空 = 清除）
+    /// </summary>
+    [HttpPut("{friendId:int}/remark")]
+    public async Task<IActionResult> SetRemark(int friendId, [FromBody] SetFriendRemarkRequest request)
+    {
+        var result = await _friendService.SetFriendRemarkAsync(GetCurrentUserId(), friendId, request.Remark);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 设置好友分类标签（空 = 清除，未分组）
+    /// </summary>
+    [HttpPut("{friendId:int}/category")]
+    public async Task<IActionResult> SetCategory(int friendId, [FromBody] SetFriendCategoryRequest request)
+    {
+        var result = await _friendService.SetFriendCategoryAsync(GetCurrentUserId(), friendId, request.Category);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 获取好友列表
     /// </summary>
     [HttpGet]

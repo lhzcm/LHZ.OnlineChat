@@ -65,25 +65,32 @@
         </div>
       </div>
 
-      <!-- 好友列表 -->
+      <!-- 好友列表（按分类分组） -->
       <div class="contact-list" v-else-if="activeTab === 'friends'">
-        <div v-for="f in friendStore.friends" :key="f.userId"
-          :class="['contact-item', { active: currentChat?.type === 'private' && currentChat.id === f.userId }]"
-          @click="selectPrivateChat(f)">
-          <div class="avatar-wrap">
-            <Avatar :name="f.nickname" :url="f.avatar" size="sm" />
-            <span :class="['status-dot', f.isOnline ? 'online' : 'offline']"></span>
+        <template v-for="group in groupedFriends" :key="group.category">
+          <div class="group-header" v-if="group.friends.length">
+            <span>{{ group.category }}</span>
+            <span class="group-count">{{ group.friends.length }}</span>
           </div>
-          <div class="contact-info">
-            <div class="info-top">
-              <span class="contact-name">{{ f.nickname }}</span>
-              <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
+          <div v-for="f in group.friends" :key="f.userId"
+            :class="['contact-item', { active: currentChat?.type === 'private' && currentChat.id === f.userId }]"
+            @click="selectPrivateChat(f)">
+            <div class="avatar-wrap">
+              <Avatar :name="friendDisplayName(f)" :url="f.avatar" size="sm" />
+              <span :class="['status-dot', f.isOnline ? 'online' : 'offline']"></span>
             </div>
-            <div class="info-bottom">
-              <span class="contact-meta">{{ lastMessageFor('private', f.userId) || (f.isOnline ? '在线' : '离线') }}</span>
+            <div class="contact-info">
+              <div class="info-top">
+                <span class="contact-name">{{ friendDisplayName(f) }}</span>
+                <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
+              </div>
+              <div class="info-bottom">
+                <span class="contact-meta">{{ lastMessageFor('private', f.userId) || (f.isOnline ? '在线' : '离线') }}</span>
+              </div>
             </div>
+            <button class="friend-more" title="备注/分类" @click.stop="openFriendSetting(f)">⋯</button>
           </div>
-        </div>
+        </template>
         <div class="empty" v-if="friendStore.friends.length === 0">
           <span class="empty-icon">👥</span>
           <span>暂无好友，点击上方按钮添加</span>
@@ -194,6 +201,34 @@
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
       </template>
     </main>
+
+    <!-- 好友设置弹窗（备注/分类） -->
+    <div class="modal-overlay" v-if="showFriendSetting" @click.self="showFriendSetting = false">
+      <div class="modal">
+        <h3>好友设置</h3>
+        <div class="friend-setting-head">
+          <Avatar :name="friendSetting ? friendDisplayName(friendSetting) : ''" :url="friendSetting?.avatar" size="sm" />
+          <span class="request-name">{{ friendSetting ? friendDisplayName(friendSetting) : '' }}</span>
+          <span class="request-meta">账号 {{ friendSetting?.userId }}</span>
+        </div>
+        <label class="set-label">备注名</label>
+        <input v-model="friendRemark" class="input" placeholder="给好友设置备注（留空显示对方昵称）" maxlength="50" />
+        <label class="set-label">分类标签</label>
+        <div class="cat-chips">
+          <button v-for="c in presetCategories" :key="c"
+            :class="['chip', { active: friendCategory === c }]"
+            @click="friendCategory = c">{{ c }}</button>
+          <button :class="['chip', { active: !friendCategory }]" @click="friendCategory = ''">未分组</button>
+        </div>
+        <input v-model="friendCategory" class="input" placeholder="或输入自定义分类" maxlength="30" />
+        <button class="btn btn-primary" :disabled="savingFriendTag" @click="saveFriendTag">
+          {{ savingFriendTag ? '保存中…' : '保 存' }}
+        </button>
+        <p class="modal-error" v-if="friendTagError">{{ friendTagError }}</p>
+        <p class="modal-success" v-if="friendTagSuccess">{{ friendTagSuccess }}</p>
+        <button class="btn btn-ghost" @click="showFriendSetting = false">关闭</button>
+      </div>
+    </div>
 
     <!-- 群成员面板 -->
     <div class="modal-overlay" v-if="showMembersModal" @click.self="showMembersModal = false">
@@ -352,7 +387,7 @@ import { emojiGroups } from '@/constants/emojis'
 import Avatar from '@/components/Avatar.vue'
 import { avatarGradient, avatarInitial } from '@/utils/avatar'
 import { authApi } from '@/api/auth'
-import type { FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo } from '@/types'
+import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -393,6 +428,15 @@ const inviteSuccess = ref('')
 // @ 提及
 const mentionOpen = ref(false)
 const mentionQuery = ref('')
+// 好友设置（备注/分类）
+const showFriendSetting = ref(false)
+const friendSetting = ref<FriendInfo | null>(null)
+const friendRemark = ref('')
+const friendCategory = ref('')
+const savingFriendTag = ref(false)
+const friendTagError = ref('')
+const friendTagSuccess = ref('')
+const presetCategories = ['家人', '朋友', '同事', '同学', '客户', '其他']
 // 个人资料
 const showProfileModal = ref(false)
 const profileNickname = ref('')
@@ -467,6 +511,33 @@ const chatAvatar = computed(() => {
     return friendStore.friends.find(x => x.userId === currentChat.value!.id)?.avatar ?? null
   }
   return groupStore.groups.find(x => x.id === currentChat.value!.id)?.avatar ?? null
+})
+
+// 好友显示名：备注优先，其次昵称
+function friendDisplayName(f: FriendInfo): string {
+  return f.remark || f.nickname
+}
+
+// 好友按分类分组（未分组放最后，其余按分类名排序）
+const groupedFriends = computed(() => {
+  const map = new Map<string, FriendInfo[]>()
+  for (const f of friendStore.friends) {
+    const cat = f.category || '未分组'
+    const list = map.get(cat) || []
+    list.push(f)
+    map.set(cat, list)
+  }
+  const groups = [...map.entries()]
+    .map(([category, friends]) => ({
+      category,
+      friends: [...friends].sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || a.nickname.localeCompare(b.nickname))
+    }))
+    .sort((a, b) => {
+      if (a.category === '未分组') return 1
+      if (b.category === '未分组') return -1
+      return a.category.localeCompare(b.category)
+    })
+  return groups
 })
 
 // ==================== 时间 ====================
@@ -970,6 +1041,42 @@ async function copyAccountId() {
   }, 2000)
 }
 
+// ==================== 好友设置（备注/分类） ====================
+function openFriendSetting(f: FriendInfo) {
+  friendSetting.value = f
+  friendRemark.value = f.remark || ''
+  friendCategory.value = f.category || ''
+  friendTagError.value = ''
+  friendTagSuccess.value = ''
+  showFriendSetting.value = true
+}
+
+async function saveFriendTag() {
+  if (!friendSetting.value) return
+  savingFriendTag.value = true
+  friendTagError.value = ''
+  friendTagSuccess.value = ''
+  try {
+    const remarkRes = await friendStore.setRemark(friendSetting.value.userId, friendRemark.value)
+    if (!remarkRes.success) {
+      friendTagError.value = remarkRes.message
+      return
+    }
+    const catRes = await friendStore.setCategory(friendSetting.value.userId, friendCategory.value)
+    if (!catRes.success) {
+      friendTagError.value = catRes.message
+      return
+    }
+    friendTagSuccess.value = '已保存'
+    // 若正在与该好友聊天，更新会话显示名
+    if (currentChat.value?.type === 'private' && currentChat.value.id === friendSetting.value.userId) {
+      currentChat.value.name = friendDisplayName(friendSetting.value)
+    }
+  } finally {
+    savingFriendTag.value = false
+  }
+}
+
 function handleLogout() {
   ws.disconnect()
   auth.logout()
@@ -1332,6 +1439,98 @@ watch(activeTab, () => {
   line-height: 18px;
   text-align: center;
   flex-shrink: 0;
+}
+
+/* 好友分组 */
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.group-count {
+  font-weight: 400;
+  font-size: 11px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+
+.friend-more {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: all 0.15s;
+}
+
+.contact-item:hover .friend-more,
+.friend-more:focus-visible {
+  opacity: 1;
+}
+
+.friend-more:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 好友设置弹窗 */
+.friend-setting-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+
+.friend-setting-head .request-name {
+  font-size: 15px;
+}
+
+.set-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-white);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.chip.active {
+  background: #eef1ff;
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 500;
 }
 
 .empty {

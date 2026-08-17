@@ -17,6 +17,12 @@ export const friendApi = {
   deleteFriend(friendId: number): Promise<ApiResponse> {
     return request.delete(`/friends/${friendId}`)
   },
+  setRemark(friendId: number, remark: string): Promise<ApiResponse> {
+    return request.put(`/friends/${friendId}/remark`, { remark })
+  },
+  setCategory(friendId: number, category: string): Promise<ApiResponse> {
+    return request.put(`/friends/${friendId}/category`, { category })
+  },
   getPendingRequests(): Promise<ApiResponse<FriendRequestInfo[]>> {
     return request.get('/friends/pending')
   }
