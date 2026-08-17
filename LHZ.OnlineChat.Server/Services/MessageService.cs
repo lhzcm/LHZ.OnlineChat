@@ -315,13 +315,21 @@ public class MessageService
             var users = await _fsql.Select<User>().Where(u => peerIds.Contains(u.Id)).ToListAsync();
             var userDict = users.ToDictionary(u => u.Id);
 
+            // 我的好友备注（会话名优先显示备注）
+            var tags = await _fsql.Select<FriendTag>()
+                .Where(t => t.UserId == userId && peerIds.Contains(t.FriendId))
+                .ToListAsync();
+            var tagDict = tags.ToDictionary(t => t.FriendId);
+
             foreach (var (peerId, last) in peerLast)
             {
+                var nickname = userDict.GetValueOrDefault(peerId)?.Nickname ?? $"用户{peerId}";
+                var remark = tagDict.GetValueOrDefault(peerId)?.Remark;
                 sessions.Add(new SessionDto
                 {
                     Type = "private",
                     Id = peerId,
-                    Name = userDict.GetValueOrDefault(peerId)?.Nickname ?? $"用户{peerId}",
+                    Name = string.IsNullOrWhiteSpace(remark) ? nickname : remark,
                     Avatar = userDict.GetValueOrDefault(peerId)?.Avatar,
                     LastMessage = last.Content,
                     LastTime = last.SentAt,
