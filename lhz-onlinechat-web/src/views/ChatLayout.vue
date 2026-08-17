@@ -47,7 +47,10 @@
         <div v-for="s in sortedSessions" :key="s.type + '_' + s.id"
           :class="['contact-item', { active: currentChat?.type === s.type && currentChat.id === s.id }]"
           @click="selectSession(s)">
-          <Avatar :name="s.name" :url="s.avatar" size="sm" />
+          <div class="avatar-wrap">
+            <Avatar :name="s.name" :url="s.avatar" size="sm" />
+            <span class="group-badge" v-if="s.type === 'group'">群</span>
+          </div>
           <div class="contact-info">
             <div class="info-top">
               <span class="contact-name">{{ s.name }}</span>
@@ -102,7 +105,10 @@
         <div v-for="g in groupStore.groups" :key="g.id"
           :class="['contact-item', { active: currentChat?.type === 'group' && currentChat.id === g.id }]"
           @click="selectGroupChat(g)">
-          <Avatar :name="g.name" :url="g.avatar" size="sm" />
+          <div class="avatar-wrap">
+            <Avatar :name="g.name" :url="g.avatar" size="sm" />
+            <span class="group-badge">群</span>
+          </div>
           <div class="contact-info">
             <div class="info-top">
               <span class="contact-name">{{ g.name }}</span>
@@ -138,7 +144,10 @@
           </button>
           <Avatar :name="currentChat.name" :url="chatAvatar" size="sm" />
           <div class="chat-title">
-            <span class="chat-name">{{ currentChat.name }}</span>
+            <div class="chat-title-row">
+              <span class="chat-type-tag" v-if="currentChat.type === 'group'">群</span>
+              <span class="chat-name">{{ currentChat.name }}</span>
+            </div>
             <span class="chat-sub">{{ chatSub }}</span>
           </div>
           <div class="header-spacer"></div>
@@ -1385,6 +1394,42 @@ watch(activeTab, () => {
 .avatar-wrap {
   position: relative;
   flex-shrink: 0;
+}
+
+/* 群聊标识：头像右下角徽标 */
+.group-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  border: 1.5px solid var(--bg-white);
+}
+
+/* 聊天标题行 */
+.chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chat-type-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: #eef1ff;
+  color: var(--primary);
 }
 
 .status-dot {
