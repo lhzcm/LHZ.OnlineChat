@@ -23,7 +23,8 @@ export const authApi = {
   uploadAvatar(file: File): Promise<ApiResponse<{ avatar: string }>> {
     const form = new FormData()
     form.append('file', file)
-    return request.post('/auth/avatar', form)
+    // 显式清除 Content-Type，由浏览器生成 multipart boundary
+    return request.post('/auth/avatar', form, { headers: { 'Content-Type': undefined } })
   },
   updateEmail(newEmail: string, code: string): Promise<ApiResponse> {
     return request.put('/auth/email', { newEmail, code })

@@ -2,8 +2,11 @@ import axios from 'axios'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 15000,
-  headers: { 'Content-Type': 'application/json' }
+  timeout: 15000
+  // 不设置全局 Content-Type：
+  // - JSON body 请求，axios 自动添加 application/json
+  // - FormData 上传（头像等），由浏览器自动生成 multipart/form-data; boundary，
+  //   避免显式 application/json 导致 415 Unsupported Media Type
 })
 
 // 请求拦截器：注入 Token
