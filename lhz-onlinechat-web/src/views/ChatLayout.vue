@@ -192,7 +192,7 @@
               <line x1="15" y1="9" x2="15.01" y2="9" />
             </svg>
           </button>
-          <input ref="inputEl" v-model="inputText" class="input" placeholder="输入消息… 输入 @ 可提及成员" @keydown="onInputKeydown" @input="onInputChange" />
+          <input ref="inputEl" v-model="inputText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
           <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
         </div>
         <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
@@ -392,6 +392,11 @@ const mentionFiltered = computed(() => {
   const list = groupStore.members.filter(m => !q || m.nickname.toLowerCase().includes(q))
   return list.slice(0, 8)
 })
+
+// 输入框提示：仅群聊提示 @ 提及
+const inputPlaceholder = computed(() =>
+  currentChat.value?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
+)
 
 // ==================== 头像 ====================
 const avatarColors = [  'linear-gradient(135deg, #5b6cff, #9c6bff)',
