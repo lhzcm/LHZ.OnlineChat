@@ -81,7 +81,7 @@
             </div>
             <div class="contact-info">
               <div class="info-top">
-                <span class="contact-name">{{ friendLabel(f) }}</span>
+                <span class="contact-name">{{ friendDisplayName(f) }}</span>
                 <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
               </div>
               <div class="info-bottom">
@@ -207,9 +207,12 @@
       <div class="modal">
         <h3>好友设置</h3>
         <div class="friend-setting-head">
-          <Avatar :name="friendSetting ? friendDisplayName(friendSetting) : ''" :url="friendSetting?.avatar" size="sm" />
-          <span class="request-name">{{ friendSetting ? friendLabel(friendSetting) : '' }}</span>
-          <span class="request-meta">账号 {{ friendSetting?.userId }}</span>
+          <Avatar :name="friendSetting?.nickname || ''" :url="friendSetting?.avatar" size="sm" />
+          <div class="friend-setting-names">
+            <span class="request-name">{{ friendSetting?.nickname }}</span>
+            <span class="request-meta" v-if="friendSetting?.remark">当前备注：{{ friendSetting.remark }}</span>
+            <span class="request-meta">账号 {{ friendSetting?.userId }}</span>
+          </div>
         </div>
         <label class="set-label">备注名</label>
         <input v-model="friendRemark" class="input" placeholder="给好友设置备注（留空显示对方昵称）" maxlength="50" />
@@ -518,11 +521,6 @@ const chatAvatar = computed(() => {
 // 好友显示名：备注优先，其次昵称
 function friendDisplayName(f: FriendInfo): string {
   return f.remark || f.nickname
-}
-
-// 好友显示名（含原昵称）：有备注时显示「备注名(原昵称)」
-function friendLabel(f: FriendInfo): string {
-  return f.remark ? `${f.remark}(${f.nickname})` : f.nickname
 }
 
 // 好友按分类分组（未分组放最后，其余按分类名排序）
@@ -1499,6 +1497,12 @@ watch(activeTab, () => {
   align-items: center;
   gap: 10px;
   padding: 4px 0 8px;
+}
+
+.friend-setting-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .friend-setting-head .request-name {
