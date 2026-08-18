@@ -104,4 +104,5 @@ public static class WsMessageType
     public const string FriendRejected = "friend_rejected";
     public const string GroupInvited = "group_invited";
     public const string MessageRecalled = "message_recalled";
+    public const string Blocked = "blocked";
 }

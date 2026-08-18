@@ -108,6 +108,14 @@ export const useChatStore = defineStore('chat', () => {
     if (msg) msg.isDeleted = true
   }
 
+  /** 从会话中移除一条消息（如被对方拉黑导致发送失败） */
+  function removeMessage(key: string, messageId: string | undefined) {
+    if (!messageId) return
+    const list = messages.value.get(key)
+    if (!list) return
+    messages.value.set(key, list.filter(m => m.messageId !== messageId))
+  }
+
   /** 该消息是否已被对方已读 */
   function isReadByPeer(msgId: string | undefined): boolean {
     return !!msgId && readByPeer.value.has(msgId)
@@ -292,7 +300,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages, historyMeta,
-    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled,
+    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled, removeMessage,
     markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
     setCurrentSession, loadHistory, loadMoreHistory, loadOfflineMessages
   }

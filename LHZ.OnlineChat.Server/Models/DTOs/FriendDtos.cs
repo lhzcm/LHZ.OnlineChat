@@ -58,3 +58,14 @@ public class FriendRequestInfo
     public string? Avatar { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+/// <summary>
+/// 黑名单用户信息
+/// </summary>
+public class BlacklistUserDto
+{
+    public int UserId { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public DateTime BlockedAt { get; set; }
+}

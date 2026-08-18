@@ -11,12 +11,14 @@ public class FriendService
     private readonly IFreeSql _fsql;
     private readonly RedisService _redis;
     private readonly WsMessageHandler _wsMessageHandler;
+    private readonly BlacklistService _blacklistService;
 
-    public FriendService(IFreeSql fsql, RedisService redis, WsMessageHandler wsMessageHandler)
+    public FriendService(IFreeSql fsql, RedisService redis, WsMessageHandler wsMessageHandler, BlacklistService blacklistService)
     {
         _fsql = fsql;
         _redis = redis;
         _wsMessageHandler = wsMessageHandler;
+        _blacklistService = blacklistService;
     }
 
     /// <summary>
@@ -37,6 +39,10 @@ public class FriendService
 
         if (targetUser.Id == userId)
             return ApiResponse.Fail("不能添加自己为好友");
+
+        // 黑名单拦截：任一方向存在拉黑则无法发送申请
+        if (await _blacklistService.IsBlockedEitherAsync(userId, targetUser.Id))
+            return ApiResponse.Fail("无法发送好友申请（你或对方已在黑名单中）");
 
         // 检查是否已经是好友或已有待处理申请
         var existing = await _fsql.Select<Friend>()

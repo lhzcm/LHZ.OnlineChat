@@ -335,6 +335,9 @@
         <p class="modal-error" v-if="friendTagError">{{ friendTagError }}</p>
         <p class="modal-success" v-if="friendTagSuccess">{{ friendTagSuccess }}</p>
         <button class="btn btn-ghost" @click="showFriendSetting = false">关闭</button>
+        <button class="btn btn-danger" @click="blockFriend" :disabled="blockingFriend">
+          {{ blockingFriend ? '拉黑中…' : '拉黑该好友' }}
+        </button>
       </div>
     </div>
 
@@ -491,6 +494,30 @@
         <p class="modal-error" v-if="profileError">{{ profileError }}</p>
         <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
         <button class="btn btn-ghost" @click="showProfileModal = false">关闭</button>
+        <button class="btn btn-ghost" @click="openBlacklistModal">黑名单管理</button>
+      </div>
+    </div>
+
+    <!-- 黑名单管理弹窗 -->
+    <div class="modal-overlay" v-if="showBlacklistModal" @click.self="showBlacklistModal = false">
+      <div class="modal">
+        <h3>黑名单 ({{ blacklist.length }})</h3>
+        <div class="empty" v-if="blacklist.length === 0">
+          <span class="empty-icon">🚫</span>
+          <span>黑名单为空</span>
+        </div>
+        <div v-for="b in blacklist" :key="b.userId" class="request-item">
+          <Avatar :name="b.nickname" :url="b.avatar" size="sm" />
+          <div class="request-info">
+            <span class="request-name">{{ b.nickname }}</span>
+            <span class="request-meta">账号 {{ b.userId }}</span>
+          </div>
+          <button class="btn btn-sm btn-ghost kick-btn" :disabled="unblockingId === b.userId" @click="unblockUser(b.userId)">
+            {{ unblockingId === b.userId ? '解除中…' : '解除拉黑' }}
+          </button>
+        </div>
+        <p class="modal-error" v-if="blacklistError">{{ blacklistError }}</p>
+        <button class="btn btn-ghost" @click="showBlacklistModal = false">关闭</button>
       </div>
     </div>
 
@@ -589,7 +616,8 @@ import { avatarGradient, avatarInitial } from '@/utils/avatar'
 import { authApi } from '@/api/auth'
 import { messageApi } from '@/api/message'
 import { groupApi } from '@/api/group'
-import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
+import { blacklistApi } from '@/api/blacklist'
+import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult, BlacklistUser } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -1432,6 +1460,23 @@ function handleWsMessage(msg: WsMessage) {
     return
   }
 
+  // 被拉黑：发送被拒或对方拉黑通知
+  if (msg.type === 'blocked') {
+    const me = auth.user?.id
+    const peer = Number(msg.from)
+    // 对方把我拉黑了（好友关系已被解除）：刷新好友/会话列表
+    friendStore.fetchFriends()
+    chatStore.fetchSessions()
+    if (me && peer && currentChat.value?.type === 'private' && currentChat.value.id === peer) {
+      // 正在与该用户聊天：移除被拒的乐观消息并提示
+      if (msg.messageId) {
+        chatStore.removeMessage(chatStore.sessionKey('private', peer), msg.messageId)
+      }
+      sendHint.value = msg.content || '对方已将你拉黑，无法发送消息'
+    }
+    return
+  }
+
   const { key, isNew } = chatStore.addMessage(msg, auth.user?.id)
   const currentKey = currentChat.value ? chatStore.sessionKey(currentChat.value.type, currentChat.value.id) : ''
   if (key === currentKey) {
@@ -1743,6 +1788,63 @@ async function saveFriendTag() {
     }
   } finally {
     savingFriendTag.value = false
+  }
+}
+
+// ==================== 黑名单 ====================
+const showBlacklistModal = ref(false)
+const blacklist = ref<BlacklistUser[]>([])
+const blacklistError = ref('')
+const unblockingId = ref<number | null>(null)
+const blockingFriend = ref(false)
+
+async function openBlacklistModal() {
+  blacklistError.value = ''
+  const res = await blacklistApi.getList()
+  if (res.success && res.data) {
+    blacklist.value = res.data
+  }
+  showBlacklistModal.value = true
+}
+
+async function unblockUser(userId: number) {
+  unblockingId.value = userId
+  blacklistError.value = ''
+  try {
+    const res = await blacklistApi.unblock(userId)
+    if (res.success) {
+      blacklist.value = blacklist.value.filter(b => b.userId !== userId)
+    } else {
+      blacklistError.value = res.message
+    }
+  } finally {
+    unblockingId.value = null
+  }
+}
+
+/** 拉黑好友（自动解除好友关系） */
+async function blockFriend() {
+  const target = friendSetting.value
+  if (!target) return
+  if (!window.confirm(`确定拉黑 ${target.nickname}？拉黑后将自动解除好友关系，且对方无法再给你发消息和好友申请。`)) return
+  blockingFriend.value = true
+  friendTagError.value = ''
+  try {
+    const res = await blacklistApi.block(target.userId)
+    if (res.success) {
+      friendTagSuccess.value = '已拉黑'
+      showFriendSetting.value = false
+      friendStore.fetchFriends()
+      chatStore.fetchSessions()
+      // 若正在与该好友聊天，提示对方已被拉黑
+      if (currentChat.value?.type === 'private' && currentChat.value.id === target.userId) {
+        sendHint.value = '你已拉黑该用户'
+      }
+    } else {
+      friendTagError.value = res.message
+    }
+  } finally {
+    blockingFriend.value = false
   }
 }
 

@@ -66,6 +66,14 @@ export interface FriendRequestInfo {
   createdAt: string
 }
 
+/** 黑名单用户 */
+export interface BlacklistUser {
+  userId: number
+  nickname: string
+  avatar: string | null
+  blockedAt: string
+}
+
 // ==================== 群组 ====================
 export interface GroupInfo {
   id: number

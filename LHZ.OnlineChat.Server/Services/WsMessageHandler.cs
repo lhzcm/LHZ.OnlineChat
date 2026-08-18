@@ -14,12 +14,14 @@ public class WsMessageHandler
     private readonly WsConnectionManager _connectionManager;
     private readonly IFreeSql _fsql;
     private readonly RedisService _redis;
+    private readonly BlacklistService _blacklistService;
 
-    public WsMessageHandler(WsConnectionManager connectionManager, IFreeSql fsql, RedisService redis)
+    public WsMessageHandler(WsConnectionManager connectionManager, IFreeSql fsql, RedisService redis, BlacklistService blacklistService)
     {
         _connectionManager = connectionManager;
         _fsql = fsql;
         _redis = redis;
+        _blacklistService = blacklistService;
     }
 
     /// <summary>
@@ -75,6 +77,25 @@ public class WsMessageHandler
     private async Task HandlePrivateMessageAsync(IWebSocketClient sender, int userId, WsMessage message)
     {
         if (!int.TryParse(message.To, out var receiverId)) return;
+
+        // 黑名单拦截：接收者拉黑了发送者时，拒绝并回执发送者
+        if (await _blacklistService.IsBlockedByAsync(receiverId, userId))
+        {
+            sender.SendMessage(JsonConvert.Serialize(new WsMessage
+            {
+                Type = WsMessageType.Blocked,
+                From = receiverId.ToString(),
+                To = userId.ToString(),
+                Content = "对方已将你拉黑，消息未发送",
+                MessageId = message.MessageId,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                MessageType = 0,
+                SenderName = string.Empty,
+                SenderAvatar = null
+            }));
+            Console.WriteLine($"[WS] 私聊消息被拦截: {userId} → {receiverId} (对方已拉黑)");
+            return;
+        }
 
         // 保存到数据库
         var privateMsg = new PrivateMessage
@@ -440,6 +461,28 @@ public class WsMessageHandler
     public void NotifyGroupInvitedAsync(int toUserId, long groupId)
     {
         SendToUser(toUserId, WsMessageType.GroupInvited, groupId.ToString());
+    }
+
+    /// <summary>
+    /// 通知用户被拉黑（含内容说明）
+    /// </summary>
+    public void NotifyBlockedAsync(int toUserId, int fromUserId, string content)
+    {
+        var client = _connectionManager.GetConnection(toUserId);
+        if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        {
+            client.SendMessage(JsonConvert.Serialize(new WsMessage
+            {
+                Type = WsMessageType.Blocked,
+                From = fromUserId.ToString(),
+                To = toUserId.ToString(),
+                Content = content,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                MessageType = 0,
+                SenderName = string.Empty,
+                SenderAvatar = null
+            }));
+        }
     }
 
     /// <summary>
