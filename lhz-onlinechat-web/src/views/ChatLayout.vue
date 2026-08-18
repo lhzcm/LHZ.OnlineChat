@@ -2771,6 +2771,7 @@ html[data-theme='dark'] .app-toast {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -2790,6 +2791,7 @@ html[data-theme='dark'] .app-toast {
 
 /* 消息行 */
 .msg-row {
+  position: relative;
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -2887,20 +2889,16 @@ html[data-theme='dark'] .app-toast {
 }
 
 .msg-recall-btn {
-  display: none;
   border: none;
-  background: var(--bg-hover);
+  background: var(--bg-white);
   color: var(--text-secondary);
   font-size: 11.5px;
-  padding: 3px 10px;
+  padding: 4px 10px;
   border-radius: 8px;
   cursor: pointer;
-  align-self: flex-end;
-  margin-top: -6px;
-}
-
-.msg-row:hover .msg-recall-btn {
-  display: inline-block;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
 
 .msg-recall-btn:hover {
@@ -2936,15 +2934,36 @@ html[data-theme='dark'] .app-toast {
   max-width: 260px;
 }
 
+/* 操作按钮（回复/撤回）：绝对定位在气泡旁的空白区，不占文档流 → 悬停不再引起布局跳动 */
 .msg-actions {
-  display: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
   gap: 6px;
-  align-self: flex-end;
-  margin-top: -6px;
+  z-index: 2;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.msg-row:hover .msg-actions {
-  display: inline-flex;
+/* 别人的消息：按钮在气泡右侧空白区 */
+.msg-row:not(.mine) .msg-actions {
+  left: 100%;
+}
+
+/* 自己的消息：按钮在气泡左侧空白区 */
+.msg-row.mine .msg-actions {
+  right: 100%;
+}
+
+.msg-row:hover .msg-actions,
+/* 鼠标移到按钮上时保持显示（按钮在行外，:has 兜底） */
+.msg-row:has(.msg-actions:hover) .msg-actions {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .reply-bar {
