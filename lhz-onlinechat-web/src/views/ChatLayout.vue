@@ -11,6 +11,22 @@
           </div>
         </div>
         <div class="header-actions">
+          <button class="icon-btn" @click="applyTheme(!isDark)" :title="isDark ? '切换到浅色模式' : '切换到深色模式'">
+            <svg v-if="!isDark" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+          </button>
           <button class="icon-btn" @click="openRequestsModal" title="好友申请">
             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -592,7 +608,18 @@ function formatMsgTime(ts: number): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`
 }
 
+// 主题（深色/浅色）
+const isDark = ref(false)
+
+function applyTheme(dark: boolean) {
+  isDark.value = dark
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  localStorage.setItem('theme', dark ? 'dark' : 'light')
+}
+
 onMounted(async () => {
+  // 初始化主题（记忆偏好）
+  applyTheme(localStorage.getItem('theme') === 'dark')
   if (!auth.isLoggedIn) {
     router.push('/login')
     return
@@ -1418,7 +1445,7 @@ watch(activeTab, () => {
 }
 
 .tab.active {
-  background: #eef1ff;
+  background: var(--active-bg);
   color: var(--primary);
   font-weight: 600;
 }
@@ -1461,7 +1488,7 @@ watch(activeTab, () => {
 }
 
 .contact-item.active {
-  background: #eef1ff;
+  background: var(--active-bg);
 }
 
 .avatar-wrap {
@@ -1501,7 +1528,7 @@ watch(activeTab, () => {
   font-weight: 600;
   padding: 1px 7px;
   border-radius: 8px;
-  background: #eef1ff;
+  background: var(--active-bg);
   color: var(--primary);
 }
 
@@ -1661,7 +1688,7 @@ watch(activeTab, () => {
 }
 
 .chip.active {
-  background: #eef1ff;
+  background: var(--active-bg);
   border-color: var(--primary);
   color: var(--primary);
   font-weight: 500;
@@ -1762,7 +1789,7 @@ watch(activeTab, () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: linear-gradient(180deg, #f2f4f9 0%, #e9edf5 100%);
+  background: var(--chat-bg);
 }
 
 /* 消息行 */
@@ -2181,7 +2208,7 @@ watch(activeTab, () => {
 }
 
 .role-tag.role-0 {
-  background: #eef1ff;
+  background: var(--active-bg);
   color: var(--primary);
 }
 
@@ -2315,7 +2342,7 @@ watch(activeTab, () => {
 }
 
 .email-code-row .code-btn:hover:not(:disabled) {
-  background: #eef1ff;
+  background: var(--active-bg);
   border-color: var(--primary-light);
 }
 

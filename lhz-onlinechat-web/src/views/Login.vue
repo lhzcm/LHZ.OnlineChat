@@ -178,4 +178,9 @@ async function handleLogin() {
   text-decoration: none;
   font-weight: 500;
 }
+
+/* 深色模式适配 */
+html[data-theme='dark'] .login-card {
+  background: rgba(30, 34, 43, 0.96);
+}
 </style>

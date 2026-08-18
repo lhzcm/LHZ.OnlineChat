@@ -22,6 +22,27 @@
   --shadow-sm: 0 2px 8px rgba(31, 35, 41, 0.06);
   --shadow: 0 8px 30px rgba(31, 35, 41, 0.14);
   --mine-bubble: linear-gradient(135deg, #5b6cff 0%, #7c5cff 100%);
+  --active-bg: #eef1ff;
+  --chat-bg: linear-gradient(180deg, #f2f4f9 0%, #e9edf5 100%);
+}
+
+/* ==================== 深色模式 ==================== */
+html[data-theme='dark'] {
+  --primary: #7c8cff;
+  --primary-deep: #8a9bff;
+  --primary-light: #a5b1ff;
+  --bg: #14171d;
+  --bg-white: #1e222b;
+  --bg-hover: #282d38;
+  --text: #e6e9ef;
+  --text-secondary: #8b93a3;
+  --border: #2e3440;
+  --offline: #4a515e;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+  --mine-bubble: linear-gradient(135deg, #5b6cff 0%, #7c5cff 100%);
+  --active-bg: #262d44;
+  --chat-bg: linear-gradient(180deg, #161a22 0%, #12151c 100%);
 }
 
 body {
