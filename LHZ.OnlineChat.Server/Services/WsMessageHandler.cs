@@ -60,6 +60,9 @@ public class WsMessageHandler
             case WsMessageType.ReadReceipt:
                 await HandleReadReceiptAsync(userId, message);
                 break;
+            case WsMessageType.MessageRecalled:
+                await HandleMessageRecalledAsync(userId, message);
+                break;
             default:
                 Console.WriteLine($"[WS] 未知消息类型: {message.Type}");
                 break;
@@ -251,6 +254,119 @@ public class WsMessageHandler
     }
 
     /// <summary>
+    /// 撤回消息（限 2 分钟内、仅本人）：标记 IsDeleted，从缓存移除，并广播撤回通知
+    /// </summary>
+    private async Task HandleMessageRecalledAsync(int userId, WsMessage message)
+    {
+        var targetId = message.Content?.Trim();
+        if (string.IsNullOrWhiteSpace(targetId) || !long.TryParse(message.To, out var toId))
+            return;
+
+        var withinTime = DateTime.UtcNow.AddMinutes(-2);
+        long groupId = 0;
+        int sessionPeer = 0;
+
+        // 私聊撤回（to = 对方用户 ID）
+        var pm = await _fsql.Select<PrivateMessage>()
+            .Where(m => m.SenderId == userId && m.ReceiverId == toId && !m.IsDeleted &&
+                m.SentAt >= withinTime &&
+                (m.Id.ToString() == targetId || m.ClientMessageId == targetId))
+            .FirstAsync();
+
+        if (pm != null)
+        {
+            await _fsql.Update<PrivateMessage>()
+                .Set(m => m.IsDeleted, true)
+                .Where(m => m.Id == pm.Id)
+                .ExecuteAffrowsAsync();
+
+            // 从 Redis 缓存移除该消息
+            await RemoveFromCacheAsync($"chat:private:{Math.Min(userId, (int)toId)}:{Math.Max(userId, (int)toId)}", targetId, pm.Id);
+            sessionPeer = (int)toId;
+        }
+        else
+        {
+            // 群聊撤回（to = 群 ID）
+            var gm = await _fsql.Select<GroupMessage>()
+                .Where(m => m.GroupId == toId && m.SenderId == userId && !m.IsDeleted &&
+                    m.SentAt >= withinTime &&
+                    (m.Id.ToString() == targetId || m.ClientMessageId == targetId))
+                .FirstAsync();
+
+            if (gm != null)
+            {
+                await _fsql.Update<GroupMessage>()
+                    .Set(m => m.IsDeleted, true)
+                    .Where(m => m.Id == gm.Id)
+                    .ExecuteAffrowsAsync();
+
+                await RemoveFromCacheAsync($"chat:group:{toId}", targetId, gm.Id);
+                groupId = toId;
+            }
+        }
+
+        if (groupId == 0 && sessionPeer == 0)
+            return; // 未找到可撤回的消息
+
+        // 广播撤回通知
+        var notify = new WsMessage
+        {
+            Type = WsMessageType.MessageRecalled,
+            From = userId.ToString(),
+            To = message.To,
+            Content = targetId,
+            MessageId = targetId
+        };
+        var json = JsonConvert.Serialize(notify);
+
+        if (groupId > 0)
+        {
+            var members = await _fsql.Select<GroupMember>()
+                .Where(m => m.GroupId == groupId)
+                .ToListAsync();
+            foreach (var member in members)
+            {
+                var client = _connectionManager.GetConnection(member.UserId);
+                if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+                    client.SendMessage(json);
+            }
+        }
+        else
+        {
+            // 发送者回显 + 接收者
+            var targets = new[] { userId, sessionPeer };
+            foreach (var uid in targets)
+            {
+                var client = _connectionManager.GetConnection(uid);
+                if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+                    client.SendMessage(json);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 从 Redis 消息缓存中移除指定消息（保留顺序重建）
+    /// </summary>
+    private async Task RemoveFromCacheAsync(string cacheKey, string targetId, long dbId)
+    {
+        var items = await _redis.ListRangeAsync(cacheKey);
+        if (items.Length == 0) return;
+
+        var keep = items
+            .Where(j => !j.Contains($"\"messageId\":\"{targetId}\"") && !j.Contains($"\"messageId\":\"{dbId}\""))
+            .ToList();
+
+        if (keep.Count == items.Length) return;
+
+        await _redis.DeleteKeyAsync(cacheKey);
+        // 原列表为新消息在前；逆序 LeftPush 恢复原顺序
+        for (var i = keep.Count - 1; i >= 0; i--)
+        {
+            await _redis.ListLeftPushAsync(cacheKey, keep[i]);
+        }
+    }
+
+    /// <summary>
     /// 获取私聊 Redis 缓存 Key（较小ID:较大ID）
     /// </summary>
     private static string GetPrivateChatCacheKey(int userId1, int userId2)
@@ -353,7 +469,7 @@ public class WsMessageHandler
         foreach (var member in members)
         {
             var msgs = await _fsql.Select<GroupMessage>()
-                .Where(gm => gm.GroupId == member.GroupId && gm.Id > member.LastReadMessageId)
+                .Where(gm => gm.GroupId == member.GroupId && gm.Id > member.LastReadMessageId && !gm.IsDeleted)
                 .OrderBy(gm => gm.SentAt)
                 .Take(100) // 防止游标异常时一次性补发过多
                 .ToListAsync();

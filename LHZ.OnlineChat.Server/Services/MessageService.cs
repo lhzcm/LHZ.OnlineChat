@@ -94,6 +94,7 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 IsRead = m.IsRead,
+                IsDeleted = m.IsDeleted,
                 MessageId = m.ClientMessageId,
                 SentAt = m.SentAt
             })
@@ -151,6 +152,7 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 MessageId = m.ClientMessageId,
+                IsDeleted = m.IsDeleted,
                 Mentions = ParseMentions(m.Mentions),
                 SentAt = m.SentAt
             })
@@ -239,6 +241,7 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 IsRead = m.IsRead,
+                IsDeleted = m.IsDeleted,
                 MessageId = m.ClientMessageId,
                 SentAt = m.SentAt
             })

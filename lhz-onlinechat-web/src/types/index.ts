@@ -94,6 +94,8 @@ export interface MessageDto {
   content: string
   messageType: number
   isRead: boolean
+  /** 是否已撤回 */
+  isDeleted: boolean
   sentAt: string
   /** 客户端消息 ID，与 WS 推送一致（去重键）；为空时前端回退数据库 id */
   messageId: string | null
@@ -109,6 +111,8 @@ export interface GroupMessageDto {
   messageType: number
   sentAt: string
   messageId: string | null
+  /** 是否已撤回 */
+  isDeleted: boolean
   /** 被 @ 的成员账号 ID 列表 */
   mentions: number[]
 }
@@ -133,6 +137,8 @@ export interface WsMessage {
   senderAvatar: string | null
   /** 被 @ 的成员账号 ID 列表（群聊提及） */
   mentions?: number[]
+  /** 是否已撤回 */
+  isDeleted?: boolean
 }
 
 // ==================== 聊天会话 ====================

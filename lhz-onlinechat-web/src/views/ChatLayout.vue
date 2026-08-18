@@ -192,11 +192,13 @@
               <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
                 {{ msg.senderName }}
               </span>
-              <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1 }">
-                <img v-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
+              <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, recalled: msg.isDeleted }">
+                <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
+                <img v-else-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
                   loading="lazy" @click.stop="openLightbox(msg.content)" />
                 <span v-else v-html="renderContent(msg.content)"></span>
               </div>
+              <button v-if="canRecall(msg)" class="msg-recall-btn" @click.stop="recallMessage(msg)">撤回</button>
               <div class="msg-meta-line">
                 <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
                 <span v-if="isMyPrivateMessage(msg)" class="msg-status"
@@ -870,6 +872,34 @@ function openLightbox(url: string) {
   lightboxUrl.value = url
 }
 
+// ==================== 消息撤回 ====================
+/** 自己发出的、未被撤回的消息可撤回（服务端限 2 分钟内） */
+function canRecall(msg: WsMessage): boolean {
+  if (msg.isDeleted) return false
+  return Number(msg.from) === auth.user?.id
+}
+
+function recallMessage(msg: WsMessage) {
+  if (!currentChat.value || !auth.user) return
+  if (!window.confirm('确定撤回这条消息？')) return
+  ws.sendMessage({
+    type: 'message_recalled',
+    from: String(auth.user.id),
+    to: String(currentChat.value.id),
+    content: msg.messageId,
+    timestamp: Date.now(),
+    messageId: msg.messageId,
+    messageType: 0,
+    senderName: '',
+    senderAvatar: null
+  })
+  // 本地乐观标记
+  chatStore.markMessageRecalled(
+    chatStore.sessionKey(currentChat.value.type, currentChat.value.id),
+    msg.messageId
+  )
+}
+
 // ==================== 会话设置（置顶/免打扰） ====================
 function openSessionSetting(s: SessionInfo) {
   sessionSettingTarget.value = s
@@ -1156,6 +1186,23 @@ function handleWsMessage(msg: WsMessage) {
   if (msg.type === 'read_receipt') {
     if (msg.from) {
       chatStore.markSessionReadByPeer(chatStore.sessionKey('private', Number(msg.from)))
+    }
+    return
+  }
+
+  // 消息撤回：标记本地对应消息
+  if (msg.type === 'message_recalled') {
+    const me = auth.user?.id
+    const targetId = msg.content || msg.messageId
+    if (me && targetId) {
+      // 群聊优先（to 为群 ID），否则按私聊对方
+      const gKey = chatStore.sessionKey('group', Number(msg.to))
+      if (chatStore.messages.get(gKey)) {
+        chatStore.markMessageRecalled(gKey, targetId)
+      } else {
+        const peer = Number(msg.from) === me ? Number(msg.to) : Number(msg.from)
+        chatStore.markMessageRecalled(chatStore.sessionKey('private', peer), targetId)
+      }
     }
     return
   }
@@ -2144,6 +2191,41 @@ watch(activeTab, () => {
 .msg-status.read {
   color: var(--primary);
   font-weight: 500;
+}
+
+/* 撤回 */
+.msg-bubble.recalled {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  box-shadow: none;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.msg-recalled-text {
+  padding: 0 6px;
+}
+
+.msg-recall-btn {
+  display: none;
+  border: none;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  align-self: flex-end;
+  margin-top: -6px;
+}
+
+.msg-row:hover .msg-recall-btn {
+  display: inline-block;
+}
+
+.msg-recall-btn:hover {
+  background: var(--border);
+  color: var(--text);
 }
 
 /* @ 提及高亮 */

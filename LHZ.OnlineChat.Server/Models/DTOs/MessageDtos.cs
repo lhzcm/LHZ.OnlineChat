@@ -12,6 +12,10 @@ public class MessageDto
     public string Content { get; set; } = string.Empty;
     public int MessageType { get; set; }
     public bool IsRead { get; set; }
+    /// <summary>
+    /// 是否已撤回
+    /// </summary>
+    public bool IsDeleted { get; set; }
     public DateTime SentAt { get; set; }
 
     /// <summary>
@@ -29,6 +33,10 @@ public class GroupMessageDto
     public string? SenderAvatar { get; set; }
     public string Content { get; set; } = string.Empty;
     public int MessageType { get; set; }
+    /// <summary>
+    /// 是否已撤回
+    /// </summary>
+    public bool IsDeleted { get; set; }
     public DateTime SentAt { get; set; }
 
     /// <summary>

@@ -39,6 +39,12 @@ public class GroupMessage
     [Column(IsNullable = false)]
     public int MessageType { get; set; }
 
+    /// <summary>
+    /// 是否已撤回（撤回后消息内容不再展示）
+    /// </summary>
+    [Column(IsNullable = false)]
+    public bool IsDeleted { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
 }

@@ -98,6 +98,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 标记消息为已撤回（本地即时生效） */
+  function markMessageRecalled(key: string, messageId: string) {
+    const list = messages.value.get(key)
+    if (!list) return
+    const msg = list.find(m => m.messageId === messageId)
+    if (msg) msg.isDeleted = true
+  }
+
   /** 该消息是否已被对方已读 */
   function isReadByPeer(msgId: string | undefined): boolean {
     return !!msgId && readByPeer.value.has(msgId)
@@ -167,7 +175,8 @@ export const useChatStore = defineStore('chat', () => {
           messageId: m.messageId || String(m.id),
           messageType: m.messageType,
           senderName: m.senderName,
-          senderAvatar: m.senderAvatar
+          senderAvatar: m.senderAvatar,
+          isDeleted: m.isDeleted
         } as WsMessage))
         messages.value.set(key, mergeList(existing, newMsgs))
         // 历史中"我发出且已被对方已读"的消息标记已读状态
@@ -194,7 +203,8 @@ export const useChatStore = defineStore('chat', () => {
           messageType: m.messageType,
           senderName: m.senderName,
           senderAvatar: m.senderAvatar,
-          mentions: m.mentions || []
+          mentions: m.mentions || [],
+          isDeleted: m.isDeleted
         } as WsMessage))
         messages.value.set(key, mergeList(existing, newMsgs))
       }
@@ -239,7 +249,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages,
-    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer,
+    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled,
     markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
     setCurrentSession, loadHistory, loadOfflineMessages
   }
