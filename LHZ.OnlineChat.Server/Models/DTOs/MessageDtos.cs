@@ -114,3 +114,27 @@ public class UpdateSessionSettingRequest
     public bool? IsPinned { get; set; }
     public bool? Muted { get; set; }
 }
+
+/// <summary>
+/// 消息搜索结果（私聊 + 群聊聚合）
+/// </summary>
+public class MessageSearchResultDto
+{
+    /// <summary>
+    /// private | group
+    /// </summary>
+    public string Type { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 私聊为对方账号 ID，群聊为群 ID
+    /// </summary>
+    public long SessionId { get; set; }
+
+    public string SessionName { get; set; } = string.Empty;
+    public string SenderName { get; set; } = string.Empty;
+    public string? SenderAvatar { get; set; }
+    public string Content { get; set; } = string.Empty;
+    public int MessageType { get; set; }
+    public string? MessageId { get; set; }
+    public DateTime SentAt { get; set; }
+}

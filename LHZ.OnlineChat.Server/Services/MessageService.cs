@@ -181,6 +181,109 @@ public class MessageService
     }
 
     /// <summary>
+    /// 全局搜索消息（私聊 + 群聊，分页，按时间倒序）
+    /// </summary>
+    public async Task<ApiResponse<PagedResult<MessageSearchResultDto>>> SearchMessagesAsync(
+        int userId, string keyword, int page = 1, int pageSize = 30)
+    {
+        keyword = (keyword ?? string.Empty).Trim();
+        if (keyword.Length == 0)
+            return ApiResponse<PagedResult<MessageSearchResultDto>>.Fail("请输入搜索关键词");
+        if (keyword.Length > 50)
+            keyword = keyword[..50];
+
+        var take = page * pageSize;
+
+        // 私聊：我参与的所有会话
+        var privateMsgs = await _fsql.Select<PrivateMessage>()
+            .Where(m => (m.SenderId == userId || m.ReceiverId == userId) && !m.IsDeleted && m.Content.Contains(keyword))
+            .OrderByDescending(m => m.SentAt)
+            .Take(take)
+            .ToListAsync();
+        var privateTotal = (int)await _fsql.Select<PrivateMessage>()
+            .Where(m => (m.SenderId == userId || m.ReceiverId == userId) && !m.IsDeleted && m.Content.Contains(keyword))
+            .CountAsync();
+
+        // 群聊：我所在的所有群
+        var groupIds = (await _fsql.Select<GroupMember>().Where(m => m.UserId == userId).ToListAsync())
+            .Select(m => m.GroupId).ToList();
+        var groupMsgs = new List<GroupMessage>();
+        var groupTotal = 0;
+        if (groupIds.Count > 0)
+        {
+            groupMsgs = await _fsql.Select<GroupMessage>()
+                .Where(m => groupIds.Contains(m.GroupId) && !m.IsDeleted && m.Content.Contains(keyword))
+                .OrderByDescending(m => m.SentAt)
+                .Take(take)
+                .ToListAsync();
+            groupTotal = (int)await _fsql.Select<GroupMessage>()
+                .Where(m => groupIds.Contains(m.GroupId) && !m.IsDeleted && m.Content.Contains(keyword))
+                .CountAsync();
+        }
+
+        // 用户信息（含自己，用于头像）
+        var userIds = privateMsgs
+            .Select(m => m.SenderId == userId ? m.ReceiverId : m.SenderId)
+            .Concat(groupMsgs.Select(m => m.SenderId))
+            .Append(userId)
+            .Distinct()
+            .ToList();
+        var users = userIds.Count > 0
+            ? await _fsql.Select<User>().Where(u => userIds.Contains(u.Id)).ToListAsync()
+            : new List<User>();
+        var userDict = users.ToDictionary(u => u.Id);
+
+        var groups = groupIds.Count > 0
+            ? await _fsql.Select<Group_>().Where(g => groupIds.Contains(g.Id)).ToListAsync()
+            : new List<Group_>();
+        var groupDict = groups.ToDictionary(g => g.Id);
+
+        var merged = new List<(DateTime SentAt, MessageSearchResultDto Dto)>();
+        foreach (var m in privateMsgs)
+        {
+            var peerId = m.SenderId == userId ? m.ReceiverId : m.SenderId;
+            merged.Add((m.SentAt, new MessageSearchResultDto
+            {
+                Type = "private",
+                SessionId = peerId,
+                SessionName = userDict.TryGetValue(peerId, out var peer) ? peer.Nickname : $"用户{peerId}",
+                SenderName = m.SenderId == userId ? "我" : (userDict.TryGetValue(m.SenderId, out var su) ? su.Nickname : "未知"),
+                SenderAvatar = userDict.TryGetValue(m.SenderId, out var sa) ? sa.Avatar : null,
+                Content = m.Content,
+                MessageType = m.MessageType,
+                MessageId = m.ClientMessageId,
+                SentAt = AsUtc(m.SentAt)
+            }));
+        }
+        foreach (var m in groupMsgs)
+        {
+            merged.Add((m.SentAt, new MessageSearchResultDto
+            {
+                Type = "group",
+                SessionId = m.GroupId,
+                SessionName = groupDict.TryGetValue(m.GroupId, out var g) ? g.Name : $"群{m.GroupId}",
+                SenderName = m.SenderId == userId ? "我" : (userDict.TryGetValue(m.SenderId, out var su) ? su.Nickname : "未知"),
+                SenderAvatar = userDict.TryGetValue(m.SenderId, out var sa) ? sa.Avatar : null,
+                Content = m.Content,
+                MessageType = m.MessageType,
+                MessageId = m.ClientMessageId,
+                SentAt = AsUtc(m.SentAt)
+            }));
+        }
+
+        var sorted = merged.OrderByDescending(x => x.SentAt).ToList();
+        var items = sorted.Skip((page - 1) * pageSize).Take(pageSize).Select(x => x.Dto).ToList();
+
+        return ApiResponse<PagedResult<MessageSearchResultDto>>.Ok(new PagedResult<MessageSearchResultDto>
+        {
+            Items = items,
+            Total = privateTotal + groupTotal,
+            Page = page,
+            PageSize = pageSize
+        });
+    }
+
+    /// <summary>
     /// 标记消息已读
     /// </summary>
     public async Task<ApiResponse> MarkAsReadAsync(long messageId, int currentUserId)

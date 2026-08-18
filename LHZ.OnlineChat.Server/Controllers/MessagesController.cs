@@ -62,6 +62,17 @@ public class MessagesController : ControllerBase
     }
 
     /// <summary>
+    /// 全局搜索消息（私聊 + 群聊）
+    /// </summary>
+    [HttpGet("search")]
+    public async Task<IActionResult> SearchMessages(
+        [FromQuery] string keyword, [FromQuery] int page = 1, [FromQuery] int pageSize = 30)
+    {
+        var result = await _messageService.SearchMessagesAsync(GetCurrentUserId(), keyword, page, pageSize);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 获取会话列表（私聊 + 群聊聚合）
     /// </summary>
     [HttpGet("sessions")]

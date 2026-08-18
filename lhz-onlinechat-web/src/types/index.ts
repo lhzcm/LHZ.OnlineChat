@@ -136,6 +136,19 @@ export interface PagedResult<T> {
   pageSize: number
 }
 
+/** 消息搜索结果（私聊 + 群聊聚合） */
+export interface MessageSearchResult {
+  type: 'private' | 'group'
+  sessionId: number
+  sessionName: string
+  senderName: string
+  senderAvatar: string | null
+  content: string
+  messageType: number
+  messageId: string | null
+  sentAt: string
+}
+
 // ==================== WebSocket 消息 ====================
 export interface WsMessage {
   type: string

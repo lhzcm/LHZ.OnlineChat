@@ -44,6 +44,16 @@
         </div>
       </div>
 
+      <!-- 消息搜索 -->
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <input v-model="searchKeyword" class="search-input" placeholder="搜索消息…" @keydown.enter="runSearch" />
+        <button class="search-go" @click="runSearch" :disabled="searchLoading" title="搜索">搜索</button>
+      </div>
+
       <!-- Tab 切换 -->
       <div class="tabs">
         <button :class="['tab', { active: activeTab === 'sessions' }]" @click="activeTab = 'sessions'">会话</button>
@@ -51,15 +61,38 @@
         <button :class="['tab', { active: activeTab === 'groups' }]" @click="activeTab = 'groups'">群组</button>
       </div>
 
+      <!-- 搜索结果面板 -->
+      <div class="search-panel" v-if="searchActive">
+        <div class="search-panel-head">
+          <span>{{ searchLoading ? '搜索中…' : `找到 ${searchResults.length} / ${searchTotal} 条` }}</span>
+          <button class="search-close" @click="closeSearch">✕</button>
+        </div>
+        <div class="search-panel-body">
+          <div class="search-result-item" v-for="(r, i) in searchResults" :key="r.type + '_' + r.sessionId + '_' + (r.messageId || i)" @click="openSearchResult(r)">
+            <div class="search-result-top">
+              <span class="search-result-session">{{ r.type === 'group' ? '群·' : '' }}{{ r.sessionName }}</span>
+              <span class="search-result-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
+            </div>
+            <div class="search-result-content">
+              <span class="search-result-sender">{{ r.senderName }}：</span>{{ r.content }}
+            </div>
+          </div>
+          <button v-if="searchHasMore" class="search-more" @click="loadMoreSearch" :disabled="searchLoading">
+            {{ searchLoading ? '加载中…' : '加载更多' }}
+          </button>
+          <div class="search-empty" v-if="!searchLoading && searchResults.length === 0">未找到相关消息</div>
+        </div>
+      </div>
+
       <!-- 操作栏 -->
-      <div class="action-bar">
+      <div class="action-bar" v-show="!searchActive">
         <button class="btn btn-primary" @click="openAddModal">
           {{ activeTab === 'friends' ? '+ 添加好友' : activeTab === 'groups' ? '+ 创建群组' : '＋' }}
         </button>
       </div>
 
       <!-- 会话列表 -->
-      <div class="contact-list" v-if="activeTab === 'sessions'">
+      <div class="contact-list" v-if="activeTab === 'sessions' && !searchActive">
         <div v-for="s in sortedSessions" :key="s.type + '_' + s.id"
           :class="['contact-item', { active: currentChat?.type === s.type && currentChat.id === s.id }]"
           @click="selectSession(s)">
@@ -92,7 +125,7 @@
       </div>
 
       <!-- 好友列表（按分类分组） -->
-      <div class="contact-list" v-else-if="activeTab === 'friends'">
+      <div class="contact-list" v-else-if="activeTab === 'friends' && !searchActive">
         <template v-for="group in groupedFriends" :key="group.category">
           <div class="group-header" v-if="group.friends.length">
             <span>{{ group.category }}</span>
@@ -124,7 +157,7 @@
       </div>
 
       <!-- 群组列表 -->
-      <div class="contact-list" v-else>
+      <div class="contact-list" v-else-if="!searchActive">
         <div v-for="g in groupStore.groups" :key="g.id"
           :class="['contact-item', { active: currentChat?.type === 'group' && currentChat.id === g.id }]"
           @click="selectGroupChat(g)">
@@ -186,7 +219,7 @@
 
         <div class="chat-messages" ref="msgContainer" @scroll="onMessagesScroll">
           <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
-          <div v-for="msg in currentMessages" :key="msg.messageId"
+          <div v-for="msg in currentMessages" :key="msg.messageId" :data-mid="msg.messageId"
             :class="['msg-row', { mine: Number(msg.from) === auth.user?.id }]">
             <Avatar class="msg-avatar" :name="msg.senderName || currentChat.name" :url="msg.senderAvatar" size="sm" />
             <div class="msg-body">
@@ -520,7 +553,7 @@ import Avatar from '@/components/Avatar.vue'
 import { avatarGradient, avatarInitial } from '@/utils/avatar'
 import { authApi } from '@/api/auth'
 import { messageApi } from '@/api/message'
-import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo } from '@/types'
+import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -1135,6 +1168,93 @@ async function onMessagesScroll() {
       msgContainer.value.scrollTop = msgContainer.value.scrollHeight - prevHeight
     }
   })
+}
+
+// ==================== 消息搜索 ====================
+const searchKeyword = ref('')
+const searchActive = ref(false)
+const searchLoading = ref(false)
+const searchResults = ref<MessageSearchResult[]>([])
+const searchPage = ref(1)
+const searchTotal = ref(0)
+const searchHasMore = computed(() => searchResults.value.length < searchTotal.value)
+
+async function runSearch() {
+  const kw = searchKeyword.value.trim()
+  if (!kw) return
+  searchActive.value = true
+  searchLoading.value = true
+  searchPage.value = 1
+  searchResults.value = []
+  searchTotal.value = 0
+  try {
+    const res = await messageApi.searchMessages(kw, 1)
+    if (res.success && res.data) {
+      searchResults.value = res.data.items
+      searchTotal.value = res.data.total
+    }
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+async function loadMoreSearch() {
+  const kw = searchKeyword.value.trim()
+  if (!kw || searchLoading.value) return
+  searchLoading.value = true
+  try {
+    const res = await messageApi.searchMessages(kw, searchPage.value + 1)
+    if (res.success && res.data) {
+      searchResults.value = [...searchResults.value, ...res.data.items]
+      searchTotal.value = res.data.total
+      searchPage.value += 1
+    }
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function closeSearch() {
+  searchActive.value = false
+  searchResults.value = []
+  searchTotal.value = 0
+  searchKeyword.value = ''
+}
+
+/** 点击搜索结果：打开会话并定位到该消息 */
+async function openSearchResult(r: MessageSearchResult) {
+  if (r.type === 'private') {
+    await selectPrivateChat({ userId: r.sessionId, nickname: r.sessionName })
+  } else {
+    await selectGroupChat({ id: r.sessionId, name: r.sessionName })
+  }
+  closeSearch()
+  if (r.messageId) await locateMessage(r.messageId)
+}
+
+/** 定位消息：已加载则滚动到该行并高亮；否则继续翻更早的历史（最多 10 页） */
+async function locateMessage(messageId: string) {
+  const chat = currentChat.value
+  if (!chat) return
+  const key = chatStore.sessionKey(chat.type, chat.id)
+  // 先让 selectPrivateChat/selectGroupChat 里 scrollToBottom 的 nextTick 落定，避免其覆盖定位滚动
+  await nextTick()
+  const scrollToRow = (): boolean => {
+    const el = msgContainer.value?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
+    if (!el) return false
+    el.scrollIntoView({ block: 'center' })
+    el.classList.add('msg-highlight')
+    setTimeout(() => el.classList.remove('msg-highlight'), 2200)
+    return true
+  }
+  if (scrollToRow()) return
+  for (let i = 0; i < 10; i++) {
+    const meta = chatStore.historyMeta.get(key)
+    if (!meta?.hasMore) break
+    await chatStore.loadMoreHistory(chat.type, chat.id, auth.user?.id)
+    await nextTick()
+    if (scrollToRow()) return
+  }
 }
 
 /** 会话最后一条消息预览 */
@@ -1811,6 +1931,158 @@ watch(activeTab, () => {
 
 .action-bar .btn:hover {
   filter: brightness(1.06);
+}
+
+/* 消息搜索 */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 10px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  transition: border-color 0.15s;
+}
+.search-box:focus-within {
+  border-color: var(--primary);
+}
+.search-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 7px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+.search-go {
+  border: none;
+  background: var(--mine-bubble);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.search-go:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 搜索结果面板 */
+.search-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  min-height: 0;
+}
+.search-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.search-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.search-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.search-result-item {
+  padding: 9px 14px;
+  margin: 2px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  overflow: hidden;
+}
+.search-result-item:hover {
+  background: var(--bg-hover);
+}
+.search-result-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.search-result-session {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.search-result-content {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result-sender {
+  color: var(--primary);
+}
+.search-more {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 8px 10px;
+  padding: 7px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.search-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.search-empty {
+  text-align: center;
+  padding: 40px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 定位消息高亮 */
+.msg-row.msg-highlight .msg-bubble {
+  animation: msg-highlight-flash 2.2s ease;
+}
+@keyframes msg-highlight-flash {
+  0%, 55% {
+    box-shadow: 0 0 0 3px var(--primary-light);
+  }
+  100% {
+    box-shadow: none;
+  }
 }
 
 /* 列表 */
