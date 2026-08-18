@@ -60,6 +60,17 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// 修改密码（验证原密码）
+    /// </summary>
+    [HttpPut("password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var result = await _authService.ChangePasswordAsync(GetUserId(), request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 修改昵称
     /// </summary>
     [HttpPut("profile")]

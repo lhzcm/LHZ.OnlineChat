@@ -266,6 +266,32 @@ public class AuthService
     }
 
     /// <summary>
+    /// 修改密码（验证原密码，改后使 RefreshToken 失效）
+    /// </summary>
+    public async Task<ApiResponse> ChangePasswordAsync(int userId, ChangePasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+            return ApiResponse.Fail("新密码长度不能少于 6 个字符");
+
+        var user = await _fsql.Select<User>().Where(u => u.Id == userId).FirstAsync();
+        if (user == null)
+            return ApiResponse.Fail("用户不存在");
+
+        if (string.IsNullOrEmpty(request.OldPassword) || !BCrypt.Net.BCrypt.Verify(request.OldPassword, user.PasswordHash))
+            return ApiResponse.Fail("原密码错误");
+
+        await _fsql.Update<User>()
+            .Set(u => u.PasswordHash, BCrypt.Net.BCrypt.HashPassword(request.NewPassword))
+            .Where(u => u.Id == userId)
+            .ExecuteAffrowsAsync();
+
+        // 使该用户已下发的 RefreshToken 失效（JWT 本身到期自然失效）
+        await _redis.DeleteKeyAsync($"token:refresh:{userId}");
+
+        return ApiResponse.Ok("密码修改成功，请重新登录");
+    }
+
+    /// <summary>
     /// 修改昵称
     /// </summary>
     public async Task<ApiResponse> UpdateProfileAsync(int userId, UpdateProfileRequest request)

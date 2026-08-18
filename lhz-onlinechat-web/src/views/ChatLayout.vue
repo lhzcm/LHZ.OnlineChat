@@ -365,6 +365,25 @@
             </button>
           </div>
         </template>
+        <div class="profile-row">
+          <span class="profile-label">密码</span>
+          <div class="profile-edit">
+            <span class="profile-value profile-email">••••••••</span>
+            <button class="btn btn-sm btn-ghost" @click="showPasswordEdit = !showPasswordEdit">
+              {{ showPasswordEdit ? '取消' : '修改' }}
+            </button>
+          </div>
+        </div>
+        <template v-if="showPasswordEdit">
+          <div class="profile-edit email-edit">
+            <input v-model="oldPassword" class="input" type="password" placeholder="原密码" />
+            <input v-model="newPassword" class="input" type="password" placeholder="新密码（至少 6 位）" />
+            <input v-model="confirmPassword" class="input" type="password" placeholder="确认新密码" />
+            <button class="btn btn-sm btn-primary" :disabled="!oldPassword || !newPassword || savingPassword" @click="savePassword">
+              {{ savingPassword ? '保存中…' : '确认修改' }}
+            </button>
+          </div>
+        </template>
         <p class="modal-error" v-if="profileError">{{ profileError }}</p>
         <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
         <button class="btn btn-ghost" @click="showProfileModal = false">关闭</button>
@@ -498,6 +517,11 @@ const savingEmail = ref(false)
 const sendingEmailCode = ref(false)
 const emailCounting = ref(0)
 const showEmailEdit = ref(false)
+const showPasswordEdit = ref(false)
+const oldPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const savingPassword = ref(false)
 const profileError = ref('')
 const profileSuccess = ref('')
 const avatarInputRef = ref<HTMLInputElement | null>(null)
@@ -1208,6 +1232,10 @@ function openProfileModal() {
   newEmail.value = ''
   emailCode.value = ''
   showEmailEdit.value = false
+  showPasswordEdit.value = false
+  oldPassword.value = ''
+  newPassword.value = ''
+  confirmPassword.value = ''
   profileError.value = ''
   profileSuccess.value = ''
   showProfileModal.value = true
@@ -1297,6 +1325,34 @@ async function saveEmail() {
     }
   } finally {
     savingEmail.value = false
+  }
+}
+
+async function savePassword() {
+  if (newPassword.value.length < 6) {
+    profileError.value = '新密码长度不能少于 6 位'
+    return
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    profileError.value = '两次输入的新密码不一致'
+    return
+  }
+  savingPassword.value = true
+  profileError.value = ''
+  profileSuccess.value = ''
+  try {
+    const res = await authApi.changePassword(oldPassword.value, newPassword.value)
+    if (res.success) {
+      profileSuccess.value = res.message
+      showPasswordEdit.value = false
+      oldPassword.value = ''
+      newPassword.value = ''
+      confirmPassword.value = ''
+    } else {
+      profileError.value = res.message
+    }
+  } finally {
+    savingPassword.value = false
   }
 }
 

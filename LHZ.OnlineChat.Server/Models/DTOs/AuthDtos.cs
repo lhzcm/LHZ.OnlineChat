@@ -98,6 +98,15 @@ public class UpdateProfileRequest
 }
 
 /// <summary>
+/// 修改密码（需验证原密码）
+/// </summary>
+public class ChangePasswordRequest
+{
+    public string OldPassword { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// 换绑邮箱（需新邮箱验证码，且新邮箱未被其他账号绑定）
 /// </summary>
 public class UpdateEmailRequest

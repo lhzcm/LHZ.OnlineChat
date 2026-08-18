@@ -28,5 +28,8 @@ export const authApi = {
   },
   updateEmail(newEmail: string, code: string): Promise<ApiResponse> {
     return request.put('/auth/email', { newEmail, code })
+  },
+  changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse> {
+    return request.put('/auth/password', { oldPassword, newPassword })
   }
 }
