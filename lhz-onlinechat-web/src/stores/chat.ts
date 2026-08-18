@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { SessionInfo, ChatType, WsMessage, MessageDto } from '@/types'
 import { messageApi } from '@/api/message'
 
@@ -21,6 +21,13 @@ export const useChatStore = defineStore('chat', () => {
   function sessionKey(type: ChatType, id: number) {
     return `${type}_${id}`
   }
+
+  // 标签页标题未读角标：(N) OnlineChat
+  watch(unreadCounts, (map) => {
+    let total = 0
+    map.forEach(v => { total += v })
+    document.title = total > 0 ? `(${total}) OnlineChat` : 'OnlineChat'
+  }, { immediate: true })
 
   function mergeList(list: WsMessage[], incoming: WsMessage[]) {
     const seen = new Set(list.map(m => m.messageId).filter(Boolean))

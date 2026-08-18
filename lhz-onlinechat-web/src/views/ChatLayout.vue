@@ -397,6 +397,13 @@
             </button>
           </div>
         </template>
+        <label class="setting-switch">
+          <span>
+            <span class="set-label">消息提示音</span>
+            <span class="setting-desc">新消息到达时播放提示音</span>
+          </span>
+          <input type="checkbox" :checked="notifySoundEnabled" @change="toggleNotifySound" />
+        </label>
         <p class="modal-error" v-if="profileError">{{ profileError }}</p>
         <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
         <button class="btn btn-ghost" @click="showProfileModal = false">关闭</button>
@@ -534,6 +541,39 @@ const showSessionSetting = ref(false)
 const sessionSettingTarget = ref<SessionInfo | null>(null)
 const sessionSettingError = ref('')
 const sessionSettingSuccess = ref('')
+// 消息提示音
+const notifySoundEnabled = ref(localStorage.getItem('notifySound') !== '0')
+let notifyAudioCtx: AudioContext | null = null
+
+function toggleNotifySound(e: Event) {
+  notifySoundEnabled.value = (e.target as HTMLInputElement).checked
+  localStorage.setItem('notifySound', notifySoundEnabled.value ? '1' : '0')
+}
+
+/** 播放新消息提示音（Web Audio 合成，无需音频文件） */
+function playNotifySound() {
+  if (!notifySoundEnabled.value) return
+  try {
+    notifyAudioCtx = notifyAudioCtx || new AudioContext()
+    const ctx = notifyAudioCtx
+    if (ctx.state === 'suspended') ctx.resume()
+    const now = ctx.currentTime
+    const notes = [880, 660]
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const t = now + i * 0.15
+      gain.gain.setValueAtTime(0.001, t)
+      gain.gain.exponentialRampToValueAtTime(0.1, t + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(t)
+      osc.stop(t + 0.14)
+    })
+  } catch { /* 忽略音频错误（如浏览器策略限制） */ }
+}
 // 账号 ID 复制提示
 const copyTip = ref('')
 let copyTipTimer: number | null = null
@@ -1133,12 +1173,13 @@ function handleWsMessage(msg: WsMessage) {
     }
     scrollToBottom()
   } else if (isNew) {
-    // 免打扰会话不增加未读提醒
+    // 免打扰会话不增加未读提醒、不播放提示音
     const sep = key.indexOf('_')
     const sType = key.slice(0, sep) as ChatType
     const sId = Number(key.slice(sep + 1))
     if (!chatStore.isSessionMuted(sType, sId)) {
       chatStore.bumpUnread(key)
+      playNotifySound()
     }
   }
 }
