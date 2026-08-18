@@ -190,7 +190,13 @@
                   loading="lazy" @click.stop="openLightbox(msg.content)" />
                 <span v-else v-html="renderContent(msg.content)"></span>
               </div>
-              <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
+              <div class="msg-meta-line">
+                <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
+                <span v-if="isMyPrivateMessage(msg)" class="msg-status"
+                  :class="{ read: chatStore.isReadByPeer(msg.messageId) }">
+                  {{ chatStore.isReadByPeer(msg.messageId) ? '已读' : '未读' }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -928,10 +934,33 @@ function unreadOf(type: ChatType, id: number): number {
 function selectPrivateChat(friend: { userId: number; nickname: string }) {
   currentChat.value = { type: 'private', id: friend.userId, name: friend.nickname }
   chatStore.setCurrentSession('private', friend.userId, friend.nickname)
-  chatStore.loadHistory('private', friend.userId)
+  chatStore.loadHistory('private', friend.userId, 1, auth.user?.id)
   chatStore.markSessionRead('private', friend.userId)
+  // 通知对方：该会话已读
+  sendReadReceipt(friend.userId)
   mobileChatOpen.value = true
   scrollToBottom()
+}
+
+/** 判断是否是我发出的私聊消息（展示已读状态） */
+function isMyPrivateMessage(msg: WsMessage): boolean {
+  return currentChat.value?.type === 'private' && Number(msg.from) === auth.user?.id
+}
+
+/** 发送已读回执（to = 对方） */
+function sendReadReceipt(peerId: number) {
+  if (!auth.user || !ws.connected) return
+  ws.sendMessage({
+    type: 'read_receipt',
+    from: String(auth.user.id),
+    to: String(peerId),
+    content: 'all',
+    timestamp: Date.now(),
+    messageId: '',
+    messageType: 0,
+    senderName: '',
+    senderAvatar: null
+  })
 }
 
 function selectGroupChat(group: { id: number; name: string }) {
@@ -1001,11 +1030,25 @@ function handleWsMessage(msg: WsMessage) {
   // 在线状态已由 onStatusChange 处理
   if (msg.type === 'online_status') return
 
+  // 已读回执：对方读了我发出的私聊消息
+  if (msg.type === 'read_receipt') {
+    if (msg.from) {
+      chatStore.markSessionReadByPeer(chatStore.sessionKey('private', Number(msg.from)))
+    }
+    return
+  }
+
   const { key, isNew } = chatStore.addMessage(msg, auth.user?.id)
   const currentKey = currentChat.value ? chatStore.sessionKey(currentChat.value.type, currentChat.value.id) : ''
   if (key === currentKey) {
-    // 当前会话：清未读、标记已读、滚到底部
-    chatStore.markSessionRead(currentChat.value!.type, currentChat.value!.id)
+    // 当前会话：清未读、标记已读、滚到底部；对方发来的消息即时回已读回执
+    const chat = currentChat.value
+    if (chat) {
+      chatStore.markSessionRead(chat.type, chat.id)
+      if (msg.type === 'private_message' && chat.type === 'private') {
+        sendReadReceipt(chat.id)
+      }
+    }
     scrollToBottom()
   } else if (isNew) {
     chatStore.bumpUnread(key)
@@ -1913,6 +1956,24 @@ watch(activeTab, () => {
   font-size: 11px;
   color: var(--text-secondary);
   padding: 0 4px;
+}
+
+/* 已读状态 */
+.msg-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.msg-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 0 4px;
+}
+
+.msg-status.read {
+  color: var(--primary);
+  font-weight: 500;
 }
 
 /* @ 提及高亮 */

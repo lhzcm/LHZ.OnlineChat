@@ -8,6 +8,8 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<Map<string, WsMessage[]>>(new Map())
   // 未读数，key 与 messages 一致：`private_${id}` / `group_${id}`
   const unreadCounts = ref<Map<string, number>>(new Map())
+  // 对方已读回执的私聊消息 ID 集合（自己发出的消息被对方已读）
+  const readByPeer = ref<Set<string>>(new Set())
   const currentSession = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
   const currentMessages = computed(() => {
@@ -80,6 +82,20 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 收到对方已读回执：把该会话中我发出的消息标记为已读 */
+  function markSessionReadByPeer(key: string) {
+    const list = messages.value.get(key)
+    if (!list) return
+    for (const m of list) {
+      if (m.messageId) readByPeer.value.add(m.messageId)
+    }
+  }
+
+  /** 该消息是否已被对方已读 */
+  function isReadByPeer(msgId: string | undefined): boolean {
+    return !!msgId && readByPeer.value.has(msgId)
+  }
+
   /**
    * 打开会话：清空未读；私聊同步服务端已读标记，群聊推进已读游标。
    */
@@ -111,7 +127,7 @@ export const useChatStore = defineStore('chat', () => {
     currentSession.value = { type, id, name }
   }
 
-  async function loadHistory(type: ChatType, id: number, page = 1) {
+  async function loadHistory(type: ChatType, id: number, page = 1, myUserId?: number) {
     if (type === 'private') {
       const res = await messageApi.getPrivateHistory(id, page)
       if (res.success && res.data) {
@@ -129,6 +145,14 @@ export const useChatStore = defineStore('chat', () => {
           senderAvatar: m.senderAvatar
         } as WsMessage))
         messages.value.set(key, mergeList(existing, newMsgs))
+        // 历史中"我发出且已被对方已读"的消息标记已读状态
+        if (myUserId !== undefined) {
+          for (const m of res.data.items) {
+            if (m.senderId === myUserId && m.isRead) {
+              readByPeer.value.add(m.messageId || String(m.id))
+            }
+          }
+        }
       }
     } else {
       const res = await messageApi.getGroupHistory(id, page)
@@ -189,8 +213,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   return {
-    sessions, messages, unreadCounts, currentSession, currentMessages,
-    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionRead, fetchSessions,
+    sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages,
+    sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer,
+    markSessionRead, fetchSessions,
     setCurrentSession, loadHistory, loadOfflineMessages
   }
 })

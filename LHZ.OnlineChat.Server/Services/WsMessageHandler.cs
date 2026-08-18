@@ -58,7 +58,7 @@ public class WsMessageHandler
                 await HandleTypingAsync(userId, message);
                 break;
             case WsMessageType.ReadReceipt:
-                await HandleReadReceiptAsync(message);
+                await HandleReadReceiptAsync(userId, message);
                 break;
             default:
                 Console.WriteLine($"[WS] 未知消息类型: {message.Type}");
@@ -226,16 +226,27 @@ public class WsMessageHandler
     }
 
     /// <summary>
-    /// 处理已读回执
+    /// 处理已读回执：标记消息已读，并转发给被读方（通知对方该会话已读）
     /// </summary>
-    private async Task HandleReadReceiptAsync(WsMessage message)
+    private async Task HandleReadReceiptAsync(int readerId, WsMessage message)
     {
+        // 单条消息标记已读（兼容旧协议）
         if (long.TryParse(message.MessageId, out var msgId))
         {
             await _fsql.Update<PrivateMessage>()
                 .Set(p => p.IsRead, true)
                 .Where(p => p.Id == msgId)
                 .ExecuteAffrowsAsync();
+        }
+
+        // 转发回执给被读方（在线时），from 为已读用户
+        if (int.TryParse(message.To, out var targetId))
+        {
+            var client = _connectionManager.GetConnection(targetId);
+            if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            {
+                client.SendMessage(JsonConvert.Serialize(message));
+            }
         }
     }
 
