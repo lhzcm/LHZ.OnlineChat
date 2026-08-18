@@ -96,6 +96,9 @@ public class MessageService
                 IsRead = m.IsRead,
                 IsDeleted = m.IsDeleted,
                 MessageId = m.ClientMessageId,
+                ReplyTo = m.ReplyMessageId,
+                ReplyContent = m.ReplyContent,
+                ReplySender = m.ReplySenderName,
                 SentAt = m.SentAt
             })
             .ToList();
@@ -152,6 +155,9 @@ public class MessageService
                 Content = m.Content,
                 MessageType = m.MessageType,
                 MessageId = m.ClientMessageId,
+                ReplyTo = m.ReplyMessageId,
+                ReplyContent = m.ReplyContent,
+                ReplySender = m.ReplySenderName,
                 IsDeleted = m.IsDeleted,
                 Mentions = ParseMentions(m.Mentions),
                 SentAt = m.SentAt
@@ -243,6 +249,9 @@ public class MessageService
                 IsRead = m.IsRead,
                 IsDeleted = m.IsDeleted,
                 MessageId = m.ClientMessageId,
+                ReplyTo = m.ReplyMessageId,
+                ReplyContent = m.ReplyContent,
+                ReplySender = m.ReplySenderName,
                 SentAt = m.SentAt
             })
             .ToList();

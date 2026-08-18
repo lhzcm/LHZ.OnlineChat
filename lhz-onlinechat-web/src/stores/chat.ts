@@ -176,7 +176,10 @@ export const useChatStore = defineStore('chat', () => {
           messageType: m.messageType,
           senderName: m.senderName,
           senderAvatar: m.senderAvatar,
-          isDeleted: m.isDeleted
+          isDeleted: m.isDeleted,
+          replyTo: m.replyTo,
+          replyContent: m.replyContent,
+          replySender: m.replySender
         } as WsMessage))
         messages.value.set(key, mergeList(existing, newMsgs))
         // 历史中"我发出且已被对方已读"的消息标记已读状态
@@ -204,7 +207,10 @@ export const useChatStore = defineStore('chat', () => {
           senderName: m.senderName,
           senderAvatar: m.senderAvatar,
           mentions: m.mentions || [],
-          isDeleted: m.isDeleted
+          isDeleted: m.isDeleted,
+          replyTo: m.replyTo,
+          replyContent: m.replyContent,
+          replySender: m.replySender
         } as WsMessage))
         messages.value.set(key, mergeList(existing, newMsgs))
       }

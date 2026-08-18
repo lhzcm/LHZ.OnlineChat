@@ -42,6 +42,24 @@ public class PrivateMessage
     [Column(IsNullable = false)]
     public bool IsDeleted { get; set; }
 
+    /// <summary>
+    /// 被引用消息的 messageId（客户端 ID 或数据库 ID）
+    /// </summary>
+    [Column(StringLength = 64)]
+    public string? ReplyMessageId { get; set; }
+
+    /// <summary>
+    /// 被引用消息的原文预览
+    /// </summary>
+    [Column(StringLength = 200)]
+    public string? ReplyContent { get; set; }
+
+    /// <summary>
+    /// 被引用消息的发送者昵称
+    /// </summary>
+    [Column(StringLength = 50)]
+    public string? ReplySenderName { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
 }

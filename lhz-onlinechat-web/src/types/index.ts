@@ -99,6 +99,12 @@ export interface MessageDto {
   sentAt: string
   /** 客户端消息 ID，与 WS 推送一致（去重键）；为空时前端回退数据库 id */
   messageId: string | null
+  /** 被引用消息 ID */
+  replyTo: string | null
+  /** 被引用消息原文预览 */
+  replyContent: string | null
+  /** 被引用消息发送者 */
+  replySender: string | null
 }
 
 export interface GroupMessageDto {
@@ -113,6 +119,12 @@ export interface GroupMessageDto {
   messageId: string | null
   /** 是否已撤回 */
   isDeleted: boolean
+  /** 被引用消息 ID */
+  replyTo: string | null
+  /** 被引用消息原文预览 */
+  replyContent: string | null
+  /** 被引用消息发送者 */
+  replySender: string | null
   /** 被 @ 的成员账号 ID 列表 */
   mentions: number[]
 }
@@ -139,6 +151,9 @@ export interface WsMessage {
   mentions?: number[]
   /** 是否已撤回 */
   isDeleted?: boolean
+  replyTo?: string
+  replyContent?: string
+  replySender?: string
 }
 
 // ==================== 聊天会话 ====================

@@ -85,6 +85,9 @@ public class WsMessageHandler
             MessageType = message.MessageType,
             IsRead = false,
             ClientMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId,
+            ReplyMessageId = string.IsNullOrWhiteSpace(message.ReplyTo) ? null : message.ReplyTo,
+            ReplyContent = string.IsNullOrWhiteSpace(message.ReplyContent) ? null : message.ReplyContent,
+            ReplySenderName = string.IsNullOrWhiteSpace(message.ReplySender) ? null : message.ReplySender,
             SentAt = DateTime.UtcNow
         };
         var msgId = await _fsql.Insert(privateMsg).ExecuteIdentityAsync();
@@ -147,6 +150,9 @@ public class WsMessageHandler
             MessageType = message.MessageType,
             ClientMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId,
             Mentions = message.Mentions?.Count > 0 ? string.Join(',', message.Mentions) : null,
+            ReplyMessageId = string.IsNullOrWhiteSpace(message.ReplyTo) ? null : message.ReplyTo,
+            ReplyContent = string.IsNullOrWhiteSpace(message.ReplyContent) ? null : message.ReplyContent,
+            ReplySenderName = string.IsNullOrWhiteSpace(message.ReplySender) ? null : message.ReplySender,
             SentAt = DateTime.UtcNow
         };
         var msgId = await _fsql.Insert(groupMsg).ExecuteIdentityAsync();

@@ -68,6 +68,24 @@ public class WsMessage
     /// </summary>
     [JsonProperty("mentions")]
     public List<int> Mentions { get; set; } = new();
+
+    /// <summary>
+    /// 被引用消息的 messageId（引用回复）
+    /// </summary>
+    [JsonProperty("replyTo")]
+    public string ReplyTo { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 被引用消息的原文预览
+    /// </summary>
+    [JsonProperty("replyContent")]
+    public string ReplyContent { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 被引用消息的发送者昵称
+    /// </summary>
+    [JsonProperty("replySender")]
+    public string ReplySender { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -192,13 +192,20 @@
               <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
                 {{ msg.senderName }}
               </span>
+              <div class="reply-preview" v-if="msg.replyContent && !msg.isDeleted">
+                <span class="reply-sender">{{ msg.replySender || '引用' }}</span>
+                <span class="reply-text">{{ msg.replyContent }}</span>
+              </div>
               <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, recalled: msg.isDeleted }">
                 <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
                 <img v-else-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
                   loading="lazy" @click.stop="openLightbox(msg.content)" />
                 <span v-else v-html="renderContent(msg.content)"></span>
               </div>
-              <button v-if="canRecall(msg)" class="msg-recall-btn" @click.stop="recallMessage(msg)">撤回</button>
+              <div class="msg-actions">
+                <button v-if="canReply(msg)" class="msg-recall-btn" @click.stop="startReply(msg)">回复</button>
+                <button v-if="canRecall(msg)" class="msg-recall-btn" @click.stop="recallMessage(msg)">撤回</button>
+              </div>
               <div class="msg-meta-line">
                 <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
                 <span v-if="isMyPrivateMessage(msg)" class="msg-status"
@@ -208,6 +215,12 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- 引用回复横幅 -->
+        <div class="reply-bar" v-if="replyTarget">
+          <span class="reply-bar-text">回复 {{ replyTarget.senderName }}：{{ replyTarget.content }}</span>
+          <button class="reply-cancel" @click="replyTarget = null">✕</button>
         </div>
 
         <div class="chat-input-bar">
@@ -879,6 +892,22 @@ function canRecall(msg: WsMessage): boolean {
   return Number(msg.from) === auth.user?.id
 }
 
+/** 引用回复目标 */
+const replyTarget = ref<{ messageId: string; content: string; senderName: string } | null>(null)
+
+function canReply(msg: WsMessage): boolean {
+  return !msg.isDeleted
+}
+
+function startReply(msg: WsMessage) {
+  replyTarget.value = {
+    messageId: msg.messageId,
+    content: (msg.content || '').slice(0, 50),
+    senderName: msg.senderName || '对方'
+  }
+  inputEl.value?.focus()
+}
+
 function recallMessage(msg: WsMessage) {
   if (!currentChat.value || !auth.user) return
   if (!window.confirm('确定撤回这条消息？')) return
@@ -1255,11 +1284,15 @@ function send() {
     messageType: 0,
     senderName: auth.user.nickname,
     senderAvatar: auth.user.avatar,
-    mentions: parseMentions(text) // 群聊 @ 提及
+    mentions: parseMentions(text), // 群聊 @ 提及
+    replyTo: replyTarget.value?.messageId,
+    replyContent: replyTarget.value?.content,
+    replySender: replyTarget.value?.senderName
   }
   chatStore.addMessage(msg, auth.user.id) // 乐观插入，回显到达后自动去重
   ws.sendMessage(msg)
   inputText.value = ''
+  replyTarget.value = null // 发送后清除引用
   scrollToBottom()
 }
 
@@ -2226,6 +2259,76 @@ watch(activeTab, () => {
 .msg-recall-btn:hover {
   background: var(--border);
   color: var(--text);
+}
+
+/* 引用回复 */
+.reply-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-left: 3px solid var(--primary-light);
+  background: var(--bg-hover);
+  border-radius: 8px 8px 0 0;
+  margin-bottom: 2px;
+}
+
+.reply-sender {
+  font-size: 11.5px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.reply-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.msg-actions {
+  display: none;
+  gap: 6px;
+  align-self: flex-end;
+  margin-top: -6px;
+}
+
+.msg-row:hover .msg-actions {
+  display: inline-flex;
+}
+
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--bg-hover);
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.reply-bar-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-cancel {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.reply-cancel:hover {
+  color: var(--danger);
 }
 
 /* @ 提及高亮 */

@@ -22,6 +22,18 @@ public class MessageDto
     /// 客户端消息 ID（与 WS 推送一致，用于前端去重）；为空时前端回退数据库 ID
     /// </summary>
     public string? MessageId { get; set; }
+    /// <summary>
+    /// 被引用消息的 messageId
+    /// </summary>
+    public string? ReplyTo { get; set; }
+    /// <summary>
+    /// 被引用消息的原文预览
+    /// </summary>
+    public string? ReplyContent { get; set; }
+    /// <summary>
+    /// 被引用消息的发送者昵称
+    /// </summary>
+    public string? ReplySender { get; set; }
 }
 
 public class GroupMessageDto
@@ -43,6 +55,18 @@ public class GroupMessageDto
     /// 客户端消息 ID（与 WS 推送一致，用于前端去重）；为空时前端回退数据库 ID
     /// </summary>
     public string? MessageId { get; set; }
+    /// <summary>
+    /// 被引用消息的 messageId
+    /// </summary>
+    public string? ReplyTo { get; set; }
+    /// <summary>
+    /// 被引用消息的原文预览
+    /// </summary>
+    public string? ReplyContent { get; set; }
+    /// <summary>
+    /// 被引用消息的发送者昵称
+    /// </summary>
+    public string? ReplySender { get; set; }
 
     /// <summary>
     /// 被 @ 的成员账号 ID 列表（群聊提及）
