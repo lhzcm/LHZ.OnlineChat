@@ -25,5 +25,10 @@ export const messageApi = {
   },
   getOfflineMessages(): Promise<ApiResponse<MessageDto[]>> {
     return request.get('/messages/offline')
+  },
+  uploadImage(file: File): Promise<ApiResponse<{ url: string }>> {
+    const form = new FormData()
+    form.append('file', file)
+    return request.post('/uploads/image', form, { headers: { 'Content-Type': undefined } })
   }
 }

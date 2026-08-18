@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace LHZ.OnlineChat.Server.Models.DTOs;
 
 /// <summary>
@@ -42,10 +45,28 @@ public class RegisterResponse
 public class LoginRequest
 {
     /// <summary>
-    /// 账号 ID 或邮箱（数字按账号 ID 查询，其余按邮箱查询）
+    /// 账号 ID 或邮箱（数字按账号 ID 查询，其余按邮箱查询）。
+    /// 兼容数字输入（自动转字符串）。
     /// </summary>
+    [JsonConverter(typeof(NumberToStringConverter))]
     public string Account { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 允许 JSON 数字绑定到 string 属性（登录账号兼容传数字的旧调用）
+/// </summary>
+public class NumberToStringConverter : JsonConverter<string>
+{
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number)
+            return reader.TryGetInt64(out var l) ? l.ToString() : reader.GetDouble().ToString("0");
+        return reader.GetString() ?? string.Empty;
+    }
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value);
 }
 
 public class LoginResponse
@@ -88,6 +109,14 @@ public class UpdateEmailRequest
 public class AvatarResponse
 {
     public string Avatar { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 文件上传响应
+/// </summary>
+public class UploadResponse
+{
+    public string Url { get; set; } = string.Empty;
 }
 
 public class ApiResponse<T>

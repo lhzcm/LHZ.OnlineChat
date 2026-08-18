@@ -169,7 +169,11 @@
               <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
                 {{ msg.senderName }}
               </span>
-              <div class="msg-bubble" :class="{ mentioned: isMentioned(msg) }" v-html="renderContent(msg.content)"></div>
+              <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1 }">
+                <img v-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
+                  loading="lazy" @click.stop="openLightbox(msg.content)" />
+                <span v-else v-html="renderContent(msg.content)"></span>
+              </div>
               <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
             </div>
           </div>
@@ -196,6 +200,14 @@
           <button v-if="currentChat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionPicker" title="提及成员">
             <span class="at-symbol">@</span>
           </button>
+          <button class="emoji-btn" :disabled="sendingImage" @click="imageInputRef?.click()" title="发送图片">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <input ref="imageInputRef" type="file" accept="image/*" class="hidden-file" @change="onImageSelect" />
           <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10" />
@@ -384,6 +396,12 @@
         <button class="btn btn-ghost" @click="showAddModal = false">关闭</button>
       </div>
     </div>
+
+    <!-- 图片放大预览 -->
+    <div class="lightbox" v-if="lightboxUrl" @click="lightboxUrl = ''">
+      <img :src="lightboxUrl" alt="图片预览" />
+      <span class="lightbox-close">✕ 点击任意处关闭</span>
+    </div>
   </div>
 </template>
 
@@ -399,6 +417,7 @@ import { emojiGroups } from '@/constants/emojis'
 import Avatar from '@/components/Avatar.vue'
 import { avatarGradient, avatarInitial } from '@/utils/avatar'
 import { authApi } from '@/api/auth'
+import { messageApi } from '@/api/message'
 import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo } from '@/types'
 
 const router = useRouter()
@@ -427,6 +446,10 @@ const mobileChatOpen = ref(false)
 const showEmojiPanel = ref(false)
 const emojiPanelRef = ref<HTMLElement | null>(null)
 const emojiBtnRef = ref<HTMLElement | null>(null)
+// 图片消息
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const sendingImage = ref(false)
+const lightboxUrl = ref('')
 // 账号 ID 复制提示
 const copyTip = ref('')
 let copyTipTimer: number | null = null
@@ -652,6 +675,56 @@ function insertEmoji(emoji: string) {
 function onInputEnter(e: KeyboardEvent) {
   if (e.isComposing) return
   send()
+}
+
+// ==================== 图片消息 ====================
+/** 选择图片后上传并作为图片消息发送 */
+async function onImageSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!currentChat.value || !auth.user) return
+  if (!ws.connected) {
+    sendHint.value = '连接已断开，正在重连，请稍候…'
+    return
+  }
+  if (!file.type.startsWith('image/')) {
+    sendHint.value = '请选择图片文件'
+    return
+  }
+
+  sendingImage.value = true
+  sendHint.value = ''
+  try {
+    const res = await messageApi.uploadImage(file)
+    if (!res.success || !res.data?.url) {
+      sendHint.value = res.message || '图片上传失败'
+      return
+    }
+    const msg: WsMessage = {
+      type: currentChat.value.type === 'private' ? 'private_message' : 'group_message',
+      from: String(auth.user.id),
+      to: String(currentChat.value.id),
+      content: res.data.url,
+      timestamp: Date.now(),
+      messageId: genId(),
+      messageType: 1, // 图片
+      senderName: auth.user.nickname,
+      senderAvatar: auth.user.avatar
+    }
+    chatStore.addMessage(msg, auth.user.id) // 乐观插入
+    ws.sendMessage(msg)
+    scrollToBottom()
+  } catch (err: any) {
+    sendHint.value = err?.message || '图片发送失败'
+  } finally {
+    sendingImage.value = false
+  }
+}
+
+function openLightbox(url: string) {
+  lightboxUrl.value = url
 }
 
 // ==================== @ 提及 ====================
@@ -1763,6 +1836,60 @@ watch(activeTab, () => {
 .mention {
   color: var(--primary);
   font-weight: 600;
+}
+
+/* 图片消息 */
+.msg-bubble.is-image {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.msg-image {
+  display: block;
+  max-width: 260px;
+  max-height: 260px;
+  border-radius: 12px;
+  cursor: zoom-in;
+  box-shadow: var(--shadow-sm);
+  object-fit: cover;
+}
+
+@media (max-width: 720px) {
+  .msg-image {
+    max-width: 220px;
+    max-height: 220px;
+  }
+}
+
+/* 图片放大预览 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  cursor: zoom-out;
+  animation: fade-in 0.2s;
+}
+
+.lightbox img {
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.lightbox-close {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
 }
 
 /* 被 @ 的消息：主色描边标记 */
