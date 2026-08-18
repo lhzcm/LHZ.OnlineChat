@@ -2791,7 +2791,6 @@ html[data-theme='dark'] .app-toast {
 
 /* 消息行 */
 .msg-row {
-  position: relative;
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -2814,6 +2813,7 @@ html[data-theme='dark'] .app-toast {
 }
 
 .msg-body {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2948,18 +2948,18 @@ html[data-theme='dark'] .app-toast {
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-/* 别人的消息：按钮在气泡右侧空白区 */
+/* 锚定在气泡（.msg-body 按内容收缩），按钮紧贴气泡：
+   别人的消息 → 气泡右侧；自己的消息 → 气泡左侧 */
 .msg-row:not(.mine) .msg-actions {
-  left: 100%;
+  left: calc(100% + 8px);
 }
 
-/* 自己的消息：按钮在气泡左侧空白区 */
 .msg-row.mine .msg-actions {
-  right: 100%;
+  right: calc(100% + 8px);
 }
 
 .msg-row:hover .msg-actions,
-/* 鼠标移到按钮上时保持显示（按钮在行外，:has 兜底） */
+/* 鼠标移到按钮上时保持显示（按钮在气泡外，:has 兜底） */
 .msg-row:has(.msg-actions:hover) .msg-actions {
   opacity: 1;
   visibility: visible;
