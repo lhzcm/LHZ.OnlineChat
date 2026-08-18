@@ -98,6 +98,26 @@ public class GroupsController : ControllerBase
     }
 
     /// <summary>
+    /// 设置/清除群公告（仅群主/管理员）
+    /// </summary>
+    [HttpPut("{groupId}/announcement")]
+    public async Task<IActionResult> SetAnnouncement(long groupId, [FromBody] SetAnnouncementRequest request)
+    {
+        var result = await _groupService.SetAnnouncementAsync(groupId, GetCurrentUserId(), request.Announcement);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 设置/取消管理员（仅群主）
+    /// </summary>
+    [HttpPut("{groupId}/admin")]
+    public async Task<IActionResult> SetAdmin(long groupId, [FromBody] SetAdminRequest request)
+    {
+        var result = await _groupService.SetAdminAsync(groupId, GetCurrentUserId(), request.UserId, request.IsAdmin);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
     /// 解散群组
     /// </summary>
     [HttpDelete("{groupId}")]

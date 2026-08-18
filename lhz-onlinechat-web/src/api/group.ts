@@ -23,6 +23,12 @@ export const groupApi = {
   kickMember(groupId: number, userId: number): Promise<ApiResponse> {
     return request.delete(`/groups/${groupId}/members/${userId}`)
   },
+  setAnnouncement(groupId: number, announcement: string): Promise<ApiResponse> {
+    return request.put(`/groups/${groupId}/announcement`, { announcement })
+  },
+  setAdmin(groupId: number, userId: number, isAdmin: boolean): Promise<ApiResponse> {
+    return request.put(`/groups/${groupId}/admin`, { userId, isAdmin })
+  },
   dismissGroup(groupId: number): Promise<ApiResponse> {
     return request.delete(`/groups/${groupId}`)
   }

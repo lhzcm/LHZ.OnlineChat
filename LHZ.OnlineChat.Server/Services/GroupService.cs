@@ -243,6 +243,66 @@ public class GroupService
     }
 
     /// <summary>
+    /// 设置/清除群公告（仅群主/管理员）
+    /// </summary>
+    public async Task<ApiResponse> SetAnnouncementAsync(long groupId, int operatorId, string announcement)
+    {
+        announcement = (announcement ?? string.Empty).Trim();
+        if (announcement.Length > 2000)
+            return ApiResponse.Fail("公告内容过长（最多 2000 字）");
+
+        var member = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == operatorId)
+            .FirstAsync();
+        if (member == null)
+            return ApiResponse.Fail("你不是该群组成员");
+        if (member.Role > 1)
+            return ApiResponse.Fail("只有群主或管理员可以设置公告");
+
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群组不存在");
+
+        group.Announcement = announcement.Length == 0 ? null : announcement;
+        group.AnnouncementAt = announcement.Length == 0 ? null : DateTime.UtcNow;
+        group.AnnouncementBy = announcement.Length == 0 ? null : operatorId;
+        await _fsql.Update<Group_>().SetSource(group).ExecuteAffrowsAsync();
+
+        return ApiResponse.Ok(announcement.Length == 0 ? "公告已清除" : "公告已更新");
+    }
+
+    /// <summary>
+    /// 设置/取消管理员（仅群主）
+    /// </summary>
+    public async Task<ApiResponse> SetAdminAsync(long groupId, int operatorId, int targetUserId, bool isAdmin)
+    {
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群组不存在");
+
+        var operatorMember = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == operatorId)
+            .FirstAsync();
+        if (operatorMember == null)
+            return ApiResponse.Fail("你不是该群组成员");
+        if (operatorMember.Role != 0)
+            return ApiResponse.Fail("只有群主可以设置管理员");
+
+        var targetMember = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == targetUserId)
+            .FirstAsync();
+        if (targetMember == null)
+            return ApiResponse.Fail("目标用户不是群成员");
+        if (targetMember.Role == 0)
+            return ApiResponse.Fail("不能修改群主的身份");
+
+        targetMember.Role = isAdmin ? 1 : 2;
+        await _fsql.Update<GroupMember>().SetSource(targetMember).ExecuteAffrowsAsync();
+
+        return ApiResponse.Ok(isAdmin ? "已设为管理员" : "已取消管理员");
+    }
+
+    /// <summary>
     /// 获取我的群组列表
     /// </summary>
     public async Task<ApiResponse<List<GroupInfo>>> GetMyGroupsAsync(int userId)
@@ -258,6 +318,7 @@ public class GroupService
         var groups = await _fsql.Select<Group_>()
             .Where(g => groupIds.Contains(g.Id))
             .ToListAsync();
+        var myRoleDict = memberGroups.ToDictionary(m => m.GroupId, m => m.Role);
 
         var result = new List<GroupInfo>();
         foreach (var group in groups)
@@ -273,7 +334,10 @@ public class GroupService
                 Avatar = group.Avatar,
                 OwnerId = group.OwnerId,
                 MemberCount = (int)memberCount,
-                CreatedAt = group.CreatedAt
+                CreatedAt = group.CreatedAt,
+                Announcement = group.Announcement,
+                AnnouncementAt = group.AnnouncementAt,
+                MyRole = myRoleDict.GetValueOrDefault(group.Id, 2)
             });
         }
 

@@ -74,6 +74,11 @@ export interface GroupInfo {
   ownerId: number
   memberCount: number
   createdAt: string
+  /** 群公告（可为空） */
+  announcement: string | null
+  announcementAt: string | null
+  /** 当前用户在该群的角色：0=群主, 1=管理员, 2=成员 */
+  myRole: number
 }
 
 export interface GroupMemberInfo {

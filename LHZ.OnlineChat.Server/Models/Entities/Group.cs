@@ -20,6 +20,19 @@ public class Group_
     [Column(IsNullable = false)]
     public int OwnerId { get; set; }
 
+    /// <summary>
+    /// 群公告（仅群主/管理员可编辑）
+    /// </summary>
+    [Column(StringLength = 2000)]
+    public string? Announcement { get; set; }
+
+    public DateTime? AnnouncementAt { get; set; }
+
+    /// <summary>
+    /// 最后编辑公告的成员 ID
+    /// </summary>
+    public int? AnnouncementBy { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
