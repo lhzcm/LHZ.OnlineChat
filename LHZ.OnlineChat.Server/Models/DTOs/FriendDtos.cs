@@ -25,6 +25,10 @@ public class FriendInfo
     public bool IsOnline { get; set; }
     public int Status { get; set; } // 好友关系状态
     /// <summary>
+    /// 是否机器人账号
+    /// </summary>
+    public bool IsBot { get; set; }
+    /// <summary>
     /// 我给他设置的备注（可空，空表示显示对方昵称）
     /// </summary>
     public string? Remark { get; set; }

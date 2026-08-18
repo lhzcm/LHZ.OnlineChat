@@ -38,6 +38,10 @@ public class GroupMemberInfo
     public string? Avatar { get; set; }
     public int Role { get; set; }
     public bool IsOnline { get; set; }
+    /// <summary>
+    /// 是否机器人账号
+    /// </summary>
+    public bool IsBot { get; set; }
 }
 
 public class InviteMembersRequest

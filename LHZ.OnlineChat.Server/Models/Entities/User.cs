@@ -12,11 +12,17 @@ public class User
     [Column(IsPrimary = true, IsIdentity = true)]
     public int Id { get; set; }
 
-    [Column(IsNullable = false, StringLength = 200)]
-    public string Email { get; set; } = string.Empty;
+    /// <summary>
+    /// 邮箱（机器人账号为空）
+    /// </summary>
+    [Column(IsNullable = true, StringLength = 200)]
+    public string? Email { get; set; }
 
-    [Column(IsNullable = false, StringLength = 200)]
-    public string PasswordHash { get; set; } = string.Empty;
+    /// <summary>
+    /// 密码哈希（机器人账号为空，且禁止登录）
+    /// </summary>
+    [Column(IsNullable = true, StringLength = 200)]
+    public string? PasswordHash { get; set; }
 
     /// <summary>
     /// 昵称（可重复）
@@ -26,6 +32,12 @@ public class User
 
     [Column(StringLength = 500)]
     public string? Avatar { get; set; }
+
+    /// <summary>
+    /// 是否机器人账号（不能登录；由 Webhook 驱动回复）
+    /// </summary>
+    [Column(IsNullable = false)]
+    public bool IsBot { get; set; }
 
     [Column(IsNullable = false)]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

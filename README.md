@@ -31,6 +31,13 @@
 - 创建/加入/退出/踢人(权限分级:群主 0/管理员 1/成员 2)/解散/成员列表(含在线状态)
 - **群主/管理员邀请好友入群**(仅限自己的好友、排除已在群成员、批量邀请,被邀请者实时收到 `group_invited`)
 
+**🤖 机器人(Webhook)**
+- **私人机器人助理**:创建后自动成为好友,私聊即触发;**群机器人**:群主/管理员把机器人拉进群,**被 @ 时触发**
+- 收到消息 → 系统 POST 事件(JSON,`X-Bot-Signature: HMAC-SHA256(secret, rawBody)` 签名)到你的 Webhook 地址
+- **同步回复**:回调返回 `200 {"content":"回复文本"}` 即自动以机器人身份回复(10s 超时,失败重试 1 次,自动带回复引用)
+- **异步回复**:`POST /api/robots/{id}/reply`(同样 HMAC 验签),适合 AI 思考久/定时消息场景
+- 管理面板:创建/编辑/删除/**测试触发**;机器人有独立账号 ID、禁止登录、🤖 标识,好友/会话/群成员列表可见
+
 **聊天**
 - 私聊 + 群聊实时收发、历史分页、未读角标、已读标记(私聊/群已读游标)、离线消息拉取、乐观发送(messageId 去重回显)
 - **群聊 @ 提及**:输入 `@` 或点击 @ 按钮弹出成员选择器(按昵称过滤),消息携带 `mentions`,气泡内 `@昵称` 高亮,被 @ 的消息主色描边
@@ -170,9 +177,10 @@ docker compose up -d --build
 | `User_` | 用户(Id=账号,Email 唯一,Avatar/昵称) |
 | `Friend` | 好友关系(Status: 0待确认/1已接受/2已屏蔽) |
 | `FriendTag` | 好友设置(设置者视角的备注 Remark / 分类 Category) |
-| `Group_` | 群组(OwnerId) |
+| `Group_` | 群组(OwnerId,公告 Announcement) |
 | `GroupMember` | 群成员(Role: 0群主/1管理员/2成员,LastReadMessageId 已读游标) |
 | `PrivateMessage` / `GroupMessage` | 私聊/群聊消息(ClientMessageId 客户端 ID,Mentions 提及) |
+| `RobotProfile` | 机器人配置(机器人账号=User 表 IsBot=true 的行,WebhookUrl/Secret/超时) |
 
 ## 📜 License
 

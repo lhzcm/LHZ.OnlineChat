@@ -35,7 +35,8 @@ fsql.CodeFirst.SyncStructure(
     typeof(LHZ.OnlineChat.Server.Models.Entities.PrivateMessage),
     typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMessage),
     typeof(LHZ.OnlineChat.Server.Models.Entities.SessionSetting),
-    typeof(LHZ.OnlineChat.Server.Models.Entities.Blacklist)
+    typeof(LHZ.OnlineChat.Server.Models.Entities.Blacklist),
+    typeof(LHZ.OnlineChat.Server.Models.Entities.RobotProfile)
 );
 
 // 账号 ID 迁移：用户 ID 列改为 int，序列起始值 ≥ 10000（账号从 10000 开始自增）
@@ -92,6 +93,15 @@ builder.Services.AddScoped<FriendService>();
 builder.Services.AddScoped<GroupService>();
 builder.Services.AddScoped<MessageService>();
 builder.Services.AddSingleton<BlacklistService>();
+builder.Services.AddSingleton<BotService>();
+builder.Services.AddHttpClient("bot").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    // 允许 http:// 内网地址（本地自建 Webhook 服务调试）；生产建议使用 HTTPS
+    AllowAutoRedirect = false
+}).ConfigureHttpClient(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+});
 
 // WebSocket 服务（单例）
 builder.Services.AddSingleton<WsConnectionManager>();

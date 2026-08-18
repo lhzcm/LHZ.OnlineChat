@@ -464,7 +464,8 @@ public class MessageService
                     LastTime = AsUtc(last.SentAt),
                     UnreadCount = unreadPrivate.GetValueOrDefault(peerId),
                     IsPinned = setting?.IsPinned ?? false,
-                    Muted = setting?.Muted ?? false
+                    Muted = setting?.Muted ?? false,
+                    IsBot = userDict.GetValueOrDefault(peerId)?.IsBot ?? false
                 });
             }
         }

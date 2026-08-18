@@ -34,6 +34,16 @@
             </svg>
             <span v-if="friendStore.pendingRequests.length" class="badge">{{ friendStore.pendingRequests.length }}</span>
           </button>
+          <button class="icon-btn" @click="openRobotModal" title="我的机器人">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="8" width="16" height="12" rx="3" />
+              <path d="M12 8V4" />
+              <circle cx="12" cy="3" r="1" />
+              <circle cx="9" cy="13" r="1" />
+              <circle cx="15" cy="13" r="1" />
+              <line x1="9" y1="17" x2="15" y2="17" />
+            </svg>
+          </button>
           <button class="icon-btn" @click="handleLogout" title="退出登录">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -104,6 +114,7 @@
             <div class="info-top">
               <span class="contact-name">
                 <span class="pin-icon" v-if="s.isPinned">📌</span>
+                <span class="bot-tag" v-if="s.isBot">🤖</span>
                 {{ s.name }}
               </span>
               <span class="session-time">
@@ -140,7 +151,7 @@
             </div>
             <div class="contact-info">
               <div class="info-top">
-                <span class="contact-name">{{ friendDisplayName(f) }}</span>
+                <span class="contact-name"><span class="bot-tag" v-if="f.isBot">🤖</span>{{ friendDisplayName(f) }}</span>
                 <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
               </div>
               <div class="info-bottom">
@@ -352,6 +363,7 @@
         <h3>{{ currentChat?.name }} · 群成员 ({{ groupStore.members.length }})</h3>
         <div class="invite-bar" v-if="canInvite">
           <button class="btn btn-primary btn-sm" @click="openInviteModal">+ 邀请好友</button>
+          <button class="btn btn-ghost btn-sm" @click="openGroupRobotModal">+ 添加机器人</button>
         </div>
         <div class="empty" v-if="groupStore.members.length === 0">
           <span class="empty-icon">👥</span>
@@ -362,6 +374,7 @@
           <div class="request-info">
             <span class="request-name">
               {{ m.nickname }}
+              <span class="bot-tag" v-if="m.isBot">🤖</span>
               <span class="role-tag" :class="'role-' + m.role">{{ roleText(m.role) }}</span>
             </span>
             <span class="request-meta">
@@ -526,6 +539,95 @@
       </div>
     </div>
 
+    <!-- 机器人管理弹窗 -->
+    <div class="modal-overlay" v-if="showRobotModal" @click.self="showRobotModal = false">
+      <div class="modal modal-wide">
+        <h3>🤖 我的机器人</h3>
+        <p class="robot-tip">机器人收到消息会 POST 事件到你的 Webhook 地址，返回 <code>{"content":"回复"}</code> 即自动回复（详见 README）。</p>
+        <button v-if="!robotEditing" class="btn btn-primary btn-sm" @click="startCreateRobot">+ 创建机器人</button>
+
+        <!-- 创建/编辑表单 -->
+        <div v-if="robotEditing" class="robot-form">
+          <input v-model="robotForm.name" class="input" placeholder="机器人名称（如：小助手）" maxlength="50" />
+          <input v-model="robotForm.webhookUrl" class="input" placeholder="Webhook 地址，如 https://your-server.com/bot" />
+          <input v-model="robotForm.webhookSecret" class="input" placeholder="签名密钥（可选，HMAC 验签用）" />
+          <input v-model.number="robotForm.timeoutMs" class="input" type="number" min="1000" max="60000" placeholder="回调超时（毫秒，默认 10000）" />
+          <label class="setting-switch">
+            <span><span class="set-label">启用</span></span>
+            <input type="checkbox" v-model="robotForm.enabled" />
+          </label>
+          <div class="modal-actions">
+            <button class="btn btn-sm btn-primary" :disabled="savingRobot" @click="saveRobot">
+              {{ savingRobot ? '保存中…' : '保存' }}
+            </button>
+            <button class="btn btn-sm btn-ghost" @click="robotEditing = false">取消</button>
+          </div>
+          <p class="modal-error" v-if="robotFormError">{{ robotFormError }}</p>
+        </div>
+
+        <div class="empty" v-if="!robotEditing && robots.length === 0">
+          <span class="empty-icon">🤖</span>
+          <span>还没有机器人，点击上方按钮创建一个</span>
+        </div>
+        <div v-for="r in robots" :key="r.id" class="request-item">
+          <Avatar :name="r.name" :url="r.avatar" size="sm" />
+          <div class="request-info">
+            <span class="request-name">
+              {{ r.name }}
+              <span class="bot-tag">🤖</span>
+              <span class="role-tag" :class="r.enabled ? 'role-0' : 'role-2'">{{ r.enabled ? '启用' : '停用' }}</span>
+            </span>
+            <span class="request-meta">账号 {{ r.userId }} · {{ r.webhookUrl }}</span>
+          </div>
+          <button class="btn btn-sm btn-ghost kick-btn" @click="startEditRobot(r)">编辑</button>
+          <button class="btn btn-sm btn-ghost kick-btn" @click="openRobotTest(r)">测试</button>
+          <button class="btn btn-sm btn-ghost kick-btn" @click="deleteRobot(r)">删除</button>
+        </div>
+        <button class="btn btn-ghost" @click="showRobotModal = false">关闭</button>
+      </div>
+    </div>
+
+    <!-- 机器人测试弹窗 -->
+    <div class="modal-overlay" v-if="showRobotTestModal" @click.self="showRobotTestModal = false">
+      <div class="modal">
+        <h3>测试 · {{ robotTesting?.name }}</h3>
+        <p class="robot-tip">模拟一条私聊消息触发 Webhook，展示机器人同步回复。</p>
+        <input v-model="robotTestContent" class="input" placeholder="模拟用户发送的内容" @keydown.enter="runRobotTest" />
+        <button class="btn btn-primary" :disabled="robotTestingNow" @click="runRobotTest">
+          {{ robotTestingNow ? '测试中…' : '发送测试' }}
+        </button>
+        <div v-if="robotTestResult" class="robot-test-result" :class="{ fail: !robotTestResult.success }">
+          <template v-if="robotTestResult.success">
+            <p v-if="robotTestResult.reply">🤖 回复：{{ robotTestResult.reply }}</p>
+            <p v-else>已触发，机器人未返回回复</p>
+          </template>
+          <p v-else>❌ {{ robotTestResult.message }}</p>
+        </div>
+        <button class="btn btn-ghost" @click="showRobotTestModal = false">关闭</button>
+      </div>
+    </div>
+
+    <!-- 群添加机器人弹窗 -->
+    <div class="modal-overlay" v-if="showGroupRobotModal" @click.self="showGroupRobotModal = false">
+      <div class="modal">
+        <h3>添加机器人到群</h3>
+        <div class="empty" v-if="myRobotsForGroup.length === 0">
+          <span class="empty-icon">🤖</span>
+          <span>没有可添加的机器人，请先在「我的机器人」中创建</span>
+        </div>
+        <div v-for="r in myRobotsForGroup" :key="r.id" class="request-item">
+          <Avatar :name="r.name" :url="r.avatar" size="sm" />
+          <div class="request-info">
+            <span class="request-name">{{ r.name }} <span class="bot-tag">🤖</span></span>
+            <span class="request-meta">账号 {{ r.userId }}</span>
+          </div>
+          <button class="btn btn-sm btn-primary kick-btn" :disabled="groupRobotBusy" @click="addRobotToGroup(r)">添加</button>
+        </div>
+        <p class="modal-error" v-if="groupRobotError">{{ groupRobotError }}</p>
+        <button class="btn btn-ghost" @click="showGroupRobotModal = false">关闭</button>
+      </div>
+    </div>
+
     <!-- 好友申请弹窗 -->
     <div class="modal-overlay" v-if="showRequestsModal" @click.self="showRequestsModal = false">
       <div class="modal">
@@ -608,7 +710,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
@@ -622,7 +724,8 @@ import { authApi } from '@/api/auth'
 import { messageApi } from '@/api/message'
 import { groupApi } from '@/api/group'
 import { blacklistApi } from '@/api/blacklist'
-import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult, BlacklistUser } from '@/types'
+import { robotApi } from '@/api/robot'
+import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult, BlacklistUser, RobotInfo, RobotTestResult } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -1871,6 +1974,154 @@ async function blockFriend() {
   }
 }
 
+// ==================== 机器人 ====================
+const showRobotModal = ref(false)
+const robots = ref<RobotInfo[]>([])
+const robotEditing = ref(false)
+const robotForm = reactive({ id: 0, name: '', webhookUrl: '', webhookSecret: '', timeoutMs: 10000, enabled: true })
+const robotFormError = ref('')
+const savingRobot = ref(false)
+
+const showRobotTestModal = ref(false)
+const robotTesting = ref<RobotInfo | null>(null)
+const robotTestContent = ref('')
+const robotTestingNow = ref(false)
+const robotTestResult = ref<RobotTestResult | null>(null)
+
+const showGroupRobotModal = ref(false)
+const groupRobotError = ref('')
+const groupRobotBusy = ref(false)
+
+async function openRobotModal() {
+  robotFormError.value = ''
+  const res = await robotApi.getMyRobots()
+  if (res.success && res.data) robots.value = res.data
+  showRobotModal.value = true
+}
+
+function resetRobotForm() {
+  robotForm.id = 0
+  robotForm.name = ''
+  robotForm.webhookUrl = ''
+  robotForm.webhookSecret = ''
+  robotForm.timeoutMs = 10000
+  robotForm.enabled = true
+}
+
+function startCreateRobot() {
+  robotFormError.value = ''
+  resetRobotForm()
+  robotEditing.value = true
+}
+
+function startEditRobot(r: RobotInfo) {
+  robotFormError.value = ''
+  robotForm.id = r.id
+  robotForm.name = r.name
+  robotForm.webhookUrl = r.webhookUrl
+  robotForm.webhookSecret = r.webhookSecret || ''
+  robotForm.timeoutMs = r.timeoutMs
+  robotForm.enabled = r.enabled
+  robotEditing.value = true
+}
+
+async function saveRobot() {
+  robotFormError.value = ''
+  savingRobot.value = true
+  try {
+    const data = {
+      name: robotForm.name,
+      webhookUrl: robotForm.webhookUrl,
+      webhookSecret: robotForm.webhookSecret || null,
+      timeoutMs: robotForm.timeoutMs,
+      enabled: robotForm.enabled
+    }
+    const res = robotForm.id
+      ? await robotApi.updateRobot(robotForm.id, data)
+      : await robotApi.createRobot(data)
+    if (res.success) {
+      robotEditing.value = false
+      await openRobotModal()
+      friendStore.fetchFriends()
+      chatStore.fetchSessions()
+      toast('机器人已保存')
+    } else {
+      robotFormError.value = res.message
+    }
+  } finally {
+    savingRobot.value = false
+  }
+}
+
+async function deleteRobot(r: RobotInfo) {
+  if (!window.confirm(`确定删除机器人「${r.name}」？将同时解除好友关系并移出所有群。`)) return
+  const res = await robotApi.deleteRobot(r.id)
+  if (res.success) {
+    robots.value = robots.value.filter(x => x.id !== r.id)
+    friendStore.fetchFriends()
+    chatStore.fetchSessions()
+    toast('机器人已删除')
+  } else {
+    toast(res.message)
+  }
+}
+
+function openRobotTest(r: RobotInfo) {
+  robotTesting.value = r
+  robotTestContent.value = ''
+  robotTestResult.value = null
+  showRobotTestModal.value = true
+}
+
+async function runRobotTest() {
+  if (!robotTesting.value || robotTestingNow.value) return
+  robotTestingNow.value = true
+  robotTestResult.value = null
+  try {
+    const res = await robotApi.testRobot(robotTesting.value.id, robotTestContent.value || '你好')
+    if (res.success && res.data) {
+      robotTestResult.value = res.data
+    } else {
+      robotTestResult.value = { success: false, reply: null, message: res.message }
+    }
+  } catch (e: any) {
+    robotTestResult.value = { success: false, reply: null, message: e?.message || '测试失败' }
+  } finally {
+    robotTestingNow.value = false
+  }
+}
+
+/** 群添加机器人弹窗中可选列表（我的机器人） */
+const myRobotsForGroup = computed(() => robots.value)
+
+function openGroupRobotModal() {
+  groupRobotError.value = ''
+  showGroupRobotModal.value = true
+  if (robots.value.length === 0) {
+    robotApi.getMyRobots().then(res => {
+      if (res.success && res.data) robots.value = res.data
+    })
+  }
+}
+
+async function addRobotToGroup(r: RobotInfo) {
+  if (!currentChat.value || groupRobotBusy.value) return
+  groupRobotBusy.value = true
+  groupRobotError.value = ''
+  try {
+    const res = await robotApi.addGroupRobot(currentChat.value.id, r.userId)
+    if (res.success) {
+      showGroupRobotModal.value = false
+      groupStore.fetchMembers(currentChat.value.id)
+      toast(res.message)
+    } else {
+      groupRobotError.value = res.message
+    }
+  } finally {
+    groupRobotBusy.value = false
+  }
+}
+
 function handleLogout() {
   ws.disconnect()
   auth.logout()
@@ -2170,6 +2421,48 @@ watch(activeTab, () => {
 
 .action-bar .btn:hover {
   filter: brightness(1.06);
+}
+
+/* 机器人 */
+.bot-tag {
+  font-size: 12px;
+}
+.robot-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 4px 0 10px;
+  line-height: 1.6;
+}
+.robot-tip code {
+  background: var(--bg-hover);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.robot-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+.robot-form .input {
+  width: 100%;
+}
+.robot-test-result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+}
+.robot-test-result.fail {
+  color: var(--danger);
+}
+.modal-wide {
+  width: 460px;
+  max-width: calc(100vw - 40px);
 }
 
 /* 轻提示 Toast */

@@ -375,7 +375,8 @@ public class GroupService
                 Nickname = user?.Nickname ?? "未知",
                 Avatar = user?.Avatar,
                 Role = member.Role,
-                IsOnline = isOnline
+                IsOnline = isOnline,
+                IsBot = user?.IsBot ?? false
             });
         }
 

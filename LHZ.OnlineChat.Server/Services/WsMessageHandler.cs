@@ -15,13 +15,16 @@ public class WsMessageHandler
     private readonly IFreeSql _fsql;
     private readonly RedisService _redis;
     private readonly BlacklistService _blacklistService;
+    private readonly BotService _botService;
 
-    public WsMessageHandler(WsConnectionManager connectionManager, IFreeSql fsql, RedisService redis, BlacklistService blacklistService)
+    public WsMessageHandler(WsConnectionManager connectionManager, IFreeSql fsql, RedisService redis,
+        BlacklistService blacklistService, BotService botService)
     {
         _connectionManager = connectionManager;
         _fsql = fsql;
         _redis = redis;
         _blacklistService = blacklistService;
+        _botService = botService;
     }
 
     /// <summary>
@@ -146,6 +149,9 @@ public class WsMessageHandler
         {
             sender.SendMessage(responseJson);
         }
+
+        // 机器人触发：接收者是启用中的机器人时，异步调度 Webhook（不阻塞消息处理）
+        await _botService.TryDispatchPrivateAsync(userId, receiverId, message);
     }
 
     /// <summary>
@@ -218,6 +224,9 @@ public class WsMessageHandler
         }
 
         Console.WriteLine($"[WS] 群聊消息: {userId} → 群 {groupId} ({members.Count} 人)");
+
+        // 机器人触发：消息 @ 了群内启用中的机器人时，异步调度 Webhook
+        await _botService.TryDispatchGroupAsync(userId, groupId, message);
     }
 
     /// <summary>

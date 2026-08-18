@@ -15,10 +15,12 @@ namespace LHZ.OnlineChat.Server.Controllers;
 public class GroupsController : ControllerBase
 {
     private readonly GroupService _groupService;
+    private readonly BotService _botService;
 
-    public GroupsController(GroupService groupService)
+    public GroupsController(GroupService groupService, BotService botService)
     {
         _groupService = groupService;
+        _botService = botService;
     }
 
     private int GetCurrentUserId()
@@ -115,6 +117,36 @@ public class GroupsController : ControllerBase
     {
         var result = await _groupService.SetAdminAsync(groupId, GetCurrentUserId(), request.UserId, request.IsAdmin);
         return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 添加机器人到群（群主/管理员，仅限自己的机器人）
+    /// </summary>
+    [HttpPost("{groupId}/robots")]
+    public async Task<IActionResult> AddGroupRobot(long groupId, [FromBody] AddGroupRobotRequest request)
+    {
+        var result = await _botService.AddGroupRobotAsync(groupId, GetCurrentUserId(), request.UserId);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 从群移除机器人（群主/管理员）
+    /// </summary>
+    [HttpDelete("{groupId}/robots/{userId:int}")]
+    public async Task<IActionResult> RemoveGroupRobot(long groupId, int userId)
+    {
+        var result = await _botService.RemoveGroupRobotAsync(groupId, GetCurrentUserId(), userId);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 群内机器人列表
+    /// </summary>
+    [HttpGet("{groupId}/robots")]
+    public async Task<IActionResult> GetGroupRobots(long groupId)
+    {
+        var result = await _botService.GetGroupRobotsAsync(groupId);
+        return Ok(result);
     }
 
     /// <summary>

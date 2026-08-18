@@ -184,6 +184,7 @@ public class FriendService
                 Avatar = user.Avatar,
                 IsOnline = isOnline,
                 Status = 1,
+                IsBot = user.IsBot,
                 Remark = tag?.Remark,
                 Category = tag?.Category
             });

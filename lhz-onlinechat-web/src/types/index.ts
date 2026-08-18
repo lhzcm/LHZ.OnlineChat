@@ -52,6 +52,8 @@ export interface FriendInfo {
   avatar: string | null
   isOnline: boolean
   status: number
+  /** 是否机器人账号 */
+  isBot?: boolean
   /** 我设置的备注（空显示对方昵称） */
   remark: string | null
   /** 我设置的分类标签（空为未分组） */
@@ -96,6 +98,8 @@ export interface GroupMemberInfo {
   avatar: string | null
   role: number
   isOnline: boolean
+  /** 是否机器人账号 */
+  isBot?: boolean
 }
 
 // ==================== 消息 ====================
@@ -195,4 +199,26 @@ export interface SessionInfo {
   unreadCount: number
   isPinned: boolean
   muted: boolean
+  /** 是否机器人会话（私聊） */
+  isBot?: boolean
+}
+
+/** 机器人（Webhook） */
+export interface RobotInfo {
+  id: number
+  userId: number
+  name: string
+  avatar: string | null
+  webhookUrl: string
+  webhookSecret: string | null
+  timeoutMs: number
+  enabled: boolean
+  createdAt: string
+}
+
+/** 机器人测试结果 */
+export interface RobotTestResult {
+  success: boolean
+  reply: string | null
+  message: string
 }

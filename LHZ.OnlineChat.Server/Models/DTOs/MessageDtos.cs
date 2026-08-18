@@ -99,6 +99,10 @@ public class SessionDto
     public int UnreadCount { get; set; }
     public bool IsPinned { get; set; }
     public bool Muted { get; set; }
+    /// <summary>
+    /// 是否机器人会话（私聊）
+    /// </summary>
+    public bool IsBot { get; set; }
 }
 
 /// <summary>

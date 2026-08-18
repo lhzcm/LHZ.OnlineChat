@@ -136,6 +136,10 @@ public class AuthService
         if (user == null)
             return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 
+        // 机器人账号禁止登录
+        if (user.IsBot)
+            return ApiResponse<LoginResponse>.Fail("机器人账号不能登录");
+
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 
