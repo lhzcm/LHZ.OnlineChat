@@ -33,7 +33,8 @@ fsql.CodeFirst.SyncStructure(
     typeof(LHZ.OnlineChat.Server.Models.Entities.Group_),
     typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMember),
     typeof(LHZ.OnlineChat.Server.Models.Entities.PrivateMessage),
-    typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMessage)
+    typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMessage),
+    typeof(LHZ.OnlineChat.Server.Models.Entities.SessionSetting)
 );
 
 // 账号 ID 迁移：用户 ID 列改为 int，序列起始值 ≥ 10000（账号从 10000 开始自增）

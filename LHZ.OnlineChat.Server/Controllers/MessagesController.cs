@@ -1,3 +1,4 @@
+using LHZ.OnlineChat.Server.Models.DTOs;
 using LHZ.OnlineChat.Server.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -68,6 +69,16 @@ public class MessagesController : ControllerBase
     {
         var result = await _messageService.GetSessionsAsync(GetCurrentUserId());
         return Ok(result);
+    }
+
+    /// <summary>
+    /// 更新会话设置（置顶 / 免打扰）
+    /// </summary>
+    [HttpPut("session-setting")]
+    public async Task<IActionResult> UpdateSessionSetting([FromBody] UpdateSessionSettingRequest request)
+    {
+        var result = await _messageService.UpdateSessionSettingAsync(GetCurrentUserId(), request);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     /// <summary>

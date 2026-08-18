@@ -288,6 +288,12 @@ public class MessageService
     {
         var sessions = new List<SessionDto>();
 
+        // 我的会话设置（置顶/免打扰）
+        var settings = await _fsql.Select<SessionSetting>()
+            .Where(s => s.UserId == userId)
+            .ToListAsync();
+        var settingDict = settings.ToDictionary(s => $"{s.SessionType}_{s.SessionId}");
+
         // ===== 私聊会话 =====
         var recentPrivate = await _fsql.Select<PrivateMessage>()
             .Where(m => m.SenderId == userId || m.ReceiverId == userId)
@@ -325,6 +331,7 @@ public class MessageService
             {
                 var nickname = userDict.GetValueOrDefault(peerId)?.Nickname ?? $"用户{peerId}";
                 var remark = tagDict.GetValueOrDefault(peerId)?.Remark;
+                var setting = settingDict.GetValueOrDefault($"private_{peerId}");
                 sessions.Add(new SessionDto
                 {
                     Type = "private",
@@ -333,7 +340,9 @@ public class MessageService
                     Avatar = userDict.GetValueOrDefault(peerId)?.Avatar,
                     LastMessage = last.Content,
                     LastTime = last.SentAt,
-                    UnreadCount = unreadPrivate.GetValueOrDefault(peerId)
+                    UnreadCount = unreadPrivate.GetValueOrDefault(peerId),
+                    IsPinned = setting?.IsPinned ?? false,
+                    Muted = setting?.Muted ?? false
                 });
             }
         }
@@ -371,6 +380,7 @@ public class MessageService
                         .CountAsync();
                 }
 
+                var setting = settingDict.GetValueOrDefault($"group_{gid}");
                 sessions.Add(new SessionDto
                 {
                     Type = "group",
@@ -379,13 +389,56 @@ public class MessageService
                     Avatar = groupDict.GetValueOrDefault(gid)?.Avatar,
                     LastMessage = last?.Content ?? string.Empty,
                     LastTime = last?.SentAt ?? DateTime.MinValue,
-                    UnreadCount = unread
+                    UnreadCount = unread,
+                    IsPinned = setting?.IsPinned ?? false,
+                    Muted = setting?.Muted ?? false
                 });
             }
         }
 
-        sessions = sessions.OrderByDescending(s => s.LastTime).ToList();
+        // 置顶优先，再按最后消息时间倒序
+        sessions = sessions.OrderByDescending(s => s.IsPinned).ThenByDescending(s => s.LastTime).ToList();
         return ApiResponse<List<SessionDto>>.Ok(sessions);
+    }
+
+    /// <summary>
+    /// 更新会话设置（置顶 / 免打扰）
+    /// </summary>
+    public async Task<ApiResponse> UpdateSessionSettingAsync(int userId, UpdateSessionSettingRequest request)
+    {
+        if (request.Type != "private" && request.Type != "group")
+            return ApiResponse.Fail("无效的会话类型");
+        if (request.Id <= 0)
+            return ApiResponse.Fail("无效的会话 ID");
+        if (!request.IsPinned.HasValue && !request.Muted.HasValue)
+            return ApiResponse.Fail("没有需要更新的设置");
+
+        var setting = await _fsql.Select<SessionSetting>()
+            .Where(s => s.UserId == userId && s.SessionType == request.Type && s.SessionId == request.Id)
+            .FirstAsync();
+
+        if (setting == null)
+        {
+            setting = new SessionSetting
+            {
+                UserId = userId,
+                SessionType = request.Type,
+                SessionId = request.Id,
+                IsPinned = request.IsPinned ?? false,
+                Muted = request.Muted ?? false,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _fsql.Insert(setting).ExecuteAffrowsAsync();
+        }
+        else
+        {
+            if (request.IsPinned.HasValue) setting.IsPinned = request.IsPinned.Value;
+            if (request.Muted.HasValue) setting.Muted = request.Muted.Value;
+            setting.UpdatedAt = DateTime.UtcNow;
+            await _fsql.Update<SessionSetting>().SetSource(setting).ExecuteAffrowsAsync();
+        }
+
+        return ApiResponse.Ok("设置已保存");
     }
 
     /// <summary>

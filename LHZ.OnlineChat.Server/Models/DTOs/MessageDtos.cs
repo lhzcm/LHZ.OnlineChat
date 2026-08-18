@@ -65,4 +65,20 @@ public class SessionDto
     public string LastMessage { get; set; } = string.Empty;
     public DateTime LastTime { get; set; }
     public int UnreadCount { get; set; }
+    public bool IsPinned { get; set; }
+    public bool Muted { get; set; }
+}
+
+/// <summary>
+/// 更新会话设置（置顶/免打扰）
+/// </summary>
+public class UpdateSessionSettingRequest
+{
+    /// <summary>
+    /// private | group
+    /// </summary>
+    public string Type { get; set; } = string.Empty;
+    public long Id { get; set; }
+    public bool? IsPinned { get; set; }
+    public bool? Muted { get; set; }
 }

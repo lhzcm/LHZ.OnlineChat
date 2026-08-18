@@ -123,6 +123,24 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 更新会话设置（置顶/免打扰），并同步本地列表 */
+  async function updateSessionSetting(type: ChatType, id: number, patch: { isPinned?: boolean; muted?: boolean }) {
+    const res = await messageApi.updateSessionSetting(type, id, patch)
+    if (res.success) {
+      const s = sessions.value.find(x => x.type === type && x.id === id)
+      if (s) {
+        if (patch.isPinned !== undefined) s.isPinned = patch.isPinned
+        if (patch.muted !== undefined) s.muted = patch.muted
+      }
+    }
+    return res
+  }
+
+  /** 会话是否已免打扰（静音） */
+  function isSessionMuted(type: ChatType, id: number): boolean {
+    return !!sessions.value.find(s => s.type === type && s.id === id)?.muted
+  }
+
   function setCurrentSession(type: ChatType, id: number, name: string) {
     currentSession.value = { type, id, name }
   }
@@ -215,7 +233,7 @@ export const useChatStore = defineStore('chat', () => {
   return {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages,
     sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer,
-    markSessionRead, fetchSessions,
+    markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
     setCurrentSession, loadHistory, loadOfflineMessages
   }
 })

@@ -11,6 +11,9 @@ export const messageApi = {
   getSessions(): Promise<ApiResponse<SessionInfo[]>> {
     return request.get('/messages/sessions')
   },
+  updateSessionSetting(type: string, id: number, patch: { isPinned?: boolean; muted?: boolean }): Promise<ApiResponse> {
+    return request.put('/messages/session-setting', { type, id, ...patch })
+  },
   markGroupRead(groupId: number): Promise<ApiResponse> {
     return request.put(`/messages/group/${groupId}/read`)
   },

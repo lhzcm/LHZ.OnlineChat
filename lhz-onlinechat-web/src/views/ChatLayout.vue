@@ -69,14 +69,21 @@
           </div>
           <div class="contact-info">
             <div class="info-top">
-              <span class="contact-name">{{ s.name }}</span>
-              <span class="session-time">{{ timeFor(s) }}</span>
+              <span class="contact-name">
+                <span class="pin-icon" v-if="s.isPinned">📌</span>
+                {{ s.name }}
+              </span>
+              <span class="session-time">
+                <span class="mute-icon" v-if="s.muted">🔕</span>
+                {{ timeFor(s) }}
+              </span>
             </div>
             <div class="info-bottom">
               <span class="contact-meta">{{ previewFor(s) }}</span>
               <span v-if="unreadOf(s.type, s.id)" class="unread-badge">{{ unreadOf(s.type, s.id) }}</span>
             </div>
           </div>
+          <button class="friend-more" title="会话设置" @click.stop="openSessionSetting(s)">⋯</button>
         </div>
         <div class="empty" v-if="chatStore.sessions.length === 0">
           <span class="empty-icon">💬</span>
@@ -438,6 +445,37 @@
       </div>
     </div>
 
+    <!-- 会话设置弹窗（置顶/免打扰） -->
+    <div class="modal-overlay" v-if="showSessionSetting" @click.self="showSessionSetting = false">
+      <div class="modal">
+        <h3>会话设置</h3>
+        <div class="friend-setting-head">
+          <Avatar :name="sessionSettingTarget?.name || ''" :url="sessionSettingTarget?.avatar" size="sm" />
+          <div class="friend-setting-names">
+            <span class="request-name">{{ sessionSettingTarget?.name }}</span>
+            <span class="request-meta">{{ sessionSettingTarget?.type === 'group' ? '群聊' : '私聊' }}</span>
+          </div>
+        </div>
+        <label class="setting-switch">
+          <span>
+            <span class="set-label">置顶会话</span>
+            <span class="setting-desc">固定显示在会话列表顶部</span>
+          </span>
+          <input type="checkbox" :checked="sessionSettingTarget?.isPinned" @change="toggleSessionPinned" />
+        </label>
+        <label class="setting-switch">
+          <span>
+            <span class="set-label">消息免打扰</span>
+            <span class="setting-desc">静音后不增加未读提醒</span>
+          </span>
+          <input type="checkbox" :checked="sessionSettingTarget?.muted" @change="toggleSessionMuted" />
+        </label>
+        <p class="modal-error" v-if="sessionSettingError">{{ sessionSettingError }}</p>
+        <p class="modal-success" v-if="sessionSettingSuccess">{{ sessionSettingSuccess }}</p>
+        <button class="btn btn-ghost" @click="showSessionSetting = false">关闭</button>
+      </div>
+    </div>
+
     <!-- 图片放大预览 -->
     <div class="lightbox" v-if="lightboxUrl" @click="lightboxUrl = ''">
       <img :src="lightboxUrl" alt="图片预览" />
@@ -491,6 +529,11 @@ const emojiBtnRef = ref<HTMLElement | null>(null)
 const imageInputRef = ref<HTMLInputElement | null>(null)
 const sendingImage = ref(false)
 const lightboxUrl = ref('')
+// 会话设置
+const showSessionSetting = ref(false)
+const sessionSettingTarget = ref<SessionInfo | null>(null)
+const sessionSettingError = ref('')
+const sessionSettingSuccess = ref('')
 // 账号 ID 复制提示
 const copyTip = ref('')
 let copyTipTimer: number | null = null
@@ -541,9 +584,12 @@ const currentMessages = computed(() => {
   return chatStore.messages.get(key) || []
 })
 
-// 会话列表按最后消息时间倒序
+// 会话列表：置顶优先，再按最后消息时间倒序
 const sortedSessions = computed(() =>
-  [...chatStore.sessions].sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime())
+  [...chatStore.sessions].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
+    return new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime()
+  })
 )
 
 // 聊天窗口副标题：私聊显示原昵称+在线状态（有备注时），群聊显示人数
@@ -782,6 +828,42 @@ async function onImageSelect(e: Event) {
 
 function openLightbox(url: string) {
   lightboxUrl.value = url
+}
+
+// ==================== 会话设置（置顶/免打扰） ====================
+function openSessionSetting(s: SessionInfo) {
+  sessionSettingTarget.value = s
+  sessionSettingError.value = ''
+  sessionSettingSuccess.value = ''
+  showSessionSetting.value = true
+}
+
+async function toggleSessionPinned(e: Event) {
+  if (!sessionSettingTarget.value) return
+  const checked = (e.target as HTMLInputElement).checked
+  await applySessionSetting({ isPinned: checked })
+}
+
+async function toggleSessionMuted(e: Event) {
+  if (!sessionSettingTarget.value) return
+  const checked = (e.target as HTMLInputElement).checked
+  await applySessionSetting({ muted: checked })
+}
+
+async function applySessionSetting(patch: { isPinned?: boolean; muted?: boolean }) {
+  const target = sessionSettingTarget.value
+  if (!target) return
+  sessionSettingError.value = ''
+  sessionSettingSuccess.value = ''
+  const res = await chatStore.updateSessionSetting(target.type, target.id, patch)
+  if (res.success) {
+    // 同步本地目标对象（开关状态回显）
+    if (patch.isPinned !== undefined) target.isPinned = patch.isPinned
+    if (patch.muted !== undefined) target.muted = patch.muted
+    sessionSettingSuccess.value = '设置已保存'
+  } else {
+    sessionSettingError.value = res.message
+  }
 }
 
 // ==================== @ 提及 ====================
@@ -1051,7 +1133,13 @@ function handleWsMessage(msg: WsMessage) {
     }
     scrollToBottom()
   } else if (isNew) {
-    chatStore.bumpUnread(key)
+    // 免打扰会话不增加未读提醒
+    const sep = key.indexOf('_')
+    const sType = key.slice(0, sep) as ChatType
+    const sId = Number(key.slice(sep + 1))
+    if (!chatStore.isSessionMuted(sType, sId)) {
+      chatStore.bumpUnread(key)
+    }
   }
 }
 
@@ -1768,6 +1856,47 @@ watch(activeTab, () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 会话项图标 */
+.pin-icon,
+.mute-icon {
+  font-size: 11px;
+  margin-right: 2px;
+}
+
+/* 会话设置开关 */
+.setting-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.setting-switch:last-of-type {
+  border-bottom: none;
+}
+
+.setting-switch > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.setting-switch input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .chip {

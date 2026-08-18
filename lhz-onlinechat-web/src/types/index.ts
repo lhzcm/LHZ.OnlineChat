@@ -146,4 +146,6 @@ export interface SessionInfo {
   lastMessage: string
   lastTime: string
   unreadCount: number
+  isPinned: boolean
+  muted: boolean
 }
