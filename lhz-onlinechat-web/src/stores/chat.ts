@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import type { SessionInfo, ChatType, WsMessage, MessageDto } from '@/types'
 import { messageApi } from '@/api/message'
 
@@ -11,6 +11,8 @@ export const useChatStore = defineStore('chat', () => {
   // 对方已读回执的私聊消息 ID 集合（自己发出的消息被对方已读）
   const readByPeer = ref<Set<string>>(new Set())
   const currentSession = ref<{ type: ChatType; id: number; name: string } | null>(null)
+  // 历史分页元数据：会话 key → { page, hasMore, loading }
+  const historyMeta = ref<Map<string, { page: number; hasMore: boolean; loading: boolean }>>(new Map())
 
   const currentMessages = computed(() => {
     if (!currentSession.value) return []
@@ -160,61 +162,96 @@ export const useChatStore = defineStore('chat', () => {
     currentSession.value = { type, id, name }
   }
 
-  async function loadHistory(type: ChatType, id: number, page = 1, myUserId?: number) {
-    if (type === 'private') {
-      const res = await messageApi.getPrivateHistory(id, page)
-      if (res.success && res.data) {
-        const key = `private_${id}`
-        const existing = messages.value.get(key) || []
-        const newMsgs = res.data.items.map(m => ({
-          type: 'private_message',
-          from: String(m.senderId),
-          to: String(id),
-          content: m.content,
-          timestamp: new Date(m.sentAt).getTime(),
-          messageId: m.messageId || String(m.id),
-          messageType: m.messageType,
-          senderName: m.senderName,
-          senderAvatar: m.senderAvatar,
-          isDeleted: m.isDeleted,
-          replyTo: m.replyTo,
-          replyContent: m.replyContent,
-          replySender: m.replySender
-        } as WsMessage))
-        messages.value.set(key, mergeList(existing, newMsgs))
-        // 历史中"我发出且已被对方已读"的消息标记已读状态
-        if (myUserId !== undefined) {
-          for (const m of res.data.items) {
-            if (m.senderId === myUserId && m.isRead) {
-              readByPeer.value.add(m.messageId || String(m.id))
+  /** 获取（或初始化）会话的历史分页元数据 */
+  function historyMetaOf(key: string): { page: number; hasMore: boolean; loading: boolean } {
+    let meta = historyMeta.value.get(key)
+    if (!meta) {
+      // 必须用 reactive 包裹，否则后续属性变更不会被追踪（loading/hasMore 状态会卡死）
+      meta = reactive({ page: 0, hasMore: false, loading: false })
+      historyMeta.value.set(key, meta)
+    }
+    return meta
+  }
+
+  /**
+   * 加载历史消息（分页），并记录 hasMore 状态。
+   * 返回该页之后是否还有更早的消息。
+   */
+  async function loadHistory(type: ChatType, id: number, page = 1, myUserId?: number): Promise<boolean> {
+    const key = sessionKey(type, id)
+    const meta = historyMetaOf(key)
+    meta.loading = true
+    let hasMore = false
+    try {
+      if (type === 'private') {
+        const res = await messageApi.getPrivateHistory(id, page)
+        if (res.success && res.data) {
+          const newMsgs = res.data.items.map(m => ({
+            type: 'private_message',
+            from: String(m.senderId),
+            to: String(id),
+            content: m.content,
+            timestamp: new Date(m.sentAt).getTime(),
+            messageId: m.messageId || String(m.id),
+            messageType: m.messageType,
+            senderName: m.senderName,
+            senderAvatar: m.senderAvatar,
+            isDeleted: m.isDeleted,
+            replyTo: m.replyTo,
+            replyContent: m.replyContent,
+            replySender: m.replySender
+          } as WsMessage))
+          const existing = messages.value.get(key) || []
+          messages.value.set(key, mergeList(existing, newMsgs))
+          // 历史中"我发出且已被对方已读"的消息标记已读状态
+          if (myUserId !== undefined) {
+            for (const m of res.data.items) {
+              if (m.senderId === myUserId && m.isRead) {
+                readByPeer.value.add(m.messageId || String(m.id))
+              }
             }
           }
+          hasMore = res.data.page * res.data.pageSize < res.data.total
+        }
+      } else {
+        const res = await messageApi.getGroupHistory(id, page)
+        if (res.success && res.data) {
+          const newMsgs = res.data.items.map(m => ({
+            type: 'group_message',
+            from: String(m.senderId),
+            to: String(m.groupId),
+            content: m.content,
+            timestamp: new Date(m.sentAt).getTime(),
+            messageId: m.messageId || String(m.id),
+            messageType: m.messageType,
+            senderName: m.senderName,
+            senderAvatar: m.senderAvatar,
+            mentions: m.mentions || [],
+            isDeleted: m.isDeleted,
+            replyTo: m.replyTo,
+            replyContent: m.replyContent,
+            replySender: m.replySender
+          } as WsMessage))
+          const existing = messages.value.get(key) || []
+          messages.value.set(key, mergeList(existing, newMsgs))
+          hasMore = res.data.page * res.data.pageSize < res.data.total
         }
       }
-    } else {
-      const res = await messageApi.getGroupHistory(id, page)
-      if (res.success && res.data) {
-        const key = `group_${id}`
-        const existing = messages.value.get(key) || []
-        const newMsgs = res.data.items.map(m => ({
-          type: 'group_message',
-          from: String(m.senderId),
-          to: String(m.groupId),
-          content: m.content,
-          timestamp: new Date(m.sentAt).getTime(),
-          messageId: m.messageId || String(m.id),
-          messageType: m.messageType,
-          senderName: m.senderName,
-          senderAvatar: m.senderAvatar,
-          mentions: m.mentions || [],
-          isDeleted: m.isDeleted,
-          replyTo: m.replyTo,
-          replyContent: m.replyContent,
-          replySender: m.replySender
-        } as WsMessage))
-        messages.value.set(key, mergeList(existing, newMsgs))
-      }
+    } finally {
+      meta.page = page
+      meta.hasMore = hasMore
+      meta.loading = false
     }
+    return hasMore
+  }
+
+  /**
+   * 加载更早的历史（上一页）。已在加载或没有更多时直接返回 false。
+   */
+  async function loadMoreHistory(type: ChatType, id: number, myUserId?: number): Promise<boolean> {
+    const meta = historyMetaOf(sessionKey(type, id))
+    if (meta.loading || !meta.hasMore) return false
+    return loadHistory(type, id, meta.page + 1, myUserId)
   }
 
   /**
@@ -254,9 +291,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   return {
-    sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages,
+    sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages, historyMeta,
     sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled,
     markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
-    setCurrentSession, loadHistory, loadOfflineMessages
+    setCurrentSession, loadHistory, loadMoreHistory, loadOfflineMessages
   }
 })

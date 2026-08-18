@@ -19,6 +19,13 @@ public class MessageService
     }
 
     /// <summary>
+    /// 归一化数据库读出的时间：Npgsql/FreeSql 返回的 DateTime Kind 可能为 Unspecified，
+    /// 序列化时丢失 UTC 标识（无 Z 后缀），前端按本地时间解析会偏移 8 小时。
+    /// </summary>
+    private static DateTime AsUtc(DateTime dt)
+        => dt.Kind == DateTimeKind.Utc ? dt : DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+
+    /// <summary>
     /// 获取私聊历史消息（分页）
     /// </summary>
     public async Task<ApiResponse<PagedResult<MessageDto>>> GetPrivateHistoryAsync(
@@ -39,6 +46,13 @@ public class MessageService
         var cacheKey = GetPrivateChatCacheKey(userId, friendId);
         var cachedMessages = await _redis.ListRangeAsync(cacheKey);
 
+        // 数据库总数（缓存路径与分页路径共用，保证 hasMore 判断正确）
+        var total = await _fsql.Select<PrivateMessage>()
+            .Where(m =>
+                (m.SenderId == userId && m.ReceiverId == friendId) ||
+                (m.SenderId == friendId && m.ReceiverId == userId))
+            .CountAsync();
+
         if (cachedMessages.Length > 0 && page == 1)
         {
             // 缓存内容为 WsMessage 快照（camelCase），解析后转换为 MessageDto
@@ -55,19 +69,12 @@ public class MessageService
                 return ApiResponse<PagedResult<MessageDto>>.Ok(new PagedResult<MessageDto>
                 {
                     Items = cachedList.Take(pageSize).ToList(),
-                    Total = cachedList.Count,
+                    Total = (int)total,
                     Page = page,
                     PageSize = pageSize
                 });
             }
         }
-
-        // 从数据库分页查询
-        var total = await _fsql.Select<PrivateMessage>()
-            .Where(m =>
-                (m.SenderId == userId && m.ReceiverId == friendId) ||
-                (m.SenderId == friendId && m.ReceiverId == userId))
-            .CountAsync();
 
         var messages = await _fsql.Select<PrivateMessage>()
             .Where(m =>
@@ -99,7 +106,7 @@ public class MessageService
                 ReplyTo = m.ReplyMessageId,
                 ReplyContent = m.ReplyContent,
                 ReplySender = m.ReplySenderName,
-                SentAt = m.SentAt
+                SentAt = AsUtc(m.SentAt)
             })
             .ToList();
 
@@ -160,7 +167,7 @@ public class MessageService
                 ReplySender = m.ReplySenderName,
                 IsDeleted = m.IsDeleted,
                 Mentions = ParseMentions(m.Mentions),
-                SentAt = m.SentAt
+                SentAt = AsUtc(m.SentAt)
             })
             .ToList();
 
@@ -252,7 +259,7 @@ public class MessageService
                 ReplyTo = m.ReplyMessageId,
                 ReplyContent = m.ReplyContent,
                 ReplySender = m.ReplySenderName,
-                SentAt = m.SentAt
+                SentAt = AsUtc(m.SentAt)
             })
             .ToList();
 
@@ -351,7 +358,7 @@ public class MessageService
                     Name = string.IsNullOrWhiteSpace(remark) ? nickname : remark,
                     Avatar = userDict.GetValueOrDefault(peerId)?.Avatar,
                     LastMessage = last.Content,
-                    LastTime = last.SentAt,
+                    LastTime = AsUtc(last.SentAt),
                     UnreadCount = unreadPrivate.GetValueOrDefault(peerId),
                     IsPinned = setting?.IsPinned ?? false,
                     Muted = setting?.Muted ?? false
@@ -400,7 +407,7 @@ public class MessageService
                     Name = groupDict.GetValueOrDefault(gid)?.Name ?? $"群{gid}",
                     Avatar = groupDict.GetValueOrDefault(gid)?.Avatar,
                     LastMessage = last?.Content ?? string.Empty,
-                    LastTime = last?.SentAt ?? DateTime.MinValue,
+                    LastTime = AsUtc(last?.SentAt ?? DateTime.MinValue),
                     UnreadCount = unread,
                     IsPinned = setting?.IsPinned ?? false,
                     Muted = setting?.Muted ?? false

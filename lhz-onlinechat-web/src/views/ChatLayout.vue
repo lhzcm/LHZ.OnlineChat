@@ -184,7 +184,8 @@
           </button>
         </div>
 
-        <div class="chat-messages" ref="msgContainer">
+        <div class="chat-messages" ref="msgContainer" @scroll="onMessagesScroll">
+          <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
           <div v-for="msg in currentMessages" :key="msg.messageId"
             :class="['msg-row', { mine: Number(msg.from) === auth.user?.id }]">
             <Avatar class="msg-avatar" :name="msg.senderName || currentChat.name" :url="msg.senderAvatar" size="sm" />
@@ -1098,6 +1099,44 @@ function scrollToBottom() {
   })
 }
 
+// ==================== 历史消息上滑加载 ====================
+/** 当前会话的历史分页元数据（store 中按会话 key 维护） */
+const historyMeta = computed(() => {
+  if (!currentChat.value) return null
+  return chatStore.historyMeta.get(chatStore.sessionKey(currentChat.value.type, currentChat.value.id))
+})
+const historyHasMore = computed(() => !!historyMeta.value?.hasMore)
+const historyLoading = computed(() => !!historyMeta.value?.loading)
+/** 消息区顶部的加载提示文案 */
+const historyHint = computed(() => {
+  if (historyLoading.value) return '正在加载更早的消息…'
+  if (historyHasMore.value) return '上滑加载更早的消息'
+  if (currentMessages.value.length > 0) return '没有更多消息了'
+  return ''
+})
+
+/** 是否已滚到接近底部（自动滚动阈值） */
+function isNearBottom(): boolean {
+  const el = msgContainer.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 120
+}
+
+/** 滚到顶部时加载更早的历史，并保持当前视口位置 */
+async function onMessagesScroll() {
+  const el = msgContainer.value
+  if (!el || !currentChat.value) return
+  if (el.scrollTop > 24) return
+  if (historyLoading.value || !historyHasMore.value) return
+  const prevHeight = el.scrollHeight
+  await chatStore.loadMoreHistory(currentChat.value.type, currentChat.value.id, auth.user?.id)
+  nextTick(() => {
+    if (msgContainer.value) {
+      msgContainer.value.scrollTop = msgContainer.value.scrollHeight - prevHeight
+    }
+  })
+}
+
 /** 会话最后一条消息预览 */
 function lastMessageFor(type: ChatType, id: number): string {
   const key = chatStore.sessionKey(type, id)
@@ -1112,10 +1151,10 @@ function unreadOf(type: ChatType, id: number): number {
   return chatStore.unreadCounts.get(chatStore.sessionKey(type, id)) || 0
 }
 
-function selectPrivateChat(friend: { userId: number; nickname: string }) {
+async function selectPrivateChat(friend: { userId: number; nickname: string }) {
   currentChat.value = { type: 'private', id: friend.userId, name: friend.nickname }
   chatStore.setCurrentSession('private', friend.userId, friend.nickname)
-  chatStore.loadHistory('private', friend.userId, 1, auth.user?.id)
+  await chatStore.loadHistory('private', friend.userId, 1, auth.user?.id)
   chatStore.markSessionRead('private', friend.userId)
   // 通知对方：该会话已读
   sendReadReceipt(friend.userId)
@@ -1144,10 +1183,10 @@ function sendReadReceipt(peerId: number) {
   })
 }
 
-function selectGroupChat(group: { id: number; name: string }) {
+async function selectGroupChat(group: { id: number; name: string }) {
   currentChat.value = { type: 'group', id: group.id, name: group.name }
   chatStore.setCurrentSession('group', group.id, group.name)
-  chatStore.loadHistory('group', group.id)
+  await chatStore.loadHistory('group', group.id)
   chatStore.markSessionRead('group', group.id)
   // 预加载群成员（@ 选择器与成员面板共用）
   groupStore.fetchMembers(group.id)
@@ -1247,7 +1286,8 @@ function handleWsMessage(msg: WsMessage) {
         sendReadReceipt(chat.id)
       }
     }
-    scrollToBottom()
+    // 仅在接近底部时自动滚动（用户正在上翻历史时不做打扰）
+    if (isNearBottom()) scrollToBottom()
   } else if (isNew) {
     // 免打扰会话不增加未读提醒、不播放提示音
     const sep = key.indexOf('_')
@@ -2139,6 +2179,16 @@ watch(activeTab, () => {
   flex-direction: column;
   gap: 14px;
   background: var(--chat-bg);
+}
+
+/* 顶部历史加载提示 */
+.history-load-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+  user-select: none;
+  flex-shrink: 0;
 }
 
 /* 消息行 */
