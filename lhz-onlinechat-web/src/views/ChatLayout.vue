@@ -543,14 +543,14 @@
     <div class="modal-overlay" v-if="showRobotModal" @click.self="showRobotModal = false">
       <div class="modal modal-wide">
         <h3>🤖 我的机器人</h3>
-        <p class="robot-tip">机器人收到消息会 POST 事件到你的 Webhook 地址，返回 <code>{"content":"回复"}</code> 即自动回复（详见 README）。</p>
+        <p class="robot-tip">机器人收到消息会 POST 事件到 Webhook 地址，返回 <code>{"content":"回复"}</code> 即自动回复；<b>也可不配置 Webhook</b>，仅由第三方通过 <code>/api/robots/&#123;id&#125;/reply</code> 主动推送消息。</p>
         <button v-if="!robotEditing" class="btn btn-primary btn-sm" @click="startCreateRobot">+ 创建机器人</button>
 
         <!-- 创建/编辑表单 -->
         <div v-if="robotEditing" class="robot-form">
           <input v-model="robotForm.name" class="input" placeholder="机器人名称（如：小助手）" maxlength="50" />
-          <input v-model="robotForm.webhookUrl" class="input" placeholder="Webhook 地址，如 https://your-server.com/bot" />
-          <input v-model="robotForm.webhookSecret" class="input" placeholder="签名密钥（可选，HMAC 验签用）" />
+          <input v-model="robotForm.webhookUrl" class="input" placeholder="Webhook 地址（可选，仅接收消息回调时需要）" />
+          <input v-model="robotForm.webhookSecret" class="input" placeholder="签名密钥（主动推送验签必需）" />
           <input v-model.number="robotForm.timeoutMs" class="input" type="number" min="1000" max="60000" placeholder="回调超时（毫秒，默认 10000）" />
           <label class="setting-switch">
             <span><span class="set-label">启用</span></span>
@@ -577,7 +577,7 @@
               <span class="bot-tag">🤖</span>
               <span class="role-tag" :class="r.enabled ? 'role-0' : 'role-2'">{{ r.enabled ? '启用' : '停用' }}</span>
             </span>
-            <span class="request-meta">账号 {{ r.userId }} · {{ r.webhookUrl }}</span>
+            <span class="request-meta">账号 {{ r.userId }} · {{ r.webhookUrl || '纯推送（未配置 Webhook）' }}</span>
           </div>
           <button class="btn btn-sm btn-ghost kick-btn" @click="startEditRobot(r)">编辑</button>
           <button class="btn btn-sm btn-ghost kick-btn" @click="openRobotTest(r)">测试</button>

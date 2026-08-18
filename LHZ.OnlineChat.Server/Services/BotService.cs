@@ -43,7 +43,8 @@ public class BotService
             return ApiResponse<RobotInfo>.Fail("机器人名称不能超过 50 个字符");
 
         var webhookUrl = (request.WebhookUrl ?? string.Empty).Trim();
-        if (!IsValidWebhookUrl(webhookUrl))
+        // Webhook 地址可留空：纯推送模式（第三方通过 /api/robots/{id}/reply 主动推送，不接收消息回调）
+        if (webhookUrl.Length > 0 && !IsValidWebhookUrl(webhookUrl))
             return ApiResponse<RobotInfo>.Fail("Webhook 地址必须是 http/https 开头");
         if (webhookUrl.Length > 500)
             return ApiResponse<RobotInfo>.Fail("Webhook 地址过长");
@@ -148,7 +149,8 @@ public class BotService
         if (request.WebhookUrl != null)
         {
             var url = request.WebhookUrl.Trim();
-            if (!IsValidWebhookUrl(url)) return ApiResponse<RobotInfo>.Fail("Webhook 地址必须是 http/https 开头");
+            if (url.Length > 0 && !IsValidWebhookUrl(url)) return ApiResponse<RobotInfo>.Fail("Webhook 地址必须是 http/https 开头");
+            if (url.Length > 500) return ApiResponse<RobotInfo>.Fail("Webhook 地址过长");
             profile.WebhookUrl = url;
         }
 
@@ -315,6 +317,8 @@ public class BotService
                 .Where(p => p.UserId == receiverId && p.Enabled)
                 .FirstAsync();
             if (profile == null) return;
+            // 纯推送模式（未配置 Webhook）：不触发消息回调
+            if (string.IsNullOrWhiteSpace(profile.WebhookUrl)) return;
 
             // 机器人之间互不触发（防死循环）
             var sender = await _fsql.Select<User>().Where(u => u.Id == senderId).FirstAsync();
@@ -363,6 +367,9 @@ public class BotService
             var profiles = await _fsql.Select<RobotProfile>()
                 .Where(p => robotIds.Contains(p.UserId) && p.Enabled)
                 .ToListAsync();
+            if (profiles.Count == 0) return;
+            // 纯推送模式（未配置 Webhook）：不触发消息回调
+            profiles = profiles.Where(p => !string.IsNullOrWhiteSpace(p.WebhookUrl)).ToList();
             if (profiles.Count == 0) return;
 
             // 机器人之间互不触发（防死循环）
@@ -535,6 +542,9 @@ public class BotService
             .FirstAsync();
         if (profile == null)
             return ApiResponse<RobotTestResult>.Fail("机器人不存在");
+
+        if (string.IsNullOrWhiteSpace(profile.WebhookUrl))
+            return ApiResponse<RobotTestResult>.Fail("该机器人未配置 Webhook 地址，仅支持第三方主动推送");
 
         var owner = await _fsql.Select<User>().Where(u => u.Id == ownerId).FirstAsync();
 
