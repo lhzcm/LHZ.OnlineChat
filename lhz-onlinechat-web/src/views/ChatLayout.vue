@@ -307,6 +307,11 @@
       </template>
     </main>
 
+    <!-- 轻提示 Toast -->
+    <transition name="toast-fade">
+      <div class="app-toast" v-if="toastMsg">{{ toastMsg }}</div>
+    </transition>
+
     <!-- 好友设置弹窗（备注/分类） -->
     <div class="modal-overlay" v-if="showFriendSetting" @click.self="showFriendSetting = false">
       <div class="modal">
@@ -649,6 +654,14 @@ const emojiBtnRef = ref<HTMLElement | null>(null)
 const imageInputRef = ref<HTMLInputElement | null>(null)
 const sendingImage = ref(false)
 const lightboxUrl = ref('')
+// 轻提示 Toast（自动消失）
+const toastMsg = ref('')
+let toastTimer: number | null = null
+function toast(msg: string) {
+  toastMsg.value = msg
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => { toastMsg.value = '' }, 2600)
+}
 // 会话设置
 const showSessionSetting = ref(false)
 const sessionSettingTarget = ref<SessionInfo | null>(null)
@@ -897,6 +910,7 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
   if (copyTipTimer) clearTimeout(copyTipTimer)
   if (emailCountTimer) clearInterval(emailCountTimer)
+  if (toastTimer) clearTimeout(toastTimer)
 })
 
 function onDocClick(e: MouseEvent) {
@@ -947,7 +961,12 @@ async function onImageSelect(e: Event) {
     return
   }
   if (!file.type.startsWith('image/')) {
-    sendHint.value = '请选择图片文件'
+    toast('请选择图片文件')
+    return
+  }
+  // 前端预检大小，避免无谓上传（后端同样限制 5MB）
+  if (file.size > 5 * 1024 * 1024) {
+    toast('发送图片太大，发送失败（最大 5MB）')
     return
   }
 
@@ -956,7 +975,11 @@ async function onImageSelect(e: Event) {
   try {
     const res = await messageApi.uploadImage(file)
     if (!res.success || !res.data?.url) {
-      sendHint.value = res.message || '图片上传失败'
+      const msg = res.message || ''
+      // 具体化失败原因：大小超限 / 其他
+      toast(msg.includes('5MB') || msg.includes('大小')
+        ? '发送图片太大，发送失败（最大 5MB）'
+        : `图片发送失败：${msg || '请重试'}`)
       return
     }
     const msg: WsMessage = {
@@ -974,7 +997,7 @@ async function onImageSelect(e: Event) {
     ws.sendMessage(msg)
     scrollToBottom()
   } catch (err: any) {
-    sendHint.value = err?.message || '图片发送失败'
+    toast('图片发送失败，请重试')
   } finally {
     sendingImage.value = false
   }
@@ -2147,6 +2170,39 @@ watch(activeTab, () => {
 
 .action-bar .btn:hover {
   filter: brightness(1.06);
+}
+
+/* 轻提示 Toast */
+.app-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  max-width: 80vw;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(31, 35, 41, 0.92);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 8px 30px rgba(31, 35, 41, 0.25);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-theme='dark'] .app-toast {
+  background: rgba(46, 52, 64, 0.95);
+}
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: opacity 0.25s, transform 0.25s;
+}
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 /* 群公告横幅 */
