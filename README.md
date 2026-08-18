@@ -2,6 +2,10 @@
 
 前后端分离的在线聊天系统(类 IM),功能覆盖注册登录、好友、群组、实时聊天、@ 提及、表情、会话聚合、个人信息管理,开箱即用(Docker 一键部署)。
 
+## 🚀 在线试用
+
+**http://chat.onlinemusic.top/chat** — 注册账号即可体验(建议电脑端访问,移动端同样支持)
+
 - 后端:ASP.NET Core (.NET 10) + FreeSql + PostgreSQL + Redis
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 [LHZ.WebSocket](LHZ.WebSocket.README.md) 库(RFC 6455 实现)
