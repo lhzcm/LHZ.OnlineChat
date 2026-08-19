@@ -265,6 +265,20 @@ print(r.json())  # {'success': True, 'message': '已发送'}
 
 管理面板「我的机器人」→ 该机器人「测试」按钮:模拟一条私聊消息,展示机器人同步回复结果(未配置 Webhook 时提示仅支持主动推送)。
 
+### 5. 官方示例插件:DeepSeek Harness 任务助手(plugins/dsh-bot)
+
+把机器人变成 **DeepSeek Harness 任务入口**——用户私聊或群聊 @ 机器人发送任务,插件调用本机 Harness(`dsh --profile headless` 单任务模式)执行,并把**过程通知**(「🧠 任务已提交,执行中…」)和**执行结果**通过机器人通知用户(自动引用原消息)。详见 [plugins/dsh-bot/README.md](plugins/dsh-bot/README.md):
+
+```bash
+cd plugins/dsh-bot
+cp .env.example .env    # 填 BOT_ROBOT_TOKEN；Windows 开发机按示例配 DSH_CMD/DSH_SCRIPT/DSH_CWD
+node bot.mjs            # 机器人 WebhookUrl 填 http://host.docker.internal:9312/hook
+```
+
+- 串行任务队列(排队的任务收到「⏳ 已排队」通知)、任务超时保护(默认 10 分钟)
+- 支持回调验签 + 推送签名双向 HMAC(`BOT_SECRET` 与机器人的签名密钥一致)
+- 插件与 DeepSeek Harness 需同机运行(开发机/服务器均可)
+
 ### 4. 官方示例插件:DeepSeek AI 助手(plugins/deepseek-bot)
 
 把机器人变成 **DeepSeek AI 对话助手**——用户私聊或群聊 @ 机器人,插件调用 DeepSeek API,并把**过程通知**(「🤔 正在思考…」)和**结果**通过机器人回复给用户(自动引用原消息)。零依赖纯 Node 脚本,详见 [plugins/deepseek-bot/README.md](plugins/deepseek-bot/README.md),支持**两种部署方式**:
