@@ -76,7 +76,7 @@ function recallMessage(msg: WsMessage) {
 </script>
 
 <template>
-  <div class="msg-row" :class="{ mine }">
+  <div class="msg-row" :class="{ mine }" :data-mid="msg.messageId">
     <Avatar class="msg-avatar" :name="msg.senderName || chatName" :url="msg.senderAvatar" size="sm" />
     <div class="msg-body">
       <span class="msg-sender" v-if="chatType === 'group' && !mine">

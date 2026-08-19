@@ -7,102 +7,8 @@
       @logout="handleLogout" @open-result="openSearchResult" />
 
     <!-- 聊天区域 -->
-    <main class="chat-main" :class="{ 'is-show': mobileChatOpen }">
-      <!-- 未选择会话 -->
-      <div class="no-chat" v-if="!currentChat">
-        <span class="empty-icon">💬</span>
-        <p>选择一个会话开始聊天</p>
-      </div>
-
-      <!-- 聊天窗口 -->
-      <template v-else>
-        <div class="chat-header">
-          <button class="back-btn" @click="backToList" title="返回">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-          <Avatar :name="currentChat.name" :url="chatAvatar" size="sm" />
-          <div class="chat-title">
-            <div class="chat-title-row">
-              <span class="chat-type-tag" v-if="currentChat.type === 'group'">群</span>
-              <span class="chat-name">{{ currentChat.name }}</span>
-            </div>
-            <span class="chat-sub">{{ chatSub }}</span>
-          </div>
-          <div class="header-spacer"></div>
-          <button v-if="currentChat.type === 'group'" class="icon-btn" @click="openMembersModal" title="群成员">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </button>
-        </div>
-
-        <!-- 群公告横幅 -->
-        <div class="announce-bar" v-if="currentChat.type === 'group' && currentAnnouncement" @click="showAnnouncementModal = true" title="查看群公告">
-          <span class="announce-icon">📢</span>
-          <span class="announce-text">{{ currentAnnouncement }}</span>
-        </div>
-
-        <div class="chat-messages" ref="msgContainer" @scroll="onMessagesScroll">
-          <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
-          <MessageBubble v-for="msg in currentMessages" :key="msg.messageId" :msg="msg"
-            :chat-type="currentChat.type" :chat-id="currentChat.id" :chat-name="currentChat.name"
-            @reply="startReply" @image-click="openLightbox" />
-        </div>
-
-        <!-- 引用回复横幅 -->
-        <div class="reply-bar" v-if="replyTarget">
-          <span class="reply-bar-text">回复 {{ replyTarget.senderName }}：{{ replyTarget.content }}</span>
-          <button class="reply-cancel" @click="replyTarget = null">✕</button>
-        </div>
-
-        <div class="chat-input-bar">
-          <!-- @ 成员选择浮层 -->
-          <div class="mention-panel" v-if="mentionOpen && mentionFiltered.length" @click.stop>
-            <button v-for="m in mentionFiltered" :key="m.userId" class="mention-item" @click="pickMention(m)">
-              <Avatar :name="m.nickname" :url="m.avatar" size="sm" />
-              <span class="contact-name">{{ m.nickname }}</span>
-              <span class="mention-role" v-if="m.role === 0">群主</span>
-            </button>
-          </div>
-          <!-- 表情面板 -->
-          <div class="emoji-panel" ref="emojiPanelRef" v-if="showEmojiPanel" @click.stop>
-            <div class="emoji-group" v-for="g in emojiGroups" :key="g.name">
-              <div class="emoji-group-title">{{ g.name }}</div>
-              <div class="emoji-grid">
-                <button v-for="e in g.list" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
-              </div>
-            </div>
-          </div>
-          <button v-if="currentChat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionPicker" title="提及成员">
-            <span class="at-symbol">@</span>
-          </button>
-          <button class="emoji-btn" :disabled="sendingImage" @click="imageInputRef?.click()" title="发送图片">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
-          </button>
-          <input ref="imageInputRef" type="file" accept="image/*" class="hidden-file" @change="onImageSelect" />
-          <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-              <line x1="9" y1="9" x2="9.01" y2="9" />
-              <line x1="15" y1="9" x2="15.01" y2="9" />
-            </svg>
-          </button>
-          <input ref="inputEl" v-model="inputText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
-          <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
-        </div>
-        <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
-      </template>
-    </main>
+    <ChatArea ref="chatAreaRef" :chat="currentChat" :mobile-chat-open="mobileChatOpen"
+      @back="backToList" @members="openMembersModal" @announcement="showAnnouncementModal = true" />
 
     <!-- 轻提示 Toast -->
     <transition name="toast-fade">
@@ -150,21 +56,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
 import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
-import { emojiGroups } from '@/constants/emojis'
-import Avatar from '@/components/Avatar.vue'
-import { avatarGradient, avatarInitial } from '@/utils/avatar'
 import { authApi } from '@/api/auth'
-import { messageApi } from '@/api/message'
 import { groupApi } from '@/api/group'
 import { useToast } from '@/composables/useToast'
-import { formatMsgTime } from '@/utils/format'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
 import ProfileModal from '@/components/chat/modals/ProfileModal.vue'
@@ -174,8 +75,8 @@ import SessionSettingModal from '@/components/chat/modals/SessionSettingModal.vu
 import MembersModal from '@/components/chat/modals/MembersModal.vue'
 import AnnouncementModal from '@/components/chat/modals/AnnouncementModal.vue'
 import FriendSettingModal from '@/components/chat/modals/FriendSettingModal.vue'
-import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatSidebar from '@/components/chat/ChatSidebar.vue'
+import ChatArea from '@/components/chat/ChatArea.vue'
 import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
@@ -237,9 +138,6 @@ function playNotifySound() {
 }
 // 群成员面板
 const showMembersModal = ref(false)
-// @ 提及
-const mentionOpen = ref(false)
-const mentionQuery = ref('')
 // 好友设置（备注/分类）
 const showFriendSetting = ref(false)
 const friendSetting = ref<FriendInfo | null>(null)
@@ -253,50 +151,13 @@ const sessionSettingTarget = ref<SessionInfo | null>(null)
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
-const currentMessages = computed(() => {
-  if (!currentChat.value) return []
-  const key = `${currentChat.value.type}_${currentChat.value.id}`
-  return chatStore.messages.get(key) || []
-})
-
-// 聊天窗口副标题：私聊显示原昵称+在线状态（有备注时），群聊显示人数
-const chatSub = computed(() => {
-  if (!currentChat.value) return ''
-  if (currentChat.value.type === 'private') {
-    const f = friendStore.friends.find(x => x.userId === currentChat.value!.id)
-    if (!f) return ''
-    const status = f.isOnline ? '在线' : '离线'
-    return f.remark ? `${f.nickname} · ${status}` : status
-  }
-  const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
-  return g ? `${g.memberCount} 人` : ''
-})
-
-// @ 成员选择：按输入过滤
-const mentionFiltered = computed(() => {
-  const q = mentionQuery.value.trim().toLowerCase()
-  const list = groupStore.members.filter(m => !q || m.nickname.toLowerCase().includes(q))
-  return list.slice(0, 8)
-})
-
-// 输入框提示：仅群聊提示 @ 提及
-const inputPlaceholder = computed(() =>
-  currentChat.value?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
-)
-
-// 当前会话头像（私聊=好友头像，群聊=群头像）
-const chatAvatar = computed(() => {
-  if (!currentChat.value) return null
-  if (currentChat.value.type === 'private') {
-    return friendStore.friends.find(x => x.userId === currentChat.value!.id)?.avatar ?? null
-  }
-  return groupStore.groups.find(x => x.id === currentChat.value!.id)?.avatar ?? null
-})
-
 // 好友显示名：备注优先，其次昵称
 function friendDisplayName(f: FriendInfo): string {
   return f.remark || f.nickname
 }
+
+/** ChatArea 实例引用（新消息滚动/提示/定位） */
+const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
 
 onMounted(async () => {
   if (!auth.isLoggedIn) {
@@ -336,327 +197,26 @@ onMounted(async () => {
       }
     }
   } catch { /* 离线消息拉取失败不阻塞界面 */ }
-
-  // 点击面板/按钮外部时关闭表情面板
-  document.addEventListener('click', onDocClick)
 })
 
-onUnmounted(() => {
-  document.removeEventListener('click', onDocClick)
-})
+onUnmounted(() => {})
 
-function onDocClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (!emojiPanelRef.value?.contains(target) && !emojiBtnRef.value?.contains(target)) {
-    showEmojiPanel.value = false
-  }
-}
-
-// ==================== 表情 ====================
-function toggleEmojiPanel() {
-  showEmojiPanel.value = !showEmojiPanel.value
-}
-
-/** 在输入框光标位置插入表情，并恢复焦点与光标 */
-function insertEmoji(emoji: string) {
-  const el = inputEl.value
-  if (el) {
-    const start = el.selectionStart ?? inputText.value.length
-    const end = el.selectionEnd ?? inputText.value.length
-    inputText.value = inputText.value.slice(0, start) + emoji + inputText.value.slice(end)
-    nextTick(() => {
-      el.focus()
-      const pos = start + emoji.length
-      el.setSelectionRange(pos, pos)
-    })
-  } else {
-    inputText.value += emoji
-  }
-}
-
-/** 回车发送（中文输入法组词回车不误发） */
-function onInputEnter(e: KeyboardEvent) {
-  if (e.isComposing) return
-  send()
-}
-
-// ==================== 图片消息 ====================
-/** 选择图片后上传并作为图片消息发送 */
-async function onImageSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  if (!currentChat.value || !auth.user) return
-  if (!ws.connected) {
-    sendHint.value = '连接已断开，正在重连，请稍候…'
-    return
-  }
-  if (!file.type.startsWith('image/')) {
-    toast('请选择图片文件')
-    return
-  }
-  // 前端预检大小，避免无谓上传（后端同样限制 5MB）
-  if (file.size > 5 * 1024 * 1024) {
-    toast('发送图片太大，发送失败（最大 5MB）')
-    return
-  }
-
-  sendingImage.value = true
-  sendHint.value = ''
-  try {
-    const res = await messageApi.uploadImage(file)
-    if (!res.success || !res.data?.url) {
-      const msg = res.message || ''
-      // 具体化失败原因：大小超限 / 其他
-      toast(msg.includes('5MB') || msg.includes('大小')
-        ? '发送图片太大，发送失败（最大 5MB）'
-        : `图片发送失败：${msg || '请重试'}`)
-      return
-    }
-    const msg: WsMessage = {
-      type: currentChat.value.type === 'private' ? 'private_message' : 'group_message',
-      from: String(auth.user.id),
-      to: String(currentChat.value.id),
-      content: res.data.url,
-      timestamp: Date.now(),
-      messageId: genId(),
-      messageType: 1, // 图片
-      senderName: auth.user.nickname,
-      senderAvatar: auth.user.avatar
-    }
-    chatStore.addMessage(msg, auth.user.id) // 乐观插入
-    ws.sendMessage(msg)
-    scrollToBottom()
-  } catch (err: any) {
-    toast('图片发送失败，请重试')
-  } finally {
-    sendingImage.value = false
-  }
-}
-
-function openLightbox(url: string) {
-  lightboxUrl.value = url
-}
-
-// ==================== 引用回复 ====================
-/** 引用回复目标 */
-const replyTarget = ref<{ messageId: string; content: string; senderName: string } | null>(null)
-
-function startReply(msg: WsMessage) {
-  replyTarget.value = {
-    messageId: msg.messageId,
-    content: (msg.content || '').slice(0, 50),
-    senderName: msg.senderName || '对方'
-  }
-  inputEl.value?.focus()
-}
-
-// ==================== 会话设置（置顶/免打扰） ====================
-function openSessionSetting(s: SessionInfo) {
-  sessionSettingTarget.value = s
-  showSessionSetting.value = true
-}
-
-// ==================== @ 提及 ====================
-/** 输入框按键：@ 键直接打开成员面板（双保险，避免 input 事件异常），Enter 发送 */
-function onInputKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') {
-    onInputEnter(e)
-    return
-  }
-  if ((e.key === '@' || e.key === '＠') && currentChat.value?.type === 'group') {
-    mentionOpen.value = true
-    mentionQuery.value = ''
-    if (groupStore.members.length === 0) {
-      groupStore.fetchMembers(currentChat.value.id)
-    }
-  }
-}
-
-/** 输入变化时检测 @ 触发成员选择（仅群聊），兼容全角 ＠ */
-function onInputChange() {
-  const el = inputEl.value
-  if (!el || currentChat.value?.type !== 'group') {
-    mentionOpen.value = false
-    return
-  }
-  const text = el.value
-  const caret = el.selectionStart ?? text.length
-  // 向前找最近的非邮箱 @（前面是空白或开头；兼容全角 ＠）
-  const atIdx = Math.max(
-    text.lastIndexOf('@', caret - 1),
-    text.lastIndexOf('＠', caret - 1)
-  )
-  if (atIdx >= 0 && (atIdx === 0 || /\s/.test(text[atIdx - 1]))) {
-    const token = text.slice(atIdx + 1, caret)
-    if (!token.includes(' ')) {
-      mentionOpen.value = true
-      mentionQuery.value = token
-      // 成员列表尚未加载时兜底拉取（进入群聊时通常已加载；拉取幂等）
-      if (groupStore.members.length === 0) {
-        groupStore.fetchMembers(currentChat.value.id)
-      }
-      return
-    }
-  }
-  mentionOpen.value = false
-}
-
-/** 选择成员：替换 @token 为 @昵称，保留光标 */
-function pickMention(m: GroupMemberInfo) {
-  const el = inputEl.value
-  if (!el) return
-  const text = el.value
-  const caret = el.selectionStart ?? text.length
-  const atIdx = Math.max(text.lastIndexOf('@', caret - 1), text.lastIndexOf('＠', caret - 1))
-  const insert = `@${m.nickname} `
-  const start = atIdx >= 0 ? atIdx : caret
-  inputText.value = text.slice(0, start) + insert + text.slice(caret)
-  mentionOpen.value = false
-  nextTick(() => {
-    el.focus()
-    const pos = start + insert.length
-    el.setSelectionRange(pos, pos)
-  })
-}
-
-/** @ 快捷按钮：光标处插入 @ 并打开成员面板（不依赖键盘输入） */
-function openMentionPicker() {
-  if (!currentChat.value || currentChat.value.type !== 'group') return
-  if (groupStore.members.length === 0) {
-    groupStore.fetchMembers(currentChat.value.id)
-  }
-  const el = inputEl.value
-  if (el) {
-    const caret = el.selectionStart ?? inputText.value.length
-    const end = el.selectionEnd ?? caret
-    inputText.value = inputText.value.slice(0, caret) + '@' + inputText.value.slice(end)
-    nextTick(() => {
-      el.focus()
-      const pos = caret + 1
-      el.setSelectionRange(pos, pos)
-    })
-  }
-  mentionOpen.value = true
-  mentionQuery.value = ''
-}
-
-/** 解析文本中的 @昵称 为成员账号 ID 列表 */
-function parseMentions(text: string): number[] {
-  if (currentChat.value?.type !== 'group') return []
-  const ids: number[] = []
-  for (const m of groupStore.members) {
-    if (text.includes(`@${m.nickname}`) && !ids.includes(m.userId)) {
-      ids.push(m.userId)
-    }
-  }
-  return ids
-}
-
-// 诊断辅助（排障用）：浏览器控制台执行 window.__mentionDebug() 查看 @ 功能状态
-;(window as unknown as Record<string, unknown>).__mentionDebug = () => ({
-  path: location.pathname,
-  chatType: currentChat.value?.type,
-  chatId: currentChat.value?.id,
-  memberCount: groupStore.members.length,
-  members: groupStore.members.map(m => m.nickname),
-  mentionOpen: mentionOpen.value,
-  mentionQuery: mentionQuery.value,
-  inputValue: inputEl.value?.value ?? null,
-  hasInputEvents: true
-})
-
-function scrollToBottom() {
-  nextTick(() => {
-    if (msgContainer.value) {
-      msgContainer.value.scrollTop = msgContainer.value.scrollHeight
-    }
-  })
-}
-
-// ==================== 历史消息上滑加载 ====================
-/** 当前会话的历史分页元数据（store 中按会话 key 维护） */
-const historyMeta = computed(() => {
-  if (!currentChat.value) return null
-  return chatStore.historyMeta.get(chatStore.sessionKey(currentChat.value.type, currentChat.value.id))
-})
-const historyHasMore = computed(() => !!historyMeta.value?.hasMore)
-const historyLoading = computed(() => !!historyMeta.value?.loading)
-/** 消息区顶部的加载提示文案 */
-const historyHint = computed(() => {
-  if (historyLoading.value) return '正在加载更早的消息…'
-  if (historyHasMore.value) return '上滑加载更早的消息'
-  if (currentMessages.value.length > 0) return '没有更多消息了'
-  return ''
-})
-
-/** 是否已滚到接近底部（自动滚动阈值） */
-function isNearBottom(): boolean {
-  const el = msgContainer.value
-  if (!el) return true
-  return el.scrollHeight - el.scrollTop - el.clientHeight < 120
-}
-
-/** 滚到顶部时加载更早的历史，并保持当前视口位置 */
-async function onMessagesScroll() {
-  const el = msgContainer.value
-  if (!el || !currentChat.value) return
-  if (el.scrollTop > 24) return
-  if (historyLoading.value || !historyHasMore.value) return
-  const prevHeight = el.scrollHeight
-  await chatStore.loadMoreHistory(currentChat.value.type, currentChat.value.id, auth.user?.id)
-  nextTick(() => {
-    if (msgContainer.value) {
-      msgContainer.value.scrollTop = msgContainer.value.scrollHeight - prevHeight
-    }
-  })
-}
-
-/** 点击搜索结果：打开会话并定位到该消息 */
 async function openSearchResult(r: MessageSearchResult) {
   if (r.type === 'private') {
     await selectPrivateChat({ userId: r.sessionId, nickname: r.sessionName })
   } else {
     await selectGroupChat({ id: r.sessionId, name: r.sessionName })
   }
-  if (r.messageId) await locateMessage(r.messageId)
-}
-
-/** 定位消息：已加载则滚动到该行并高亮；否则继续翻更早的历史（最多 10 页） */
-async function locateMessage(messageId: string) {
-  const chat = currentChat.value
-  if (!chat) return
-  const key = chatStore.sessionKey(chat.type, chat.id)
-  // 先让 selectPrivateChat/selectGroupChat 里 scrollToBottom 的 nextTick 落定，避免其覆盖定位滚动
-  await nextTick()
-  const scrollToRow = (): boolean => {
-    const el = msgContainer.value?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
-    if (!el) return false
-    el.scrollIntoView({ block: 'center' })
-    el.classList.add('msg-highlight')
-    setTimeout(() => el.classList.remove('msg-highlight'), 2200)
-    return true
-  }
-  if (scrollToRow()) return
-  for (let i = 0; i < 10; i++) {
-    const meta = chatStore.historyMeta.get(key)
-    if (!meta?.hasMore) break
-    await chatStore.loadMoreHistory(chat.type, chat.id, auth.user?.id)
-    await nextTick()
-    if (scrollToRow()) return
-  }
+  if (r.messageId) await chatAreaRef.value?.scrollToMessage(r.messageId)
 }
 
 async function selectPrivateChat(friend: { userId: number; nickname: string }) {
   currentChat.value = { type: 'private', id: friend.userId, name: friend.nickname }
   chatStore.setCurrentSession('private', friend.userId, friend.nickname)
-  await chatStore.loadHistory('private', friend.userId, 1, auth.user?.id)
   chatStore.markSessionRead('private', friend.userId)
   // 通知对方：该会话已读
   sendReadReceipt(friend.userId)
   mobileChatOpen.value = true
-  scrollToBottom()
 }
 
 /** 发送已读回执（to = 对方） */
@@ -678,12 +238,10 @@ function sendReadReceipt(peerId: number) {
 async function selectGroupChat(group: { id: number; name: string }) {
   currentChat.value = { type: 'group', id: group.id, name: group.name }
   chatStore.setCurrentSession('group', group.id, group.name)
-  await chatStore.loadHistory('group', group.id)
   chatStore.markSessionRead('group', group.id)
   // 预加载群成员（@ 选择器与成员面板共用）
   groupStore.fetchMembers(group.id)
   mobileChatOpen.value = true
-  scrollToBottom()
 }
 
 function selectSession(s: SessionInfo) {
@@ -758,7 +316,7 @@ function handleWsMessage(msg: WsMessage) {
       if (msg.messageId) {
         chatStore.removeMessage(chatStore.sessionKey('private', peer), msg.messageId)
       }
-      sendHint.value = msg.content || '对方已将你拉黑，无法发送消息'
+      chatAreaRef.value?.setHint(msg.content || '对方已将你拉黑，无法发送消息')
     }
     return
   }
@@ -775,7 +333,7 @@ function handleWsMessage(msg: WsMessage) {
       }
     }
     // 仅在接近底部时自动滚动（用户正在上翻历史时不做打扰）
-    if (isNearBottom()) scrollToBottom()
+    chatAreaRef.value?.scrollToBottomIfNear()
   } else if (isNew) {
     // 免打扰会话不增加未读提醒、不播放提示音
     const sep = key.indexOf('_')
@@ -788,48 +346,18 @@ function handleWsMessage(msg: WsMessage) {
   }
 }
 
-function genId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-}
-
-function send() {
-  if (!currentChat.value || !auth.user) return
-  const text = inputText.value.trim()
-  if (!text) return
-  if (!ws.connected) {
-    sendHint.value = '连接已断开，正在重连，请稍候…'
-    return
-  }
-  sendHint.value = ''
-  const msg: WsMessage = {
-    type: currentChat.value.type === 'private' ? 'private_message' : 'group_message',
-    from: String(auth.user.id),
-    to: String(currentChat.value.id),
-    content: text,
-    timestamp: Date.now(),
-    messageId: genId(), // 客户端 ID，服务端回显时保留，用于去重
-    messageType: 0,
-    senderName: auth.user.nickname,
-    senderAvatar: auth.user.avatar,
-    mentions: parseMentions(text), // 群聊 @ 提及
-    replyTo: replyTarget.value?.messageId,
-    replyContent: replyTarget.value?.content,
-    replySender: replyTarget.value?.senderName
-  }
-  chatStore.addMessage(msg, auth.user.id) // 乐观插入，回显到达后自动去重
-  ws.sendMessage(msg)
-  inputText.value = ''
-  replyTarget.value = null // 发送后清除引用
-  scrollToBottom()
-}
-
 function openAddModal() {
   showAddModal.value = true
 }
 
 function openRequestsModal() {
   showRequestsModal.value = true
+}
+
+/** 打开会话设置弹窗（置顶/免打扰） */
+function openSessionSetting(s: SessionInfo) {
+  sessionSettingTarget.value = s
+  showSessionSetting.value = true
 }
 
 // ==================== 群成员/公告弹窗 ====================
