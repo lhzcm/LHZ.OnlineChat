@@ -351,7 +351,11 @@
         <p class="modal-error" v-if="friendTagError">{{ friendTagError }}</p>
         <p class="modal-success" v-if="friendTagSuccess">{{ friendTagSuccess }}</p>
         <button class="btn btn-ghost" @click="showFriendSetting = false">关闭</button>
-        <button class="btn btn-danger" @click="blockFriend" :disabled="blockingFriend">
+        <!-- 机器人：删除机器人；普通好友：拉黑 -->
+        <button v-if="friendSetting?.isBot" class="btn btn-danger" @click="deleteFriendRobot" :disabled="deletingFriendRobot">
+          {{ deletingFriendRobot ? '删除中…' : '删除机器人' }}
+        </button>
+        <button v-else class="btn btn-danger" @click="blockFriend" :disabled="blockingFriend">
           {{ blockingFriend ? '拉黑中…' : '拉黑该好友' }}
         </button>
       </div>
@@ -1971,6 +1975,37 @@ async function blockFriend() {
     }
   } finally {
     blockingFriend.value = false
+  }
+}
+
+/** 删除机器人（好友设置弹窗中，机器人好友显示"删除机器人"而非"拉黑"） */
+const deletingFriendRobot = ref(false)
+async function deleteFriendRobot() {
+  const target = friendSetting.value
+  if (!target) return
+  if (!window.confirm(`确定删除机器人「${target.nickname}」？将同时解除好友关系并移出所有群。`)) return
+  deletingFriendRobot.value = true
+  friendTagError.value = ''
+  try {
+    // 通过机器人账号 ID 找到机器人配置 ID
+    const list = await robotApi.getMyRobots()
+    const robot = list.data?.find(r => r.userId === target.userId)
+    if (!robot) {
+      friendTagError.value = '未找到该机器人配置，可能已被删除'
+      return
+    }
+    const res = await robotApi.deleteRobot(robot.id)
+    if (res.success) {
+      friendTagSuccess.value = '机器人已删除'
+      showFriendSetting.value = false
+      friendStore.fetchFriends()
+      chatStore.fetchSessions()
+      toast('机器人已删除')
+    } else {
+      friendTagError.value = res.message
+    }
+  } finally {
+    deletingFriendRobot.value = false
   }
 }
 
