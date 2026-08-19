@@ -142,6 +142,125 @@ docker compose up -d --build
 - 数据持久化:卷 `pgdata` / `redisdata` / `uploaddata`(头像)
 - 更新:`git pull && docker compose up -d --build`
 
+## 🤖 机器人接入(第三方)
+
+### 1. 主动推送(第三方 → 用户,最常用)
+
+第三方服务(监控告警、业务通知、AI 回复等)随时让机器人给用户/群发消息,不依赖用户先给机器人发消息。
+
+**接口**:`POST {站点地址}/api/robots/{令牌}/reply`(管理面板「我的机器人」里可复制完整调用链接,`令牌` 为 AES-256-GCM 加密 ID,不泄露内部 ID)
+
+**请求体**(JSON):
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionType` | string | `private` 私聊 / `group` 群聊 |
+| `sessionId` | number | 私聊:接收方账号 ID;群聊:群 ID(机器人需已加入该群) |
+| `content` | string | 消息内容(≤ 5000 字) |
+| `replyTo` | string? | 可选,被引用消息的 messageId |
+
+**鉴权(可选)**:机器人在设置里配置了「签名密钥」后,推送必须携带 `X-Bot-Signature` 请求头,值为对**请求体原始字节**计算的 `HMAC-SHA256(密钥, body)` 十六进制小写;未配置密钥则仅靠令牌鉴权,直接调用即可。
+
+**限制**:私聊推送要求目标用户与机器人是好友关系(机器人创建时自动与创建者互为好友,即默认只能推送给创建者本人)。
+
+**响应**:`200 {"success":true,"message":"已发送"}`;失败返回 `400 {"success":false,"message":"原因"}`。
+
+#### 实例:Node.js
+
+```js
+// 未配置签名密钥(仅令牌鉴权)
+const PUSH_URL = 'https://chat.onlinemusic.top/api/robots/{令牌}/reply' // 管理面板复制
+
+await fetch(PUSH_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    sessionType: 'private',
+    sessionId: 10001,            // 接收方账号 ID(创建者)
+    content: '⚠️ 监控告警:服务器 CPU 已超过 90%'
+  })
+})
+```
+
+```js
+// 配置了签名密钥(强制验签)
+const crypto = require('node:crypto')
+const PUSH_URL = 'https://chat.onlinemusic.top/api/robots/{令牌}/reply'
+const SECRET = '创建机器人时填写的签名密钥'
+
+const body = JSON.stringify({
+  sessionType: 'group',
+  sessionId: 3,                  // 群 ID(机器人需已加入该群)
+  content: '📢 公告:今晚 22:00 系统维护'
+})
+const signature = crypto.createHmac('sha256', SECRET).update(body).digest('hex')
+
+await fetch(PUSH_URL, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Bot-Signature': signature
+  },
+  body
+})
+```
+
+#### 实例:curl
+
+```bash
+# 未配置签名密钥
+curl -X POST 'https://chat.onlinemusic.top/api/robots/{令牌}/reply' \
+  -H 'Content-Type: application/json' \
+  -d '{"sessionType":"private","sessionId":10001,"content":"你好"}'
+
+# 配置了签名密钥
+BODY='{"sessionType":"private","sessionId":10001,"content":"你好"}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac '你的签名密钥' | awk '{print $2}')
+curl -X POST 'https://chat.onlinemusic.top/api/robots/{令牌}/reply' \
+  -H 'Content-Type: application/json' \
+  -H "X-Bot-Signature: $SIG" \
+  -d "$BODY"
+```
+
+#### 实例:Python
+
+```python
+import hmac, hashlib, json, requests
+
+url = 'https://chat.onlinemusic.top/api/robots/{令牌}/reply'
+body = json.dumps({'sessionType': 'private', 'sessionId': 10001, 'content': '你好'}).encode()
+
+# 配置了签名密钥时
+sig = hmac.new(b'你的签名密钥', body, hashlib.sha256).hexdigest()
+r = requests.post(url, data=body, headers={'Content-Type': 'application/json', 'X-Bot-Signature': sig})
+# 未配置密钥时去掉 X-Bot-Signature 即可
+print(r.json())  # {'success': True, 'message': '已发送'}
+```
+
+### 2. 接收消息回调(Webhook 模式,可选)
+
+配置了 Webhook 地址的机器人,在收到消息时系统会 POST 事件到你的地址(**Webhook 可留空**——只用主动推送就不需要):
+
+```json
+{
+  "event": "message",
+  "robot": { "userId": 10112, "name": "小助手", "avatar": null, "isBot": true },
+  "session": { "type": "private", "id": 10111, "name": "小明" },
+  "from": { "userId": 10111, "name": "小明", "avatar": null, "isBot": false },
+  "message": { "messageId": "uuid", "content": "在吗", "messageType": 0, "timestamp": 1787065713894 },
+  "mentions": [],
+  "replyTo": null
+}
+```
+
+- 请求头携带 `X-Bot-Signature: HMAC-SHA256(签名密钥, rawBody)`(配置了密钥时),用于你校验事件真实性
+- **同步回复**:返回 `200 {"content":"回复文本"}`,系统自动以机器人身份回复(10s 超时,失败重试 1 次,自动带回复引用);不返回 `content` 则不回复
+- 触发规则:私聊对方是机器人即触发;群聊仅被 `@` 时触发;机器人之间互不触发
+
+### 3. 快速验证
+
+管理面板「我的机器人」→ 该机器人「测试」按钮:模拟一条私聊消息,展示机器人同步回复结果(未配置 Webhook 时提示仅支持主动推送)。
+
 ## 📡 WebSocket 协议
 
 客户端发送 / 服务端广播均为 JSON(`WsMessage`,字段 camelCase,经 LHZ.FastJson 序列化):
