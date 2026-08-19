@@ -1,0 +1,14 @@
+{
+  "name": "dsh-bot-notify",
+  "version": "0.1.0",
+  "description": "Push DeepSeek Harness execution progress and results to an OnlineChat robot (dsh plugin)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib/index.js"
+  ],
+  "license": "MIT"
+}
