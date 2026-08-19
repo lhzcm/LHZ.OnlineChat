@@ -6,16 +6,37 @@ import GroupRobotModal from './GroupRobotModal.vue'
 import { groupApi } from '@/api/group'
 import { useGroupStore } from '@/stores/group'
 import { useAuthStore } from '@/stores/auth'
+import { useToast } from '@/composables/useToast'
 import type { GroupMemberInfo } from '@/types'
 
 const props = defineProps<{ groupId: number; groupName: string }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 const groupStore = useGroupStore()
 const auth = useAuthStore()
+const { toast } = useToast()
 
 const membersError = ref('')
 const showInviteModal = ref(false)
 const showGroupRobotModal = ref(false)
+const copied = ref(false)
+
+/** 复制群号（机器人第三方推送需要用到群 ID） */
+async function copyGroupId() {
+  try {
+    await navigator.clipboard.writeText(String(props.groupId))
+  } catch {
+    // clipboard API 不可用（非 HTTPS 等）时回退到临时输入框复制
+    const ta = document.createElement('textarea')
+    ta.value = String(props.groupId)
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    ta.remove()
+  }
+  copied.value = true
+  toast('群号已复制')
+  setTimeout(() => (copied.value = false), 1500)
+}
 
 /** 当前用户是否可管理群组（群主或管理员） */
 const canInvite = computed(() => {
@@ -80,6 +101,14 @@ function onGroupRobotAdded() {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="modal">
       <h3>{{ props.groupName }} · 群成员 ({{ groupStore.members.length }})</h3>
+      <div class="group-id-row">
+        <span class="group-id-label">群号</span>
+        <span class="group-id-value">{{ props.groupId }}</span>
+        <button class="btn btn-sm btn-ghost group-id-copy" :class="{ copied }" @click="copyGroupId">
+          {{ copied ? '✓ 已复制' : '复制' }}
+        </button>
+        <span class="group-id-tip">机器人第三方推送时使用</span>
+      </div>
       <div class="invite-bar" v-if="canInvite">
         <button class="btn btn-primary btn-sm" @click="showInviteModal = true">+ 邀请好友</button>
         <button class="btn btn-ghost btn-sm" @click="showGroupRobotModal = true">+ 添加机器人</button>
@@ -114,3 +143,57 @@ function onGroupRobotAdded() {
   <InviteModal v-if="showInviteModal" :groupId="props.groupId" @close="showInviteModal = false" @invited="emit('changed')" />
   <GroupRobotModal v-if="showGroupRobotModal" :groupId="props.groupId" @close="showGroupRobotModal = false" @added="onGroupRobotAdded" />
 </template>
+
+<style scoped>
+/* 群号展示行 */
+.group-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: var(--bg-hover);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.group-id-label {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.group-id-value {
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  color: var(--primary);
+}
+
+.group-id-copy {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.group-id-copy.copied {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.group-id-tip {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .group-id-tip {
+    display: none;
+  }
+}
+</style>
