@@ -335,6 +335,12 @@
             <span v-if="!friendSetting?.isBot" class="request-meta">账号 {{ friendSetting?.userId }}</span>
           </div>
         </div>
+        <!-- 机器人：展示第三方推送调用链接 -->
+        <div v-if="friendSetting?.isBot && friendRobotUrl" class="robot-token-line robot-line-in-modal" title="第三方推送调用链接：POST 该地址即可让机器人发消息">
+          <span class="robot-line-label">调用链接</span>
+          <code>{{ friendRobotUrl }}</code>
+          <button class="token-copy" @click="copyRobotToken(friendRobotUrl)">复制</button>
+        </div>
         <label class="set-label">备注名</label>
         <input v-model="friendRemark" class="input" placeholder="给好友设置备注（留空显示对方昵称）" maxlength="50" />
         <label class="set-label">分类标签</label>
@@ -828,6 +834,7 @@ const mentionQuery = ref('')
 // 好友设置（备注/分类）
 const showFriendSetting = ref(false)
 const friendSetting = ref<FriendInfo | null>(null)
+const friendRobotUrl = ref('')
 const friendRemark = ref('')
 const friendCategory = ref('')
 const savingFriendTag = ref(false)
@@ -1897,6 +1904,14 @@ function openFriendSetting(f: FriendInfo) {
   friendTagError.value = ''
   friendTagSuccess.value = ''
   showFriendSetting.value = true
+  // 机器人：同步加载调用链接
+  friendRobotUrl.value = ''
+  if (f.isBot) {
+    robotApi.getMyRobots().then(res => {
+      const bot = res.data?.find(x => x.userId === f.userId)
+      if (bot) friendRobotUrl.value = robotPushUrl(bot.token)
+    })
+  }
 }
 
 async function saveFriendTag() {
@@ -2535,6 +2550,23 @@ watch(activeTab, () => {
 }
 .token-copy:hover {
   background: var(--border);
+}
+/* 弹窗内的调用链接行（可换行） */
+.robot-line-in-modal {
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+.robot-line-in-modal code {
+  max-width: 100%;
+  flex: 1;
+}
+.robot-line-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 .robot-test-result {
   margin-top: 12px;
