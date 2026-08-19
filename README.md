@@ -53,6 +53,16 @@
 **界面**
 - 现代 IM 风格:渐变气泡、彩色头像、胶囊 Tab、弹窗动画;移动端列表↔聊天切换 + 安全区适配
 
+### 6. 官方示例插件:DeepSeek Harness 客户端推送插件(plugins/dsh-bot-notify)
+
+装在 **DeepSeek Harness 客户端里**的插件(与上面的 `dsh-bot` 方向相反):监听 Harness 会话事件,把任务的**执行过程与结果**通过机器人主动推送链接(`/api/robots/{令牌}/reply`)通知用户——`🧠 任务开始(含任务内容)` → `🔧 工具调用(可选)` → `✅ 执行结果(turn/step+回复)` → `⚠️ 异常结束`。详见 [plugins/dsh-bot-notify/README.md](plugins/dsh-bot-notify/README.md),安装 3 步:
+
+```bash
+dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
+# 编辑 $DSH_HOME/profiles/web/cordis.patch.yml 填入 pushUrl/sessionId(模板已写入)
+# 重启 dsh web 生效(日志出现 [dsh-bot-notify] 已启用)
+```
+
 ## 🏗️ 技术栈
 
 | 端 | 技术 |
