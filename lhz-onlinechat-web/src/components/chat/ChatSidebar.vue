@@ -819,4 +819,15 @@ function openSearchResult(r: MessageSearchResult) {
   font-size: 11px;
   margin-right: 2px;
 }
+
+/* 移动端适配（侧边栏部分） */
+@media (max-width: 720px) {
+  .sidebar {
+    width: 100%;
+  }
+
+  .sidebar.is-hidden {
+    display: none;
+  }
+}
 </style>

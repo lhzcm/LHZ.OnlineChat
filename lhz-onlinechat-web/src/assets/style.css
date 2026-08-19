@@ -475,6 +475,13 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* 移动端：弹窗内边距收紧 */
+@media (max-width: 720px) {
+  .modal {
+    padding: 20px;
+  }
+}
+
 /* 机器人标识 */
 .bot-tag {
   font-size: 12px;
