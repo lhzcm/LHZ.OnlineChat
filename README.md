@@ -267,15 +267,18 @@ print(r.json())  # {'success': True, 'message': '已发送'}
 
 ### 4. 官方示例插件:DeepSeek AI 助手(plugins/deepseek-bot)
 
-把机器人变成 **DeepSeek AI 对话助手**——用户私聊或群聊 @ 机器人,插件调用 DeepSeek API,并把**过程通知**(「🤔 正在思考…」)和**结果**通过机器人回复给用户(自动引用原消息)。零依赖纯 Node 脚本,详见 [plugins/deepseek-bot/README.md](plugins/deepseek-bot/README.md),接入只需 4 步:
+把机器人变成 **DeepSeek AI 对话助手**——用户私聊或群聊 @ 机器人,插件调用 DeepSeek API,并把**过程通知**(「🤔 正在思考…」)和**结果**通过机器人回复给用户(自动引用原消息)。零依赖纯 Node 脚本,详见 [plugins/deepseek-bot/README.md](plugins/deepseek-bot/README.md),支持**两种部署方式**:
+
+**方式一(Docker Compose,推荐)**:栈内已内置 `deepseek-bot` 服务,`.env` 配好 `DEEPSEEK_API_KEY` + `BOT_ROBOT_TOKEN` 后 `docker compose up -d --build deepseek-bot` 即完成;机器人 WebhookUrl 填 `http://deepseek-bot:9311/hook`(容器间服务名)。
+
+**方式二(宿主机直接跑)**:
 
 ```bash
 cd plugins/deepseek-bot
 cp .env.example .env        # 填 DEEPSEEK_API_KEY 与 BOT_ROBOT_TOKEN(管理面板复制)
-node bot.mjs
+node bot.mjs                # 机器人 WebhookUrl 填 http://host.docker.internal:9311/hook
 ```
 
-- 机器人 WebhookUrl 填 `http://host.docker.internal:9311/hook`(插件跑在宿主机时)
 - 支持回调验签 + 推送签名双向 HMAC(`BOT_SECRET` 与机器人的签名密钥一致)
 - 可选对话记忆(每会话最近 N 轮)、消息去重防重试重复回复
 - 未配置 `DEEPSEEK_API_KEY` 时进入模拟模式,可无 Key 联调

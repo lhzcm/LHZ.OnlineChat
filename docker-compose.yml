@@ -69,6 +69,32 @@ services:
     depends_on:
       - backend
 
+  # ==================== DeepSeek 机器人插件 ====================
+  # 机器人 WebhookUrl 填: http://deepseek-bot:9311/hook（backend 容器内可解析服务名）
+  # 插件推送通过容器内网络直连后端: BOT_ORIGIN=http://backend:5000
+  deepseek-bot:
+    build:
+      context: ./plugins/deepseek-bot
+    restart: unless-stopped
+    environment:
+      # 留空 = 模拟模式（回复回显输入，便于无 Key 联调）
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      BOT_ORIGIN: ${BOT_ORIGIN:-http://backend:5000}
+      # 机器人推送令牌（「我的机器人」→ 复制调用链接里的令牌）
+      BOT_ROBOT_TOKEN: ${BOT_ROBOT_TOKEN:-}
+      BOT_ROBOT_TOKENS: ${BOT_ROBOT_TOKENS:-}
+      # 与机器人配置的 WebhookSecret 一致时启用双向验签；留空不验签
+      BOT_SECRET: ${BOT_SECRET:-}
+      BOT_THINKING_NOTICE: ${BOT_THINKING_NOTICE:-true}
+      BOT_MEMORY: ${BOT_MEMORY:-true}
+      BOT_MEMORY_ROUNDS: ${BOT_MEMORY_ROUNDS:-10}
+    ports:
+      - "${BOT_PORT:-9311}:9311"
+    depends_on:
+      - backend
+
 volumes:
   pgdata:
   redisdata:
