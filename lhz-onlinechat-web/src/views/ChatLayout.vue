@@ -324,48 +324,8 @@
     </transition>
 
     <!-- 好友设置弹窗（备注/分类） -->
-    <div class="modal-overlay" v-if="showFriendSetting" @click.self="showFriendSetting = false">
-      <div class="modal">
-        <h3>{{friendSetting?.isBot ? "机器人设置" : "好友设置" }}</h3>
-        <div class="friend-setting-head">
-          <Avatar :name="friendSetting?.nickname || ''" :url="friendSetting?.avatar" size="sm" />
-          <div class="friend-setting-names">
-            <span class="request-name">{{ friendSetting?.nickname }}</span>
-            <span class="request-meta" v-if="friendSetting?.remark">当前备注：{{ friendSetting.remark }}</span>
-            <span v-if="!friendSetting?.isBot" class="request-meta">账号 {{ friendSetting?.userId }}</span>
-          </div>
-        </div>
-        <!-- 机器人：展示第三方推送调用链接 -->
-        <div v-if="friendSetting?.isBot && friendRobotUrl" class="robot-token-line robot-line-in-modal" title="第三方推送调用链接：POST 该地址即可让机器人发消息">
-          <span class="robot-line-label">调用链接</span>
-          <code>{{ friendRobotUrl }}</code>
-          <button class="token-copy" @click="copyFriendRobotUrl">复制</button>
-        </div>
-        <label class="set-label">备注名</label>
-        <input v-model="friendRemark" class="input" placeholder="给好友设置备注（留空显示对方昵称）" maxlength="50" />
-        <label class="set-label">分类标签</label>
-        <div class="cat-chips">
-          <button v-for="c in presetCategories" :key="c"
-            :class="['chip', { active: friendCategory === c }]"
-            @click="friendCategory = c">{{ c }}</button>
-          <button :class="['chip', { active: !friendCategory }]" @click="friendCategory = ''">未分组</button>
-        </div>
-        <input v-model="friendCategory" class="input" placeholder="或输入自定义分类" maxlength="30" />
-        <button class="btn btn-primary" :disabled="savingFriendTag" @click="saveFriendTag">
-          {{ savingFriendTag ? '保存中…' : '保 存' }}
-        </button>
-        <p class="modal-error" v-if="friendTagError">{{ friendTagError }}</p>
-        <p class="modal-success" v-if="friendTagSuccess">{{ friendTagSuccess }}</p>
-        <button class="btn btn-ghost" @click="showFriendSetting = false">关闭</button>
-        <!-- 机器人：删除机器人；普通好友：拉黑 -->
-        <button v-if="friendSetting?.isBot" class="btn btn-danger" @click="deleteFriendRobot" :disabled="deletingFriendRobot">
-          {{ deletingFriendRobot ? '删除中…' : '删除机器人' }}
-        </button>
-        <button v-else class="btn btn-danger" @click="blockFriend" :disabled="blockingFriend">
-          {{ blockingFriend ? '拉黑中…' : '拉黑该好友' }}
-        </button>
-      </div>
-    </div>
+    <FriendSettingModal v-if="showFriendSetting && friendSetting" :friend="friendSetting"
+      @close="showFriendSetting = false" @saved="onFriendTagSaved" />
 
     <!-- 群成员面板（含邀请好友/添加机器人） -->
     <MembersModal v-if="showMembersModal && currentChat" :groupId="currentChat.id" :group-name="currentChat.name"
@@ -417,8 +377,6 @@ import { avatarGradient, avatarInitial } from '@/utils/avatar'
 import { authApi } from '@/api/auth'
 import { messageApi } from '@/api/message'
 import { groupApi } from '@/api/group'
-import { blacklistApi } from '@/api/blacklist'
-import { robotApi } from '@/api/robot'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime, pad } from '@/utils/format'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
@@ -429,6 +387,7 @@ import AddModal from '@/components/chat/modals/AddModal.vue'
 import SessionSettingModal from '@/components/chat/modals/SessionSettingModal.vue'
 import MembersModal from '@/components/chat/modals/MembersModal.vue'
 import AnnouncementModal from '@/components/chat/modals/AnnouncementModal.vue'
+import FriendSettingModal from '@/components/chat/modals/FriendSettingModal.vue'
 import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
@@ -499,13 +458,6 @@ const mentionQuery = ref('')
 // 好友设置（备注/分类）
 const showFriendSetting = ref(false)
 const friendSetting = ref<FriendInfo | null>(null)
-const friendRobotUrl = ref('')
-const friendRemark = ref('')
-const friendCategory = ref('')
-const savingFriendTag = ref(false)
-const friendTagError = ref('')
-const friendTagSuccess = ref('')
-const presetCategories = ['家人', '朋友', '同事', '同学', '客户', '其他']
 // 个人资料
 const showProfileModal = ref(false)
 // 添加/申请/会话设置弹窗开关
@@ -1316,117 +1268,19 @@ async function copyAccountId() {
 // ==================== 好友设置（备注/分类） ====================
 function openFriendSetting(f: FriendInfo) {
   friendSetting.value = f
-  friendRemark.value = f.remark || ''
-  friendCategory.value = f.category || ''
-  friendTagError.value = ''
-  friendTagSuccess.value = ''
   showFriendSetting.value = true
-  // 机器人：同步加载调用链接
-  friendRobotUrl.value = ''
-  if (f.isBot) {
-    robotApi.getMyRobots().then(res => {
-      const bot = res.data?.find(x => x.userId === f.userId)
-      if (bot) friendRobotUrl.value = `${window.location.origin}/api/robots/${bot.token}/reply`
-    })
-  }
 }
 
-/** 复制机器人调用链接（好友设置弹窗用） */
-async function copyFriendRobotUrl() {
-  try {
-    await navigator.clipboard.writeText(friendRobotUrl.value)
-    toast('调用链接已复制')
-  } catch {
-    toast('复制失败，请手动选择复制')
-  }
-}
-
-async function saveFriendTag() {
-  if (!friendSetting.value) return
-  savingFriendTag.value = true
-  friendTagError.value = ''
-  friendTagSuccess.value = ''
-  try {
-    const remarkRes = await friendStore.setRemark(friendSetting.value.userId, friendRemark.value)
-    if (!remarkRes.success) {
-      friendTagError.value = remarkRes.message
-      return
-    }
-    const catRes = await friendStore.setCategory(friendSetting.value.userId, friendCategory.value)
-    if (!catRes.success) {
-      friendTagError.value = catRes.message
-      return
-    }
-    friendTagSuccess.value = '已保存'
-    // 若正在与该好友聊天，更新会话显示名
-    if (currentChat.value?.type === 'private' && currentChat.value.id === friendSetting.value.userId) {
-      currentChat.value.name = friendDisplayName(friendSetting.value)
-    }
-  } finally {
-    savingFriendTag.value = false
+/** 备注/分类保存成功：若正在与该好友聊天，更新会话显示名 */
+function onFriendTagSaved() {
+  if (currentChat.value?.type === 'private' && friendSetting.value &&
+      currentChat.value.id === friendSetting.value.userId) {
+    currentChat.value.name = friendDisplayName(friendSetting.value)
   }
 }
 
 // ==================== 黑名单 ====================
 const showBlacklistModal = ref(false)
-const blockingFriend = ref(false)
-
-/** 拉黑好友（自动解除好友关系） */
-async function blockFriend() {
-  const target = friendSetting.value
-  if (!target) return
-  if (!window.confirm(`确定拉黑 ${target.nickname}？拉黑后将自动解除好友关系，且对方无法再给你发消息和好友申请。`)) return
-  blockingFriend.value = true
-  friendTagError.value = ''
-  try {
-    const res = await blacklistApi.block(target.userId)
-    if (res.success) {
-      friendTagSuccess.value = '已拉黑'
-      showFriendSetting.value = false
-      friendStore.fetchFriends()
-      chatStore.fetchSessions()
-      // 若正在与该好友聊天，提示对方已被拉黑
-      if (currentChat.value?.type === 'private' && currentChat.value.id === target.userId) {
-        sendHint.value = '你已拉黑该用户'
-      }
-    } else {
-      friendTagError.value = res.message
-    }
-  } finally {
-    blockingFriend.value = false
-  }
-}
-
-/** 删除机器人（好友设置弹窗中，机器人好友显示"删除机器人"而非"拉黑"） */
-const deletingFriendRobot = ref(false)
-async function deleteFriendRobot() {
-  const target = friendSetting.value
-  if (!target) return
-  if (!window.confirm(`确定删除机器人「${target.nickname}」？将同时解除好友关系并移出所有群。`)) return
-  deletingFriendRobot.value = true
-  friendTagError.value = ''
-  try {
-    // 通过机器人账号 ID 找到机器人配置 ID
-    const list = await robotApi.getMyRobots()
-    const robot = list.data?.find(r => r.userId === target.userId)
-    if (!robot) {
-      friendTagError.value = '未找到该机器人配置，可能已被删除'
-      return
-    }
-    const res = await robotApi.deleteRobot(robot.id)
-    if (res.success) {
-      friendTagSuccess.value = '机器人已删除'
-      showFriendSetting.value = false
-      friendStore.fetchFriends()
-      chatStore.fetchSessions()
-      toast('机器人已删除')
-    } else {
-      friendTagError.value = res.message
-    }
-  } finally {
-    deletingFriendRobot.value = false
-  }
-}
 
 // ==================== 机器人 ====================
 const showRobotModal = ref(false)
