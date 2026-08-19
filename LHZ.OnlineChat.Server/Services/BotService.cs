@@ -717,11 +717,15 @@ public class BotService
         await _redis.ListLeftPushAsync(cacheKey, JsonConvert.Serialize(msg));
         await _redis.ListTrimAsync(cacheKey, 0, 49);
 
-        var client = _connectionManager.GetConnection(targetId);
-        if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        // 广播到目标用户的所有在线设备（多端同步）
+        var connections = _connectionManager.GetConnections(targetId);
+        foreach (var client in connections)
         {
             client.SendMessage(JsonConvert.Serialize(msg));
-            Console.WriteLine($"[BOT] 机器人 {botUserId} → {targetId} (已送达)");
+        }
+        if (connections.Length > 0)
+        {
+            Console.WriteLine($"[BOT] 机器人 {botUserId} → {targetId} (已送达 {connections.Length} 台设备)");
         }
         else
         {
@@ -778,10 +782,10 @@ public class BotService
             .Where(m => m.GroupId == groupId)
             .ToListAsync();
 
+        // 广播到每个群成员的所有在线设备（多端同步）
         foreach (var member in members)
         {
-            var client = _connectionManager.GetConnection(member.UserId);
-            if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            foreach (var client in _connectionManager.GetConnections(member.UserId))
             {
                 client.SendMessage(JsonConvert.Serialize(msg));
             }
