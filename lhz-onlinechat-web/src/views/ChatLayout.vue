@@ -229,7 +229,7 @@
         </div>
 
         <!-- 群公告横幅 -->
-        <div class="announce-bar" v-if="currentChat.type === 'group' && currentAnnouncement" @click="openAnnouncementModal" title="查看群公告">
+        <div class="announce-bar" v-if="currentChat.type === 'group' && currentAnnouncement" @click="showAnnouncementModal = true" title="查看群公告">
           <span class="announce-icon">📢</span>
           <span class="announce-text">{{ currentAnnouncement }}</span>
         </div>
@@ -367,88 +367,13 @@
       </div>
     </div>
 
-    <!-- 群成员面板 -->
-    <div class="modal-overlay" v-if="showMembersModal" @click.self="showMembersModal = false">
-      <div class="modal">
-        <h3>{{ currentChat?.name }} · 群成员 ({{ groupStore.members.length }})</h3>
-        <div class="invite-bar" v-if="canInvite">
-          <button class="btn btn-primary btn-sm" @click="openInviteModal">+ 邀请好友</button>
-          <button class="btn btn-ghost btn-sm" @click="showGroupRobotModal = true">+ 添加机器人</button>
-        </div>
-        <div class="empty" v-if="groupStore.members.length === 0">
-          <span class="empty-icon">👥</span>
-          <span>暂无成员</span>
-        </div>
-        <div v-for="m in groupStore.members" :key="m.userId" class="request-item">
-          <Avatar :name="m.nickname" :url="m.avatar" size="sm" />
-          <div class="request-info">
-            <span class="request-name">
-              {{ m.nickname }}
-              <span class="bot-tag" v-if="m.isBot">🤖</span>
-              <span class="role-tag" :class="'role-' + m.role">{{ roleText(m.role) }}</span>
-            </span>
-            <span class="request-meta">
-              <span :class="['status-dot', m.isOnline ? 'online' : 'offline']"></span>
-              {{ m.isOnline ? '在线' : '离线' }} · 账号 {{ m.userId }}
-            </span>
-          </div>
-          <button v-if="canSetAdmin(m)" class="btn btn-sm btn-ghost kick-btn" @click="toggleAdmin(m)">
-            {{ m.role === 1 ? '取消管理员' : '设为管理员' }}
-          </button>
-          <button v-if="canKick(m)" class="btn btn-sm btn-ghost kick-btn" @click="kickGroupMember(m)">踢出</button>
-        </div>
-        <p class="modal-error" v-if="membersError">{{ membersError }}</p>
-        <button class="btn btn-ghost" @click="showMembersModal = false">关闭</button>
-      </div>
-    </div>
+    <!-- 群成员面板（含邀请好友/添加机器人） -->
+    <MembersModal v-if="showMembersModal && currentChat" :groupId="currentChat.id" :group-name="currentChat.name"
+      @close="showMembersModal = false" />
 
     <!-- 群公告弹窗 -->
-    <div class="modal-overlay" v-if="showAnnouncementModal" @click.self="showAnnouncementModal = false">
-      <div class="modal">
-        <h3>📢 群公告</h3>
-        <p class="announce-meta" v-if="currentAnnouncementAt">
-          {{ currentChat?.name }} · 更新于 {{ formatMsgTime(new Date(currentAnnouncementAt).getTime()) }}
-        </p>
-        <p class="announce-full" v-if="!announcementEditing">{{ currentAnnouncement || '暂无公告' }}</p>
-        <textarea v-if="announcementEditing" v-model="announcementDraft" class="input announce-input" rows="5"
-          maxlength="2000" placeholder="输入群公告内容…"></textarea>
-        <div class="modal-actions" v-if="canManageAnnouncement">
-          <button v-if="!announcementEditing" class="btn btn-sm btn-primary" @click="startAnnouncementEdit">编辑公告</button>
-          <template v-else>
-            <button class="btn btn-sm btn-primary" :disabled="savingAnnouncement" @click="saveAnnouncement">
-              {{ savingAnnouncement ? '保存中…' : '保存' }}
-            </button>
-            <button class="btn btn-sm btn-ghost" @click="cancelAnnouncementEdit">取消</button>
-          </template>
-        </div>
-        <p class="modal-error" v-if="announcementError">{{ announcementError }}</p>
-        <p class="modal-success" v-if="announcementSuccess">{{ announcementSuccess }}</p>
-        <button class="btn btn-ghost" @click="showAnnouncementModal = false">关闭</button>
-      </div>
-    </div>
-
-    <!-- 邀请好友弹窗 -->
-    <div class="modal-overlay" v-if="showInviteModal" @click.self="showInviteModal = false">
-      <div class="modal">
-        <h3>邀请好友加入群组</h3>
-        <div class="empty" v-if="invitableFriends.length === 0">
-          <span class="empty-icon">👥</span>
-          <span>没有可邀请的好友</span>
-        </div>
-        <label v-for="f in invitableFriends" :key="f.userId" class="friend-check">
-          <input type="checkbox" :value="f.userId" v-model="selectedInviteIds" />
-          <Avatar :name="f.nickname" :url="f.avatar" size="sm" />
-          <span class="contact-name">{{ f.nickname }}</span>
-          <span class="request-meta">账号 {{ f.userId }}</span>
-        </label>
-        <button class="btn btn-primary" :disabled="selectedInviteIds.length === 0 || inviting" @click="doInvite">
-          {{ inviting ? '邀请中…' : `邀请 (${selectedInviteIds.length})` }}
-        </button>
-        <p class="modal-error" v-if="inviteError">{{ inviteError }}</p>
-        <p class="modal-success" v-if="inviteSuccess">{{ inviteSuccess }}</p>
-        <button class="btn btn-ghost" @click="showInviteModal = false">关闭</button>
-      </div>
-    </div>
+    <AnnouncementModal v-if="showAnnouncementModal && currentChat" :groupId="currentChat.id"
+      @close="showAnnouncementModal = false" @saved="announcementSaved" />
 
     <!-- 个人资料弹窗 -->
     <ProfileModal v-if="showProfileModal" :notify-sound-enabled="notifySoundEnabled"
@@ -460,10 +385,6 @@
 
     <!-- 机器人管理/测试弹窗 -->
     <RobotManagerModal v-if="showRobotModal" @close="showRobotModal = false" />
-
-    <!-- 群添加机器人弹窗 -->
-    <GroupRobotModal v-if="showGroupRobotModal && currentChat" :groupId="currentChat.id"
-      @close="showGroupRobotModal = false" @added="onGroupRobotAdded" />
 
     <!-- 好友申请弹窗 -->
     <RequestsModal v-if="showRequestsModal" @close="showRequestsModal = false" />
@@ -502,11 +423,12 @@ import { useToast } from '@/composables/useToast'
 import { formatMsgTime, pad } from '@/utils/format'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
-import GroupRobotModal from '@/components/chat/modals/GroupRobotModal.vue'
 import ProfileModal from '@/components/chat/modals/ProfileModal.vue'
 import RequestsModal from '@/components/chat/modals/RequestsModal.vue'
 import AddModal from '@/components/chat/modals/AddModal.vue'
 import SessionSettingModal from '@/components/chat/modals/SessionSettingModal.vue'
+import MembersModal from '@/components/chat/modals/MembersModal.vue'
+import AnnouncementModal from '@/components/chat/modals/AnnouncementModal.vue'
 import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
@@ -569,14 +491,8 @@ function playNotifySound() {
 // 账号 ID 复制提示
 const copyTip = ref('')
 let copyTipTimer: number | null = null
-// 群成员管理
+// 群成员面板
 const showMembersModal = ref(false)
-const membersError = ref('')
-const showInviteModal = ref(false)
-const selectedInviteIds = ref<number[]>([])
-const inviting = ref(false)
-const inviteError = ref('')
-const inviteSuccess = ref('')
 // @ 提及
 const mentionOpen = ref(false)
 const mentionQuery = ref('')
@@ -625,22 +541,6 @@ const chatSub = computed(() => {
   }
   const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
   return g ? `${g.memberCount} 人` : ''
-})
-
-// 当前用户是否可管理群组（群主或管理员）
-const canInvite = computed(() => {
-  if (!currentChat.value || currentChat.value.type !== 'group') return false
-  const g = groupStore.groups.find(x => x.id === currentChat.value!.id)
-  if (!g) return false
-  if (g.ownerId === auth.user?.id) return true
-  const me = groupStore.members.find(m => m.userId === auth.user?.id)
-  return me ? me.role <= 1 : false
-})
-
-// 可邀请的好友：我的好友中不在当前群成员里的
-const invitableFriends = computed(() => {
-  const memberIds = new Set(groupStore.members.map(m => m.userId))
-  return friendStore.friends.filter(f => !memberIds.has(f.userId))
 })
 
 // @ 成员选择：按输入过滤
@@ -1377,143 +1277,25 @@ function openRequestsModal() {
   showRequestsModal.value = true
 }
 
-// ==================== 群成员管理 ====================
-function roleText(role: number): string {
-  return role === 0 ? '群主' : role === 1 ? '管理员' : ''
-}
-
-/** 当前群的信息（含公告/我的角色） */
+// ==================== 群成员/公告弹窗 ====================
+/** 当前群的信息（横幅公告展示用） */
 const currentGroupInfo = computed(() => {
   if (!currentChat.value || currentChat.value.type !== 'group') return null
   return groupStore.groups.find(g => g.id === currentChat.value!.id) ?? null
 })
 const currentAnnouncement = computed(() => currentGroupInfo.value?.announcement || '')
-const currentAnnouncementAt = computed(() => currentGroupInfo.value?.announcementAt || '')
-/** 我是否可编辑公告（群主或管理员） */
-const canManageAnnouncement = computed(() => !!currentGroupInfo.value && currentGroupInfo.value.myRole <= 1)
 
-// ==================== 群公告 ====================
 const showAnnouncementModal = ref(false)
-const announcementEditing = ref(false)
-const announcementDraft = ref('')
-const savingAnnouncement = ref(false)
-const announcementError = ref('')
-const announcementSuccess = ref('')
-
-function openAnnouncementModal() {
-  announcementEditing.value = false
-  announcementDraft.value = currentAnnouncement.value
-  announcementError.value = ''
-  announcementSuccess.value = ''
-  showAnnouncementModal.value = true
-}
-
-function startAnnouncementEdit() {
-  announcementDraft.value = currentAnnouncement.value
-  announcementError.value = ''
-  announcementSuccess.value = ''
-  announcementEditing.value = true
-}
-
-function cancelAnnouncementEdit() {
-  announcementEditing.value = false
-}
-
-async function saveAnnouncement() {
-  if (!currentChat.value) return
-  savingAnnouncement.value = true
-  announcementError.value = ''
-  announcementSuccess.value = ''
-  try {
-    const res = await groupApi.setAnnouncement(currentChat.value.id, announcementDraft.value.trim())
-    if (res.success) {
-      announcementSuccess.value = res.message || '公告已更新'
-      announcementEditing.value = false
-      await groupStore.fetchGroups() // 刷新公告横幅
-    } else {
-      announcementError.value = res.message
-    }
-  } finally {
-    savingAnnouncement.value = false
-  }
-}
-
-/** 我是否可设置/取消管理员（仅群主） */
-function canSetAdmin(m: GroupMemberInfo): boolean {
-  const me = groupStore.members.find(x => x.userId === auth.user?.id)
-  if (!me || me.role !== 0) return false
-  if (m.userId === auth.user?.id) return false
-  if (m.role === 0) return false // 不能改群主
-  return true
-}
-
-async function toggleAdmin(m: GroupMemberInfo) {
-  if (!currentChat.value) return
-  membersError.value = ''
-  const isAdmin = m.role !== 1
-  const res = await groupApi.setAdmin(currentChat.value.id, m.userId, isAdmin)
-  if (res.success) {
-    await groupStore.fetchMembers(currentChat.value.id)
-  } else {
-    membersError.value = res.message
-  }
-}
-
-function canKick(m: GroupMemberInfo): boolean {
-  if (!canInvite.value) return false
-  if (m.userId === auth.user?.id) return false
-  if (m.role === 0) return false // 不能踢群主
-  const me = groupStore.members.find(x => x.userId === auth.user?.id)
-  if (me && me.role === 1 && m.role === 1) return false // 管理员不能踢管理员
-  return true
-}
 
 function openMembersModal() {
   if (!currentChat.value) return
-  inviteError.value = ''
-  inviteSuccess.value = ''
-  showInviteModal.value = false
   groupStore.fetchMembers(currentChat.value.id)
   showMembersModal.value = true
 }
 
-function openInviteModal() {
-  selectedInviteIds.value = []
-  inviteError.value = ''
-  inviteSuccess.value = ''
-  showInviteModal.value = true
-}
-
-async function doInvite() {
-  if (!currentChat.value || selectedInviteIds.value.length === 0) return
-  inviting.value = true
-  inviteError.value = ''
-  inviteSuccess.value = ''
-  try {
-    const res = await groupStore.inviteMembers(currentChat.value.id, selectedInviteIds.value)
-    if (res.success) {
-      inviteSuccess.value = res.message
-      selectedInviteIds.value = []
-      await groupStore.fetchMembers(currentChat.value.id)
-      groupStore.fetchGroups()
-    } else {
-      inviteError.value = res.message
-    }
-  } finally {
-    inviting.value = false
-  }
-}
-
-async function kickGroupMember(m: GroupMemberInfo) {
-  if (!currentChat.value) return
-  if (!window.confirm(`确定将 ${m.nickname} 踢出群组？`)) return
-  const res = await groupStore.kickMember(currentChat.value.id, m.userId)
-  if (res.success) {
-    await groupStore.fetchMembers(currentChat.value.id)
-    groupStore.fetchGroups()
-  } else {
-    inviteError.value = res.message
-  }
+/** 公告保存后（组件内已刷新 store，此处兜底同步横幅） */
+function announcementSaved() {
+  groupStore.fetchGroups()
 }
 
 /** 点击账号 ID 复制到剪贴板 */
@@ -1648,14 +1430,6 @@ async function deleteFriendRobot() {
 
 // ==================== 机器人 ====================
 const showRobotModal = ref(false)
-const showGroupRobotModal = ref(false)
-
-/** 群内添加机器人成功：刷新群成员 */
-function onGroupRobotAdded() {
-  if (currentChat.value?.type === 'group') {
-    groupStore.fetchMembers(currentChat.value.id)
-  }
-}
 
 function handleLogout() {
   ws.disconnect()
@@ -1887,26 +1661,6 @@ html[data-theme='dark'] .app-toast {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.announce-meta {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
-}
-.announce-full {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 14px;
-  color: var(--text);
-  max-height: 280px;
-  overflow-y: auto;
-  margin-bottom: 8px;
-  line-height: 1.7;
-}
-.announce-input {
-  width: 100%;
-  resize: vertical;
-  font-family: inherit;
 }
 
 /* 消息搜索 */
