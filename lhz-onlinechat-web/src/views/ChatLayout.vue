@@ -1,197 +1,10 @@
 <template>
   <div class="chat-layout">
-    <!-- 侧边栏 -->
-    <aside class="sidebar" :class="{ 'is-hidden': mobileChatOpen }">
-      <div class="sidebar-header">
-        <div class="user-info" @click="showProfileModal = true" title="个人信息">
-          <Avatar :name="auth.user?.nickname || ''" :url="auth.user?.avatar" />
-          <div class="user-text">
-            <span class="nickname">{{ auth.user?.nickname }}</span>
-            <span class="account-id" @click.stop="copyAccountId" :title="copyTip">{{ copyTip }}</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <button class="icon-btn" @click="applyTheme(!isDark)" :title="isDark ? '切换到浅色模式' : '切换到深色模式'">
-            <svg v-if="!isDark" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="5" />
-              <line x1="12" y1="1" x2="12" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="23" />
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-              <line x1="1" y1="12" x2="3" y2="12" />
-              <line x1="21" y1="12" x2="23" y2="12" />
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </svg>
-          </button>
-          <button class="icon-btn" @click="openRequestsModal" title="好友申请">
-            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            <span v-if="friendStore.pendingRequests.length" class="badge">{{ friendStore.pendingRequests.length }}</span>
-          </button>
-          <button class="icon-btn" @click="showRobotModal = true" title="我的机器人">
-            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="4" y="8" width="16" height="12" rx="3" />
-              <path d="M12 8V4" />
-              <circle cx="12" cy="3" r="1" />
-              <circle cx="9" cy="13" r="1" />
-              <circle cx="15" cy="13" r="1" />
-              <line x1="9" y1="17" x2="15" y2="17" />
-            </svg>
-          </button>
-          <button class="icon-btn" @click="handleLogout" title="退出登录">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- 消息搜索 -->
-      <div class="search-box">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input v-model="searchKeyword" class="search-input" placeholder="搜索消息…" @keydown.enter="runSearch" />
-        <button class="search-go" @click="runSearch" :disabled="searchLoading" title="搜索">搜索</button>
-      </div>
-
-      <!-- Tab 切换 -->
-      <div class="tabs">
-        <button :class="['tab', { active: activeTab === 'sessions' }]" @click="activeTab = 'sessions'">会话</button>
-        <button :class="['tab', { active: activeTab === 'friends' }]" @click="activeTab = 'friends'">好友</button>
-        <button :class="['tab', { active: activeTab === 'groups' }]" @click="activeTab = 'groups'">群组</button>
-      </div>
-
-      <!-- 搜索结果面板 -->
-      <div class="search-panel" v-if="searchActive">
-        <div class="search-panel-head">
-          <span>{{ searchLoading ? '搜索中…' : `找到 ${searchResults.length} / ${searchTotal} 条` }}</span>
-          <button class="search-close" @click="closeSearch">✕</button>
-        </div>
-        <div class="search-panel-body">
-          <div class="search-result-item" v-for="(r, i) in searchResults" :key="r.type + '_' + r.sessionId + '_' + (r.messageId || i)" @click="openSearchResult(r)">
-            <div class="search-result-top">
-              <span class="search-result-session">{{ r.type === 'group' ? '群·' : '' }}{{ r.sessionName }}</span>
-              <span class="search-result-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
-            </div>
-            <div class="search-result-content">
-              <span class="search-result-sender">{{ r.senderName }}：</span>{{ r.content }}
-            </div>
-          </div>
-          <button v-if="searchHasMore" class="search-more" @click="loadMoreSearch" :disabled="searchLoading">
-            {{ searchLoading ? '加载中…' : '加载更多' }}
-          </button>
-          <div class="search-empty" v-if="!searchLoading && searchResults.length === 0">未找到相关消息</div>
-        </div>
-      </div>
-
-      <!-- 操作栏 -->
-      <div class="action-bar" v-show="!searchActive">
-        <button class="btn btn-primary" @click="openAddModal">
-          {{ activeTab === 'friends' ? '+ 添加好友' : activeTab === 'groups' ? '+ 创建群组' : '＋' }}
-        </button>
-      </div>
-
-      <!-- 会话列表 -->
-      <div class="contact-list" v-if="activeTab === 'sessions' && !searchActive">
-        <div v-for="s in sortedSessions" :key="s.type + '_' + s.id"
-          :class="['contact-item', { active: currentChat?.type === s.type && currentChat.id === s.id }]"
-          @click="selectSession(s)">
-          <div class="avatar-wrap">
-            <Avatar :name="s.name" :url="s.avatar" size="sm" />
-            <span class="group-badge" v-if="s.type === 'group'">群</span>
-          </div>
-          <div class="contact-info">
-            <div class="info-top">
-              <span class="contact-name">
-                <span class="pin-icon" v-if="s.isPinned">📌</span>
-                <span class="bot-tag" v-if="s.isBot">🤖</span>
-                {{ s.name }}
-              </span>
-              <span class="session-time">
-                <span class="mute-icon" v-if="s.muted">🔕</span>
-                {{ timeFor(s) }}
-              </span>
-            </div>
-            <div class="info-bottom">
-              <span class="contact-meta">{{ previewFor(s) }}</span>
-              <span v-if="unreadOf(s.type, s.id)" class="unread-badge">{{ unreadOf(s.type, s.id) }}</span>
-            </div>
-          </div>
-          <button class="friend-more" title="会话设置" @click.stop="openSessionSetting(s)">⋯</button>
-        </div>
-        <div class="empty" v-if="chatStore.sessions.length === 0">
-          <span class="empty-icon">💬</span>
-          <span>暂无会话，去添加好友开始聊天吧</span>
-        </div>
-      </div>
-
-      <!-- 好友列表（按分类分组） -->
-      <div class="contact-list" v-else-if="activeTab === 'friends' && !searchActive">
-        <template v-for="group in groupedFriends" :key="group.category">
-          <div class="group-header" v-if="group.friends.length">
-            <span>{{ group.category }}</span>
-            <span class="group-count">{{ group.friends.length }}</span>
-          </div>
-          <div v-for="f in group.friends" :key="f.userId"
-            :class="['contact-item', { active: currentChat?.type === 'private' && currentChat.id === f.userId }]"
-            @click="selectPrivateChat(f)">
-            <div class="avatar-wrap">
-              <Avatar :name="friendDisplayName(f)" :url="f.avatar" size="sm" />
-              <span :class="['status-dot', f.isOnline ? 'online' : 'offline']"></span>
-            </div>
-            <div class="contact-info">
-              <div class="info-top">
-                <span class="contact-name"><span class="bot-tag" v-if="f.isBot">🤖</span>{{ friendDisplayName(f) }}</span>
-                <span v-if="unreadOf('private', f.userId)" class="unread-badge">{{ unreadOf('private', f.userId) }}</span>
-              </div>
-              <div class="info-bottom">
-                <span class="contact-meta">{{ lastMessageFor('private', f.userId) || (f.isOnline ? '在线' : '离线') }}</span>
-              </div>
-            </div>
-            <button class="friend-more" title="备注/分类" @click.stop="openFriendSetting(f)">⋯</button>
-          </div>
-        </template>
-        <div class="empty" v-if="friendStore.friends.length === 0">
-          <span class="empty-icon">👥</span>
-          <span>暂无好友，点击上方按钮添加</span>
-        </div>
-      </div>
-
-      <!-- 群组列表 -->
-      <div class="contact-list" v-else-if="!searchActive">
-        <div v-for="g in groupStore.groups" :key="g.id"
-          :class="['contact-item', { active: currentChat?.type === 'group' && currentChat.id === g.id }]"
-          @click="selectGroupChat(g)">
-          <div class="avatar-wrap">
-            <Avatar :name="g.name" :url="g.avatar" size="sm" />
-            <span class="group-badge">群</span>
-          </div>
-          <div class="contact-info">
-            <div class="info-top">
-              <span class="contact-name">{{ g.name }}</span>
-              <span v-if="unreadOf('group', g.id)" class="unread-badge">{{ unreadOf('group', g.id) }}</span>
-            </div>
-            <div class="info-bottom">
-              <span class="contact-meta">{{ lastMessageFor('group', g.id) || `${g.memberCount} 人` }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="empty" v-if="groupStore.groups.length === 0">
-          <span class="empty-icon">🗂️</span>
-          <span>暂无群组，点击上方按钮创建</span>
-        </div>
-      </div>
-    </aside>
+    <ChatSidebar v-model:active-tab="activeTab" :current-chat="currentChat" :mobile-chat-open="mobileChatOpen"
+      @select-private="selectPrivateChat" @select-group="selectGroupChat" @select-session="selectSession"
+      @session-setting="openSessionSetting" @friend-setting="openFriendSetting" @add="openAddModal"
+      @requests="openRequestsModal" @robot="showRobotModal = true" @profile="showProfileModal = true"
+      @logout="handleLogout" @open-result="openSearchResult" />
 
     <!-- 聊天区域 -->
     <main class="chat-main" :class="{ 'is-show': mobileChatOpen }">
@@ -351,7 +164,7 @@ import { authApi } from '@/api/auth'
 import { messageApi } from '@/api/message'
 import { groupApi } from '@/api/group'
 import { useToast } from '@/composables/useToast'
-import { formatMsgTime, pad } from '@/utils/format'
+import { formatMsgTime } from '@/utils/format'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
 import ProfileModal from '@/components/chat/modals/ProfileModal.vue'
@@ -362,6 +175,7 @@ import MembersModal from '@/components/chat/modals/MembersModal.vue'
 import AnnouncementModal from '@/components/chat/modals/AnnouncementModal.vue'
 import FriendSettingModal from '@/components/chat/modals/FriendSettingModal.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
+import ChatSidebar from '@/components/chat/ChatSidebar.vue'
 import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
@@ -421,9 +235,6 @@ function playNotifySound() {
     })
   } catch { /* 忽略音频错误（如浏览器策略限制） */ }
 }
-// 账号 ID 复制提示
-const copyTip = ref('')
-let copyTipTimer: number | null = null
 // 群成员面板
 const showMembersModal = ref(false)
 // @ 提及
@@ -447,14 +258,6 @@ const currentMessages = computed(() => {
   const key = `${currentChat.value.type}_${currentChat.value.id}`
   return chatStore.messages.get(key) || []
 })
-
-// 会话列表：置顶优先，再按最后消息时间倒序
-const sortedSessions = computed(() =>
-  [...chatStore.sessions].sort((a, b) => {
-    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
-    return new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime()
-  })
-)
 
 // 聊天窗口副标题：私聊显示原昵称+在线状态（有备注时），群聊显示人数
 const chatSub = computed(() => {
@@ -495,46 +298,12 @@ function friendDisplayName(f: FriendInfo): string {
   return f.remark || f.nickname
 }
 
-// 好友按分类分组（未分组放最后，其余按分类名排序）
-const groupedFriends = computed(() => {
-  const map = new Map<string, FriendInfo[]>()
-  for (const f of friendStore.friends) {
-    const cat = f.category || '未分组'
-    const list = map.get(cat) || []
-    list.push(f)
-    map.set(cat, list)
-  }
-  const groups = [...map.entries()]
-    .map(([category, friends]) => ({
-      category,
-      friends: [...friends].sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || a.nickname.localeCompare(b.nickname))
-    }))
-    .sort((a, b) => {
-      if (a.category === '未分组') return 1
-      if (b.category === '未分组') return -1
-      return a.category.localeCompare(b.category)
-    })
-  return groups
-})
-
-// 主题（深色/浅色）
-const isDark = ref(false)
-
-function applyTheme(dark: boolean) {
-  isDark.value = dark
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-  localStorage.setItem('theme', dark ? 'dark' : 'light')
-}
-
 onMounted(async () => {
-  // 初始化主题（记忆偏好）
-  applyTheme(localStorage.getItem('theme') === 'dark')
   if (!auth.isLoggedIn) {
     router.push('/login')
     return
   }
   await auth.fetchUser()
-  copyTip.value = auth.user ? `ID: ${auth.user.id}` : ''
 
   // 先注册回调，再建立连接，避免漏掉连接期间的消息
   ws.onMessage((msg) => {
@@ -574,7 +343,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
-  if (copyTipTimer) clearTimeout(copyTipTimer)
 })
 
 function onDocClick(e: MouseEvent) {
@@ -845,57 +613,6 @@ async function onMessagesScroll() {
   })
 }
 
-// ==================== 消息搜索 ====================
-const searchKeyword = ref('')
-const searchActive = ref(false)
-const searchLoading = ref(false)
-const searchResults = ref<MessageSearchResult[]>([])
-const searchPage = ref(1)
-const searchTotal = ref(0)
-const searchHasMore = computed(() => searchResults.value.length < searchTotal.value)
-
-async function runSearch() {
-  const kw = searchKeyword.value.trim()
-  if (!kw) return
-  searchActive.value = true
-  searchLoading.value = true
-  searchPage.value = 1
-  searchResults.value = []
-  searchTotal.value = 0
-  try {
-    const res = await messageApi.searchMessages(kw, 1)
-    if (res.success && res.data) {
-      searchResults.value = res.data.items
-      searchTotal.value = res.data.total
-    }
-  } finally {
-    searchLoading.value = false
-  }
-}
-
-async function loadMoreSearch() {
-  const kw = searchKeyword.value.trim()
-  if (!kw || searchLoading.value) return
-  searchLoading.value = true
-  try {
-    const res = await messageApi.searchMessages(kw, searchPage.value + 1)
-    if (res.success && res.data) {
-      searchResults.value = [...searchResults.value, ...res.data.items]
-      searchTotal.value = res.data.total
-      searchPage.value += 1
-    }
-  } finally {
-    searchLoading.value = false
-  }
-}
-
-function closeSearch() {
-  searchActive.value = false
-  searchResults.value = []
-  searchTotal.value = 0
-  searchKeyword.value = ''
-}
-
 /** 点击搜索结果：打开会话并定位到该消息 */
 async function openSearchResult(r: MessageSearchResult) {
   if (r.type === 'private') {
@@ -903,7 +620,6 @@ async function openSearchResult(r: MessageSearchResult) {
   } else {
     await selectGroupChat({ id: r.sessionId, name: r.sessionName })
   }
-  closeSearch()
   if (r.messageId) await locateMessage(r.messageId)
 }
 
@@ -930,20 +646,6 @@ async function locateMessage(messageId: string) {
     await nextTick()
     if (scrollToRow()) return
   }
-}
-
-/** 会话最后一条消息预览 */
-function lastMessageFor(type: ChatType, id: number): string {
-  const key = chatStore.sessionKey(type, id)
-  const list = chatStore.messages.get(key)
-  const last = list && list.length ? list[list.length - 1] : null
-  if (!last) return ''
-  const prefix = type === 'group' && Number(last.from) !== auth.user?.id ? `${last.senderName}: ` : ''
-  return prefix + (last.content || '')
-}
-
-function unreadOf(type: ChatType, id: number): number {
-  return chatStore.unreadCounts.get(chatStore.sessionKey(type, id)) || 0
 }
 
 async function selectPrivateChat(friend: { userId: number; nickname: string }) {
@@ -995,27 +697,6 @@ function selectSession(s: SessionInfo) {
 /** 移动端：返回会话列表 */
 function backToList() {
   mobileChatOpen.value = false
-}
-
-/** 会话预览：优先本地最新消息，否则用服务端会话数据 */
-function previewFor(s: SessionInfo): string {
-  const local = lastMessageFor(s.type, s.id)
-  return local || s.lastMessage || (s.type === 'group' ? '群组会话' : '暂无消息')
-}
-
-/** 会话时间：本地消息用毫秒时间戳，服务端数据用 ISO 字符串 */
-function timeFor(s: SessionInfo): string {
-  const key = chatStore.sessionKey(s.type, s.id)
-  const list = chatStore.messages.get(key)
-  const last = list && list.length ? list[list.length - 1] : null
-  const t = last ? last.timestamp : s.lastTime ? new Date(s.lastTime).getTime() : 0
-  if (!t) return ''
-  const d = new Date(t)
-  const now = new Date()
-  const sameDay = d.toDateString() === now.toDateString()
-  return sameDay
-    ? `${pad(d.getHours())}:${pad(d.getMinutes())}`
-    : `${d.getMonth() + 1}/${d.getDate()}`
 }
 
 function handleWsMessage(msg: WsMessage) {
@@ -1170,21 +851,6 @@ function openMembersModal() {
 /** 公告保存后（组件内已刷新 store，此处兜底同步横幅） */
 function announcementSaved() {
   groupStore.fetchGroups()
-}
-
-/** 点击账号 ID 复制到剪贴板 */
-async function copyAccountId() {
-  if (!auth.user) return
-  try {
-    await navigator.clipboard.writeText(String(auth.user.id))
-    copyTip.value = '已复制 ✅'
-  } catch {
-    copyTip.value = 'ID: ' + auth.user.id
-  }
-  if (copyTipTimer) clearTimeout(copyTipTimer)
-  copyTipTimer = window.setTimeout(() => {
-    copyTip.value = auth.user ? `ID: ${auth.user.id}` : ''
-  }, 2000)
 }
 
 // ==================== 好友设置（备注/分类） ====================
