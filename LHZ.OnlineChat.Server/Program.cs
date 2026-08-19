@@ -197,7 +197,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // ==================== WebSocket 中间件 ====================
-app.UseWebSocket(context =>
+app.UseWebSocket(async context =>
 {
     var accessor = app.Services.GetRequiredService<IHttpContextAccessor>();
     var httpContext = accessor.HttpContext;
@@ -232,7 +232,7 @@ app.UseWebSocket(context =>
     }
 
     // 完成 WebSocket 握手
-    var client = context.HttpUpgrade();
+    var client = await context.HttpUpgradeAsync();
     if (client == null)
     {
         Console.WriteLine("[WS] 握手失败");
