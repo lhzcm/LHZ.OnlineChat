@@ -236,36 +236,9 @@
 
         <div class="chat-messages" ref="msgContainer" @scroll="onMessagesScroll">
           <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
-          <div v-for="msg in currentMessages" :key="msg.messageId" :data-mid="msg.messageId"
-            :class="['msg-row', { mine: Number(msg.from) === auth.user?.id }]">
-            <Avatar class="msg-avatar" :name="msg.senderName || currentChat.name" :url="msg.senderAvatar" size="sm" />
-            <div class="msg-body">
-              <span class="msg-sender" v-if="currentChat.type === 'group' && Number(msg.from) !== auth.user?.id">
-                {{ msg.senderName }}
-              </span>
-              <div class="reply-preview" v-if="msg.replyContent && !msg.isDeleted">
-                <span class="reply-sender">{{ msg.replySender || '引用' }}</span>
-                <span class="reply-text">{{ msg.replyContent }}</span>
-              </div>
-              <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, recalled: msg.isDeleted }">
-                <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
-                <img v-else-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
-                  loading="lazy" @click.stop="openLightbox(msg.content)" />
-                <span v-else v-html="renderContent(msg.content)"></span>
-              </div>
-              <div class="msg-actions">
-                <button v-if="canReply(msg)" class="msg-recall-btn" @click.stop="startReply(msg)">回复</button>
-                <button v-if="canRecall(msg)" class="msg-recall-btn" @click.stop="recallMessage(msg)">撤回</button>
-              </div>
-              <div class="msg-meta-line">
-                <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
-                <span v-if="isMyPrivateMessage(msg)" class="msg-status"
-                  :class="{ read: chatStore.isReadByPeer(msg.messageId) }">
-                  {{ chatStore.isReadByPeer(msg.messageId) ? '已读' : '未读' }}
-                </span>
-              </div>
-            </div>
-          </div>
+          <MessageBubble v-for="msg in currentMessages" :key="msg.messageId" :msg="msg"
+            :chat-type="currentChat.type" :chat-id="currentChat.id" :chat-name="currentChat.name"
+            @reply="startReply" @image-click="openLightbox" />
         </div>
 
         <!-- 引用回复横幅 -->
@@ -388,6 +361,7 @@ import SessionSettingModal from '@/components/chat/modals/SessionSettingModal.vu
 import MembersModal from '@/components/chat/modals/MembersModal.vue'
 import AnnouncementModal from '@/components/chat/modals/AnnouncementModal.vue'
 import FriendSettingModal from '@/components/chat/modals/FriendSettingModal.vue'
+import MessageBubble from '@/components/chat/MessageBubble.vue'
 import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
@@ -697,19 +671,9 @@ function openLightbox(url: string) {
   lightboxUrl.value = url
 }
 
-// ==================== 消息撤回 ====================
-/** 自己发出的、未被撤回的消息可撤回（服务端限 2 分钟内） */
-function canRecall(msg: WsMessage): boolean {
-  if (msg.isDeleted) return false
-  return Number(msg.from) === auth.user?.id
-}
-
+// ==================== 引用回复 ====================
 /** 引用回复目标 */
 const replyTarget = ref<{ messageId: string; content: string; senderName: string } | null>(null)
-
-function canReply(msg: WsMessage): boolean {
-  return !msg.isDeleted
-}
 
 function startReply(msg: WsMessage) {
   replyTarget.value = {
@@ -718,27 +682,6 @@ function startReply(msg: WsMessage) {
     senderName: msg.senderName || '对方'
   }
   inputEl.value?.focus()
-}
-
-function recallMessage(msg: WsMessage) {
-  if (!currentChat.value || !auth.user) return
-  if (!window.confirm('确定撤回这条消息？')) return
-  ws.sendMessage({
-    type: 'message_recalled',
-    from: String(auth.user.id),
-    to: String(currentChat.value.id),
-    content: msg.messageId,
-    timestamp: Date.now(),
-    messageId: msg.messageId,
-    messageType: 0,
-    senderName: '',
-    senderAvatar: null
-  })
-  // 本地乐观标记
-  chatStore.markMessageRecalled(
-    chatStore.sessionKey(currentChat.value.type, currentChat.value.id),
-    msg.messageId
-  )
 }
 
 // ==================== 会话设置（置顶/免打扰） ====================
@@ -841,22 +784,6 @@ function parseMentions(text: string): number[] {
     }
   }
   return ids
-}
-
-/** 渲染消息内容：转义 HTML 后高亮 @提及（防 XSS） */
-function renderContent(content: string): string {
-  const esc = content
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-  return esc.replace(/@([^\s@，。！？!?,]+)/g, '<span class="mention">@$1</span>')
-}
-
-/** 该消息是否提及了当前用户 */
-function isMentioned(msg: WsMessage): boolean {
-  if (!msg.mentions?.length || !auth.user) return false
-  return msg.mentions.includes(auth.user.id)
 }
 
 // 诊断辅助（排障用）：浏览器控制台执行 window.__mentionDebug() 查看 @ 功能状态
@@ -1028,11 +955,6 @@ async function selectPrivateChat(friend: { userId: number; nickname: string }) {
   sendReadReceipt(friend.userId)
   mobileChatOpen.value = true
   scrollToBottom()
-}
-
-/** 判断是否是我发出的私聊消息（展示已读状态） */
-function isMyPrivateMessage(msg: WsMessage): boolean {
-  return currentChat.value?.type === 'private' && Number(msg.from) === auth.user?.id
 }
 
 /** 发送已读回执（to = 对方） */
@@ -1654,19 +1576,6 @@ html[data-theme='dark'] .app-toast {
   padding: 40px 0;
   font-size: 13px;
   color: var(--text-secondary);
-}
-
-/* 定位消息高亮 */
-.msg-row.msg-highlight .msg-bubble {
-  animation: msg-highlight-flash 2.2s ease;
-}
-@keyframes msg-highlight-flash {
-  0%, 55% {
-    box-shadow: 0 0 0 3px var(--primary-light);
-  }
-  100% {
-    box-shadow: none;
-  }
 }
 
 /* 列表 */
