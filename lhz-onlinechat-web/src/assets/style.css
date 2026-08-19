@@ -363,3 +363,62 @@ textarea {
   font-size: 40px;
   opacity: 0.55;
 }
+
+/* 机器人标识 */
+.bot-tag {
+  font-size: 12px;
+}
+
+/* 机器人调用链接行（管理面板 + 好友设置弹窗共用） */
+.robot-token-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  max-width: 100%;
+}
+.robot-token-line code {
+  background: var(--bg-hover);
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.token-copy {
+  border: none;
+  background: var(--active-bg);
+  color: var(--primary);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.token-copy:hover {
+  background: var(--border);
+}
+
+/* 好友设置弹窗内的机器人调用链接行（可换行） */
+.robot-line-in-modal {
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+.robot-line-in-modal code {
+  max-width: 100%;
+  flex: 1;
+}
+.robot-line-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
