@@ -10,6 +10,7 @@ public class AppSettings
     public JwtConfig Jwt { get; set; } = new();
     public CorsConfig Cors { get; set; } = new();
     public SmtpConfig Smtp { get; set; } = new();
+    public RobotConfig Robot { get; set; } = new();
 }
 
 public class ConnectionStringsConfig
@@ -49,4 +50,13 @@ public class SmtpConfig
     public string User { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string From { get; set; } = "no-reply@onlinechat.local";
+}
+
+public class RobotConfig
+{
+    /// <summary>
+    /// 机器人令牌加密密钥（AES-256-GCM 派生）。
+    /// 生产环境务必通过环境变量 Robot__TokenKey 配置，未配置时使用内置开发密钥并打印警告。
+    /// </summary>
+    public string TokenKey { get; set; } = string.Empty;
 }

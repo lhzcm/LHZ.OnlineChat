@@ -41,6 +41,11 @@ public class RobotInfo
     public int TimeoutMs { get; set; }
     public bool Enabled { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// 对外令牌（加密 ID）：第三方推送用 /api/robots/{Token}/reply 调用
+    /// </summary>
+    public string Token { get; set; } = string.Empty;
 }
 
 /// <summary>

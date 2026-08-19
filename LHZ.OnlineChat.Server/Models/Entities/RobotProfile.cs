@@ -50,6 +50,12 @@ public class RobotProfile
     [Column(IsNullable = false)]
     public int TimeoutMs { get; set; } = 10000;
 
+    /// <summary>
+    /// 对外令牌（加密 ID，创建时生成并持久化，稳定不变）
+    /// </summary>
+    [Column(StringLength = 100)]
+    public string? Token { get; set; }
+
     [Column(IsNullable = false)]
     public bool Enabled { get; set; } = true;
 

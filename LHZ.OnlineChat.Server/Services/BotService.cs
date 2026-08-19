@@ -1,4 +1,5 @@
 using LHZ.FastJson;
+using LHZ.OnlineChat.Server.Config;
 using LHZ.OnlineChat.Server.Models.DTOs;
 using LHZ.OnlineChat.Server.Models.Entities;
 using LHZ.WebSocket.Interfaces;
@@ -10,7 +11,8 @@ namespace LHZ.OnlineChat.Server.Services;
 /// <summary>
 /// 机器人服务
 /// 机器人 = User(IsBot=true) + RobotProfile(Webhook 配置)
-/// 收到消息 → POST Webhook 事件（HMAC 签名）→ 同步响应 200 {"content":...} 或调用 /api/robots/{id}/reply 异步回复
+/// 收到消息 → POST Webhook 事件（HMAC 签名）→ 同步响应 200 {"content":...} 或调用 /api/robots/{token}/reply 异步回复
+/// 对外暴露"加密 ID"令牌（AES-256-GCM），不泄露内部自增 ID
 /// </summary>
 public class BotService
 {
@@ -18,15 +20,77 @@ public class BotService
     private readonly RedisService _redis;
     private readonly WsConnectionManager _connectionManager;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly byte[] _tokenKey;
 
     public const string SignatureHeader = "X-Bot-Signature";
 
-    public BotService(IFreeSql fsql, RedisService redis, WsConnectionManager connectionManager, IHttpClientFactory httpClientFactory)
+    /// <summary>
+    /// 内置开发密钥（未配置 Robot__TokenKey 时使用；生产请务必配置）
+    /// </summary>
+    private static readonly byte[] DefaultTokenKey = SHA256.HashData(Encoding.UTF8.GetBytes("lhz-onlinechat-dev-robot-token-key-2026"));
+
+    public BotService(IFreeSql fsql, RedisService redis, WsConnectionManager connectionManager,
+        IHttpClientFactory httpClientFactory, AppSettings appSettings)
     {
         _fsql = fsql;
         _redis = redis;
         _connectionManager = connectionManager;
         _httpClientFactory = httpClientFactory;
+
+        var rawKey = appSettings.Robot?.TokenKey;
+        if (string.IsNullOrWhiteSpace(rawKey))
+        {
+            Console.WriteLine("[BOT] 警告: 未配置 Robot__TokenKey，机器人令牌使用内置开发密钥（生产请配置环境变量 Robot__TokenKey）");
+            _tokenKey = DefaultTokenKey;
+        }
+        else
+        {
+            _tokenKey = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
+        }
+    }
+
+    // ==================== 机器人令牌（加密 ID） ====================
+
+    /// <summary>
+    /// 加密机器人配置 ID → URL 安全的令牌（AES-256-GCM：nonce12 + cipher8 + tag16，base64url）
+    /// </summary>
+    public string EncodeRobotId(long id)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var plain = BitConverter.GetBytes(id);
+        var cipher = new byte[plain.Length];
+        var tag = new byte[16];
+        using var aes = new AesGcm(_tokenKey, 16);
+        aes.Encrypt(nonce, plain, cipher, tag);
+        var raw = new byte[12 + 8 + 16];
+        Buffer.BlockCopy(nonce, 0, raw, 0, 12);
+        Buffer.BlockCopy(cipher, 0, raw, 12, 8);
+        Buffer.BlockCopy(tag, 0, raw, 20, 16);
+        return Convert.ToBase64String(raw).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    /// <summary>
+    /// 解密令牌 → 机器人配置 ID；无效返回 0
+    /// </summary>
+    public long DecodeRobotId(string token)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(token)) return 0;
+            var b64 = token.Replace('-', '+').Replace('_', '/');
+            b64 = b64.PadRight(b64.Length + (4 - b64.Length % 4) % 4, '=');
+            var raw = Convert.FromBase64String(b64);
+            if (raw.Length != 12 + 8 + 16) return 0;
+
+            var plain = new byte[8];
+            using var aes = new AesGcm(_tokenKey, 16);
+            aes.Decrypt(raw.AsSpan(0, 12), raw.AsSpan(12, 8), raw.AsSpan(20, 16), plain);
+            return BitConverter.ToInt64(plain);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     // ==================== 机器人管理 ====================
@@ -78,6 +142,14 @@ public class BotService
         };
         var id = await _fsql.Insert(profile).ExecuteIdentityAsync();
 
+        // 生成并持久化对外令牌（加密 ID，稳定不变）
+        var token = EncodeRobotId(id);
+        await _fsql.Update<RobotProfile>()
+            .Set(p => p.Token, token)
+            .Where(p => p.Id == id)
+            .ExecuteAffrowsAsync();
+        profile.Token = token;
+
         // 与创建者建立双向好友关系（一条记录，查询双向匹配）
         await _fsql.Insert(new Friend
         {
@@ -97,8 +169,24 @@ public class BotService
             WebhookSecret = profile.WebhookSecret,
             TimeoutMs = timeout,
             Enabled = true,
-            CreatedAt = profile.CreatedAt
+            CreatedAt = profile.CreatedAt,
+            Token = profile.Token
         }, "机器人创建成功");
+    }
+
+    /// <summary>
+    /// 确保令牌已持久化（兼容旧数据），并返回稳定令牌
+    /// </summary>
+    private async Task<string> EnsureTokenAsync(RobotProfile profile)
+    {
+        if (!string.IsNullOrEmpty(profile.Token)) return profile.Token;
+        var token = EncodeRobotId(profile.Id);
+        await _fsql.Update<RobotProfile>()
+            .Set(p => p.Token, token)
+            .Where(p => p.Id == profile.Id)
+            .ExecuteAffrowsAsync();
+        profile.Token = token;
+        return token;
     }
 
     /// <summary>
@@ -111,18 +199,23 @@ public class BotService
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync();
 
-        var result = profiles.Select(p => new RobotInfo
+        var result = new List<RobotInfo>();
+        foreach (var p in profiles)
         {
-            Id = p.Id,
-            UserId = p.UserId,
-            Name = p.Name,
-            Avatar = p.Avatar,
-            WebhookUrl = p.WebhookUrl,
-            WebhookSecret = p.WebhookSecret,
-            TimeoutMs = p.TimeoutMs,
-            Enabled = p.Enabled,
-            CreatedAt = p.CreatedAt
-        }).ToList();
+            result.Add(new RobotInfo
+            {
+                Id = p.Id,
+                UserId = p.UserId,
+                Name = p.Name,
+                Avatar = p.Avatar,
+                WebhookUrl = p.WebhookUrl,
+                WebhookSecret = p.WebhookSecret,
+                TimeoutMs = p.TimeoutMs,
+                Enabled = p.Enabled,
+                CreatedAt = p.CreatedAt,
+                Token = await EnsureTokenAsync(p)
+            });
+        }
 
         return ApiResponse<List<RobotInfo>>.Ok(result);
     }
@@ -181,7 +274,8 @@ public class BotService
             WebhookSecret = profile.WebhookSecret,
             TimeoutMs = profile.TimeoutMs,
             Enabled = profile.Enabled,
-            CreatedAt = profile.CreatedAt
+            CreatedAt = profile.CreatedAt,
+            Token = await EnsureTokenAsync(profile)
         }, "已保存");
     }
 
@@ -288,18 +382,23 @@ public class BotService
             .Where(p => robotIds.Contains(p.UserId))
             .ToListAsync();
 
-        var result = profiles.Select(p => new RobotInfo
+        var result = new List<RobotInfo>();
+        foreach (var p in profiles)
         {
-            Id = p.Id,
-            UserId = p.UserId,
-            Name = p.Name,
-            Avatar = p.Avatar,
-            WebhookUrl = p.WebhookUrl,
-            WebhookSecret = p.WebhookSecret,
-            TimeoutMs = p.TimeoutMs,
-            Enabled = p.Enabled,
-            CreatedAt = p.CreatedAt
-        }).ToList();
+            result.Add(new RobotInfo
+            {
+                Id = p.Id,
+                UserId = p.UserId,
+                Name = p.Name,
+                Avatar = p.Avatar,
+                WebhookUrl = p.WebhookUrl,
+                WebhookSecret = p.WebhookSecret,
+                TimeoutMs = p.TimeoutMs,
+                Enabled = p.Enabled,
+                CreatedAt = p.CreatedAt,
+                Token = await EnsureTokenAsync(p)
+            });
+        }
 
         return ApiResponse<List<RobotInfo>>.Ok(result);
     }
@@ -474,23 +573,29 @@ public class BotService
     }
 
     /// <summary>
-    /// 异步回复：验签通过后以机器人身份发送消息
+    /// 异步回复（主动推送）：解密令牌定位机器人；
+    /// 签名可选——配置了 WebhookSecret 才强制验签（安全要求高时开启）
     /// </summary>
-    public async Task<ApiResponse> HandleAsyncReplyAsync(long robotId, string rawBody, string? signature)
+    public async Task<ApiResponse> HandleAsyncReplyAsync(string robotToken, string rawBody, string? signature)
     {
         if (string.IsNullOrWhiteSpace(rawBody))
             return ApiResponse.Fail("请求体不能为空");
 
+        var robotId = DecodeRobotId(robotToken);
+        if (robotId <= 0)
+            return ApiResponse.Fail("无效的机器人标识");
+
         var profile = await _fsql.Select<RobotProfile>().Where(p => p.Id == robotId).FirstAsync();
         if (profile == null)
             return ApiResponse.Fail("机器人不存在");
-        if (string.IsNullOrEmpty(profile.WebhookSecret))
-            return ApiResponse.Fail("该机器人未配置签名密钥，无法异步回复");
 
-        // 验签：X-Bot-Signature = HMAC-SHA256(secret, rawBody) 十六进制
-        var expected = ComputeHmac(profile.WebhookSecret, rawBody);
-        if (string.IsNullOrEmpty(signature) || !FixedTimeEquals(signature, expected))
-            return ApiResponse.Fail("签名验证失败");
+        // 签名可选：配置了密钥才验签（未配置时仅靠加密令牌鉴权）
+        if (!string.IsNullOrEmpty(profile.WebhookSecret))
+        {
+            var expected = ComputeHmac(profile.WebhookSecret, rawBody);
+            if (string.IsNullOrEmpty(signature) || !FixedTimeEquals(signature, expected))
+                return ApiResponse.Fail("签名验证失败");
+        }
 
         var request = JsonConvert.Deserialize<BotReplyRequest>(rawBody);
         if (request == null)

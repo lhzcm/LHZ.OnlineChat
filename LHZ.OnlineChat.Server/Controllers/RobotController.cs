@@ -78,11 +78,11 @@ public class RobotController : ControllerBase
     }
 
     /// <summary>
-    /// 异步回复（Webhook 服务方调用；需携带 X-Bot-Signature: HMAC-SHA256(secret, rawBody)）
+    /// 异步回复/主动推送（第三方调用；URL 中为加密 ID 令牌，签名可选——配置了 WebhookSecret 才验签）
     /// </summary>
-    [HttpPost("{robotId:long}/reply")]
+    [HttpPost("{robotToken}/reply")]
     [AllowAnonymous]
-    public async Task<IActionResult> AsyncReply(long robotId)
+    public async Task<IActionResult> AsyncReply(string robotToken)
     {
         string rawBody;
         using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8))
@@ -94,7 +94,7 @@ public class RobotController : ControllerBase
             ? values.ToString()
             : null;
 
-        var result = await _botService.HandleAsyncReplyAsync(robotId, rawBody, signature);
+        var result = await _botService.HandleAsyncReplyAsync(robotToken, rawBody, signature);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 }

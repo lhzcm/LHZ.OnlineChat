@@ -554,7 +554,7 @@
         <div v-if="robotEditing" class="robot-form">
           <input v-model="robotForm.name" class="input" placeholder="机器人名称（如：小助手）" maxlength="50" />
           <input v-model="robotForm.webhookUrl" class="input" placeholder="Webhook 地址（可选，仅接收消息回调时需要）" />
-          <input v-model="robotForm.webhookSecret" class="input" placeholder="签名密钥（主动推送验签必需）" />
+          <input v-model="robotForm.webhookSecret" class="input" placeholder="签名密钥（可选，配置后第三方推送需验签；不配置仅靠令牌鉴权）" />
           <input v-model.number="robotForm.timeoutMs" class="input" type="number" min="1000" max="60000" placeholder="回调超时（毫秒，默认 10000）" />
           <label class="setting-switch">
             <span><span class="set-label">启用</span></span>
@@ -582,6 +582,10 @@
               <span class="role-tag" :class="r.enabled ? 'role-0' : 'role-2'">{{ r.enabled ? '启用' : '停用' }}</span>
             </span>
             <span class="request-meta">账号 {{ r.userId }} · {{ r.webhookUrl || '纯推送（未配置 Webhook）' }}</span>
+            <span class="robot-token-line" title="第三方推送调用 /api/robots/{令牌}/reply">
+              推送令牌 <code>{{ r.token }}</code>
+              <button class="token-copy" @click="copyRobotToken(r.token)">复制</button>
+            </span>
           </div>
           <button class="btn btn-sm btn-ghost kick-btn" @click="startEditRobot(r)">编辑</button>
           <button class="btn btn-sm btn-ghost kick-btn" @click="openRobotTest(r)">测试</button>
@@ -2126,6 +2130,16 @@ async function runRobotTest() {
   }
 }
 
+/** 复制机器人推送令牌 */
+async function copyRobotToken(token: string) {
+  try {
+    await navigator.clipboard.writeText(token)
+    toast('推送令牌已复制')
+  } catch {
+    toast('复制失败，请手动选择复制')
+  }
+}
+
 /** 群添加机器人弹窗中可选列表（我的机器人） */
 const myRobotsForGroup = computed(() => robots.value)
 
@@ -2482,6 +2496,40 @@ watch(activeTab, () => {
 }
 .robot-form .input {
   width: 100%;
+}
+.robot-token-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  max-width: 100%;
+}
+.robot-token-line code {
+  background: var(--bg-hover);
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.token-copy {
+  border: none;
+  background: var(--active-bg);
+  color: var(--primary);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.token-copy:hover {
+  background: var(--border);
 }
 .robot-test-result {
   margin-top: 12px;

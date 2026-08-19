@@ -214,6 +214,8 @@ export interface RobotInfo {
   timeoutMs: number
   enabled: boolean
   createdAt: string
+  /** 对外令牌（加密 ID）：第三方推送用 /api/robots/{token}/reply */
+  token: string
 }
 
 /** 机器人测试结果 */

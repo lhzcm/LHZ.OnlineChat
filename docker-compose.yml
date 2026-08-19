@@ -48,6 +48,7 @@ services:
       Smtp__User: ${SMTP_USER:-}
       Smtp__Password: ${SMTP_PASSWORD:-}
       Smtp__From: ${SMTP_FROM:-no-reply@onlinechat.local}
+      Robot__TokenKey: ${ROBOT_TOKEN_KEY:-}
       ASPNETCORE_ENVIRONMENT: Production
     depends_on:
       postgres:
