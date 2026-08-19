@@ -70,6 +70,7 @@ import { useWebSocketStore } from '@/stores/websocket'
 import { authApi } from '@/api/auth'
 import { groupApi } from '@/api/group'
 import { useToast } from '@/composables/useToast'
+import { inDnd, showDesktopNotify } from '@/composables/useNotify'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
 import ProfileModal from '@/components/chat/modals/ProfileModal.vue'
@@ -117,9 +118,10 @@ function onNotifySoundChange(enabled: boolean) {
   localStorage.setItem('notifySound', enabled ? '1' : '0')
 }
 
-/** 播放新消息提示音（Web Audio 合成，无需音频文件） */
+/** 播放新消息提示音（Web Audio 合成，无需音频文件）；免打扰时段静音 */
 function playNotifySound() {
   if (!notifySoundEnabled.value) return
+  if (inDnd()) return
   try {
     notifyAudioCtx = notifyAudioCtx || new AudioContext()
     const ctx = notifyAudioCtx
@@ -170,6 +172,20 @@ onMounted(async () => {
     return
   }
   await auth.fetchUser()
+
+  // 桌面通知点击：跳转到对应会话
+  window.addEventListener('oc:open-session', ((e: Event) => {
+    const detail = (e as CustomEvent<{ type: ChatType; id: number }>).detail
+    if (!detail) return
+    if (detail.type === 'private') {
+      const f = friendStore.friends.find(x => x.userId === detail.id)
+      selectPrivateChat({ userId: detail.id, nickname: f ? (f.remark || f.nickname) : String(detail.id) })
+    } else {
+      const g = groupStore.groups.find(x => x.id === detail.id)
+      selectGroupChat({ id: detail.id, name: g?.name || String(detail.id) })
+    }
+    mobileChatOpen.value = true
+  }) as EventListener)
 
   // 先注册回调，再建立连接，避免漏掉连接期间的消息
   ws.onMessage((msg) => {
@@ -354,6 +370,12 @@ function handleWsMessage(msg: WsMessage) {
     if (!chatStore.isSessionMuted(sType, sId)) {
       chatStore.bumpUnread(key)
       playNotifySound()
+      // 浏览器桌面通知（页面隐藏时）：点击通知可跳转到该会话
+      const isGroup = sType === 'group'
+      const title = isGroup
+        ? `群消息 · ${msg.senderName || ''}`
+        : msg.senderName || '新消息'
+      showDesktopNotify(title, msg.content, { type: sType, id: sId })
     }
   }
 }

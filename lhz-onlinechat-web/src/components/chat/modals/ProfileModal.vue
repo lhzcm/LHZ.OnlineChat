@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import { useToast } from '@/composables/useToast'
+import { useNotifySettings, requestNotifyPermission } from '@/composables/useNotify'
 import AvatarCropModal from './AvatarCropModal.vue'
 
 const props = defineProps<{ notifySoundEnabled: boolean }>()
@@ -14,6 +16,15 @@ const emit = defineEmits<{
 }>()
 
 const auth = useAuthStore()
+const { toast } = useToast()
+// 通知设置（模块级单例，与 ChatLayout 共享）
+const {
+  desktopNotifyEnabled,
+  dndEnabled,
+  dndStart,
+  dndEnd,
+  persist: persistNotify
+} = useNotifySettings()
 
 const profileNickname = ref('')
 const newEmail = ref('')
@@ -187,6 +198,38 @@ async function savePassword() {
     savingPassword.value = false
   }
 }
+
+/** 桌面通知开关：开启时先请求浏览器通知权限（用户手势内） */
+async function onDesktopNotifyToggle(e: Event) {
+  const on = (e.target as HTMLInputElement).checked
+  if (on) {
+    const ok = await requestNotifyPermission()
+    if (ok) {
+      desktopNotifyEnabled.value = true
+      persistNotify()
+      toast('已开启桌面通知')
+    } else {
+      desktopNotifyEnabled.value = false
+      persistNotify()
+      toast('通知权限被拒绝，请在浏览器设置中允许后重试')
+    }
+  } else {
+    desktopNotifyEnabled.value = false
+    persistNotify()
+  }
+}
+
+function onDndToggle(e: Event) {
+  dndEnabled.value = (e.target as HTMLInputElement).checked
+  persistNotify()
+}
+
+function onDndTimeChange(field: 'start' | 'end', e: Event) {
+  const v = (e.target as HTMLInputElement).value
+  if (field === 'start') dndStart.value = v
+  else dndEnd.value = v
+  persistNotify()
+}
 </script>
 
 <template>
@@ -260,6 +303,27 @@ async function savePassword() {
         </span>
         <input type="checkbox" :checked="props.notifySoundEnabled" @change="e => emit('update:notifySoundEnabled', (e.target as HTMLInputElement).checked)" />
       </label>
+      <label class="setting-switch">
+        <span>
+          <span class="set-label">桌面通知</span>
+          <span class="setting-desc">页面在后台时，新消息弹系统通知（点击可跳转会话）</span>
+        </span>
+        <input type="checkbox" :checked="desktopNotifyEnabled" @change="onDesktopNotifyToggle" />
+      </label>
+      <label class="setting-switch">
+        <span>
+          <span class="set-label">免打扰时段</span>
+          <span class="setting-desc">时段内不弹通知、不响提示音（未读角标照常累计）</span>
+        </span>
+        <input type="checkbox" :checked="dndEnabled" @change="onDndToggle" />
+      </label>
+      <div class="dnd-row" v-if="dndEnabled">
+        <span class="dnd-label">每天</span>
+        <input type="time" class="dnd-time" :value="dndStart" @change="onDndTimeChange('start', $event)" />
+        <span class="dnd-sep">至</span>
+        <input type="time" class="dnd-time" :value="dndEnd" @change="onDndTimeChange('end', $event)" />
+        <span class="dnd-hint">（支持跨午夜）</span>
+      </div>
       <p class="modal-error" v-if="profileError">{{ profileError }}</p>
       <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
       <button class="btn btn-ghost" @click="emit('close')">关闭</button>
@@ -350,5 +414,39 @@ async function savePassword() {
 .email-code-row .code-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* 免打扰时段 */
+.dnd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.dnd-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.dnd-time {
+  width: 96px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-white);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.dnd-sep {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dnd-hint {
+  font-size: 11.5px;
+  color: var(--text-secondary);
 }
 </style>

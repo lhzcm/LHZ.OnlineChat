@@ -1,0 +1,26 @@
+{
+  "name": "OnlineChat 在线聊天",
+  "short_name": "OnlineChat",
+  "description": "在线聊天系统：好友、群组、实时消息、机器人",
+  "start_url": "/chat",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14171d",
+  "theme_color": "#5b6cff",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
