@@ -4,6 +4,7 @@ import Avatar from '@/components/Avatar.vue'
 import { useFriendStore } from '@/stores/friend'
 import { useChatStore } from '@/stores/chat'
 import { useToast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
 import { blacklistApi } from '@/api/blacklist'
 import { robotApi } from '@/api/robot'
 import type { FriendInfo } from '@/types'
@@ -104,14 +105,10 @@ async function deleteFriendRobot() {
   }
 }
 
-/** 复制机器人调用链接 */
+/** 复制机器人调用链接（Clipboard API + execCommand 降级，兼容 http 站点） */
 async function copyFriendRobotUrl() {
-  try {
-    await navigator.clipboard.writeText(friendRobotUrl.value)
-    toast('调用链接已复制')
-  } catch {
-    toast('复制失败，请手动选择复制')
-  }
+  const ok = await copyText(friendRobotUrl.value)
+  toast(ok ? '调用链接已复制' : '复制失败，请手动选择复制')
 }
 </script>
 

@@ -7,6 +7,7 @@ import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { messageApi } from '@/api/message'
 import { formatMsgTime, pad } from '@/utils/format'
+import { copyText } from '@/utils/clipboard'
 import type { FriendInfo, SessionInfo, ChatType, MessageSearchResult } from '@/types'
 
 const props = defineProps<{
@@ -45,12 +46,8 @@ onUnmounted(() => {
 })
 async function copyAccountId() {
   if (!auth.user) return
-  try {
-    await navigator.clipboard.writeText(String(auth.user.id))
-    copyTip.value = '已复制 ✅'
-  } catch {
-    copyTip.value = 'ID: ' + auth.user.id
-  }
+  const ok = await copyText(String(auth.user.id))
+  copyTip.value = ok ? '已复制 ✅' : `ID: ${auth.user.id}`
   if (copyTipTimer) clearTimeout(copyTipTimer)
   copyTipTimer = window.setTimeout(() => {
     copyTip.value = auth.user ? `ID: ${auth.user.id}` : ''

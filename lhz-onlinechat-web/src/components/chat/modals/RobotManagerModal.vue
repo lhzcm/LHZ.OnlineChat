@@ -6,6 +6,7 @@ import { robotApi } from '@/api/robot'
 import { useFriendStore } from '@/stores/friend'
 import { useChatStore } from '@/stores/chat'
 import { useToast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
 import type { RobotInfo } from '@/types'
 
 const emit = defineEmits<{ close: [] }>()
@@ -106,14 +107,10 @@ function robotPushUrl(token: string): string {
   return `${window.location.origin}/api/robots/${token}/reply`
 }
 
-/** 复制机器人调用链接 */
+/** 复制机器人调用链接（Clipboard API + execCommand 降级，兼容 http 站点） */
 async function copyRobotToken(url: string) {
-  try {
-    await navigator.clipboard.writeText(url)
-    toast('调用链接已复制')
-  } catch {
-    toast('复制失败，请手动选择复制')
-  }
+  const ok = await copyText(url)
+  toast(ok ? '调用链接已复制' : '复制失败，请手动选择复制')
 }
 </script>
 

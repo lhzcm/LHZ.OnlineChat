@@ -7,6 +7,7 @@ import { groupApi } from '@/api/group'
 import { useGroupStore } from '@/stores/group'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
 import type { GroupMemberInfo } from '@/types'
 
 const props = defineProps<{ groupId: number; groupName: string }>()
@@ -22,20 +23,14 @@ const copied = ref(false)
 
 /** 复制群号（机器人第三方推送需要用到群 ID） */
 async function copyGroupId() {
-  try {
-    await navigator.clipboard.writeText(String(props.groupId))
-  } catch {
-    // clipboard API 不可用（非 HTTPS 等）时回退到临时输入框复制
-    const ta = document.createElement('textarea')
-    ta.value = String(props.groupId)
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    ta.remove()
+  const ok = await copyText(String(props.groupId))
+  if (ok) {
+    copied.value = true
+    toast('群号已复制')
+    setTimeout(() => (copied.value = false), 1500)
+  } else {
+    toast('复制失败，请手动选择复制')
   }
-  copied.value = true
-  toast('群号已复制')
-  setTimeout(() => (copied.value = false), 1500)
 }
 
 /** 当前用户是否可管理群组（群主或管理员） */
