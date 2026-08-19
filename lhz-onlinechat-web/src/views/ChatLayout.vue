@@ -522,32 +522,12 @@
         <p class="modal-error" v-if="profileError">{{ profileError }}</p>
         <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
         <button class="btn btn-ghost" @click="showProfileModal = false">关闭</button>
-        <button class="btn btn-ghost" @click="openBlacklistModal">黑名单管理</button>
+        <button class="btn btn-ghost" @click="showBlacklistModal = true">黑名单管理</button>
       </div>
     </div>
 
     <!-- 黑名单管理弹窗 -->
-    <div class="modal-overlay" v-if="showBlacklistModal" @click.self="showBlacklistModal = false">
-      <div class="modal">
-        <h3>黑名单 ({{ blacklist.length }})</h3>
-        <div class="empty" v-if="blacklist.length === 0">
-          <span class="empty-icon">🚫</span>
-          <span>黑名单为空</span>
-        </div>
-        <div v-for="b in blacklist" :key="b.userId" class="request-item">
-          <Avatar :name="b.nickname" :url="b.avatar" size="sm" />
-          <div class="request-info">
-            <span class="request-name">{{ b.nickname }}</span>
-            <span class="request-meta">账号 {{ b.userId }}</span>
-          </div>
-          <button class="btn btn-sm btn-ghost kick-btn" :disabled="unblockingId === b.userId" @click="unblockUser(b.userId)">
-            {{ unblockingId === b.userId ? '解除中…' : '解除拉黑' }}
-          </button>
-        </div>
-        <p class="modal-error" v-if="blacklistError">{{ blacklistError }}</p>
-        <button class="btn btn-ghost" @click="showBlacklistModal = false">关闭</button>
-      </div>
-    </div>
+    <BlacklistModal v-if="showBlacklistModal" @close="showBlacklistModal = false" />
 
     <!-- 机器人管理弹窗 -->
     <div class="modal-overlay" v-if="showRobotModal" @click.self="showRobotModal = false">
@@ -741,7 +721,8 @@ import { blacklistApi } from '@/api/blacklist'
 import { robotApi } from '@/api/robot'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime, pad } from '@/utils/format'
-import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult, BlacklistUser, RobotInfo, RobotTestResult } from '@/types'
+import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
+import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult, RobotInfo, RobotTestResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
 
@@ -1922,34 +1903,7 @@ async function saveFriendTag() {
 
 // ==================== 黑名单 ====================
 const showBlacklistModal = ref(false)
-const blacklist = ref<BlacklistUser[]>([])
-const blacklistError = ref('')
-const unblockingId = ref<number | null>(null)
 const blockingFriend = ref(false)
-
-async function openBlacklistModal() {
-  blacklistError.value = ''
-  const res = await blacklistApi.getList()
-  if (res.success && res.data) {
-    blacklist.value = res.data
-  }
-  showBlacklistModal.value = true
-}
-
-async function unblockUser(userId: number) {
-  unblockingId.value = userId
-  blacklistError.value = ''
-  try {
-    const res = await blacklistApi.unblock(userId)
-    if (res.success) {
-      blacklist.value = blacklist.value.filter(b => b.userId !== userId)
-    } else {
-      blacklistError.value = res.message
-    }
-  } finally {
-    unblockingId.value = null
-  }
-}
 
 /** 拉黑好友（自动解除好友关系） */
 async function blockFriend() {
@@ -2560,10 +2514,6 @@ watch(activeTab, () => {
 .robot-test-result.fail {
   color: var(--danger);
 }
-.modal-wide {
-  width: 460px;
-  max-width: calc(100vw - 40px);
-}
 
 /* 轻提示 Toast */
 .app-toast {
@@ -2644,11 +2594,6 @@ html[data-theme='dark'] .app-toast {
   width: 100%;
   resize: vertical;
   font-family: inherit;
-}
-.modal-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
 }
 
 /* 消息搜索 */
@@ -3071,22 +3016,6 @@ html[data-theme='dark'] .app-toast {
   border-color: var(--primary);
   color: var(--primary);
   font-weight: 500;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 48px 20px;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 40px;
-  opacity: 0.55;
 }
 
 /* ==================== 聊天区域 ==================== */
@@ -3653,141 +3582,6 @@ html[data-theme='dark'] .app-toast {
   background: var(--bg-white);
 }
 
-/* ==================== 弹窗 ==================== */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 18, 26, 0.45);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  animation: fade-in 0.2s;
-}
-
-.modal {
-  background: var(--bg-white);
-  padding: 24px;
-  border-radius: 16px;
-  width: 420px;
-  max-width: calc(100vw - 40px);
-  max-height: 72vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  box-shadow: var(--shadow);
-  animation: modal-in 0.25s;
-}
-
-.modal h3 { font-size: 18px; }
-
-.modal-error { color: var(--danger); font-size: 13px; }
-.modal-success { color: var(--success); font-size: 13px; }
-
-/* 好友申请列表 */
-.request-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.request-item:last-of-type {
-  border-bottom: none;
-}
-
-.request-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.request-name {
-  font-weight: 600;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.request-meta {
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.request-meta .status-dot {
-  position: static;
-  width: 8px;
-  height: 8px;
-  border: none;
-}
-
-.role-tag {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 1px 7px;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.role-tag.role-0 {
-  background: var(--active-bg);
-  color: var(--primary);
-}
-
-.role-tag.role-1 {
-  background: #f0fdf4;
-  color: #16a34a;
-}
-
-/* 群成员管理 */
-.invite-bar {
-  padding: 2px 0 4px;
-}
-
-.invite-bar .btn {
-  width: 100%;
-}
-
-.kick-btn {
-  color: var(--danger);
-  flex-shrink: 0;
-}
-
-.kick-btn:hover {
-  background: rgba(245, 108, 108, 0.1);
-  color: var(--danger);
-}
-
-.friend-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.friend-check:hover {
-  background: var(--bg-hover);
-}
-
-.friend-check input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--primary);
-  flex-shrink: 0;
-}
-
 /* 个人资料弹窗 */
 .profile-avatar {
   display: flex;
@@ -3880,16 +3674,6 @@ html[data-theme='dark'] .app-toast {
 .email-code-row .code-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.request-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.request-actions .btn {
-  padding: 6px 14px;
-  font-size: 12px;
 }
 
 /* ==================== 头像 ==================== */
