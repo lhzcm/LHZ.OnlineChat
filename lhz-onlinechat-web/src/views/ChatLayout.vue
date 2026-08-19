@@ -1736,19 +1736,6 @@ html[data-theme='dark'] .app-toast {
   color: var(--primary);
 }
 
-.status-dot {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid var(--bg-white);
-}
-
-.status-dot.online { background: var(--online); }
-.status-dot.offline { background: var(--offline); }
-
 .contact-info {
   flex: 1;
   min-width: 0;
@@ -1763,14 +1750,6 @@ html[data-theme='dark'] .app-toast {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}
-
-.contact-name {
-  font-weight: 600;
-  font-size: 15px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .contact-meta {
@@ -1845,40 +1824,11 @@ html[data-theme='dark'] .app-toast {
   color: var(--text);
 }
 
-.cat-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 /* 会话项图标 */
 .pin-icon,
 .mute-icon {
   font-size: 11px;
   margin-right: 2px;
-}
-
-.chip {
-  padding: 5px 14px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--bg-white);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.chip:hover {
-  border-color: var(--primary-light);
-  color: var(--primary);
-}
-
-.chip.active {
-  background: var(--active-bg);
-  border-color: var(--primary);
-  color: var(--primary);
-  font-weight: 500;
 }
 
 /* ==================== 聊天区域 ==================== */
