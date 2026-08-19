@@ -105,4 +105,8 @@ public static class WsMessageType
     public const string GroupInvited = "group_invited";
     public const string MessageRecalled = "message_recalled";
     public const string Blocked = "blocked";
+    /// <summary>
+    /// 服务端 → 客户端：该登录会话已被踢下线（随后连接被关闭）
+    /// </summary>
+    public const string Kicked = "kicked";
 }

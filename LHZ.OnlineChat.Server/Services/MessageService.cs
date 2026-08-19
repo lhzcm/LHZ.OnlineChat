@@ -181,10 +181,12 @@ public class MessageService
     }
 
     /// <summary>
-    /// 全局搜索消息（私聊 + 群聊，分页，按时间倒序）
+    /// 全局搜索消息（私聊 + 群聊，分页，按时间倒序）。
+    /// scopeType/scopeId 可选：限定在单个会话内搜索（private=好友ID / group=群ID），需校验访问权限。
     /// </summary>
     public async Task<ApiResponse<PagedResult<MessageSearchResultDto>>> SearchMessagesAsync(
-        int userId, string keyword, int page = 1, int pageSize = 30)
+        int userId, string keyword, int page = 1, int pageSize = 30,
+        string? scopeType = null, long? scopeId = null)
     {
         keyword = (keyword ?? string.Empty).Trim();
         if (keyword.Length == 0)
@@ -194,7 +196,111 @@ public class MessageService
 
         var take = page * pageSize;
 
-        // 私聊：我参与的所有会话
+        // ===== 会话内搜索：校验访问权限后只查该会话 =====
+        if (scopeType == "private")
+        {
+            var peerId = scopeId ?? 0;
+            if (peerId <= 0)
+                return ApiResponse<PagedResult<MessageSearchResultDto>>.Fail("无效的会话");
+            var isFriend = await _fsql.Select<Friend>()
+                .Where(f =>
+                    ((f.UserId == userId && f.FriendId == peerId) ||
+                     (f.UserId == peerId && f.FriendId == userId)) &&
+                    f.Status == 1)
+                .AnyAsync();
+            if (!isFriend)
+                return ApiResponse<PagedResult<MessageSearchResultDto>>.Fail("不是好友关系");
+
+            var msgs = await _fsql.Select<PrivateMessage>()
+                .Where(m =>
+                    ((m.SenderId == userId && m.ReceiverId == peerId) ||
+                     (m.SenderId == peerId && m.ReceiverId == userId)) &&
+                    !m.IsDeleted && m.Content.Contains(keyword))
+                .OrderByDescending(m => m.SentAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+            var total = (int)await _fsql.Select<PrivateMessage>()
+                .Where(m =>
+                    ((m.SenderId == userId && m.ReceiverId == peerId) ||
+                     (m.SenderId == peerId && m.ReceiverId == userId)) &&
+                    !m.IsDeleted && m.Content.Contains(keyword))
+                .CountAsync();
+
+            var peer = await _fsql.Select<User>().Where(u => u.Id == peerId).FirstAsync();
+            var scopeItems = msgs.Select(m => new MessageSearchResultDto
+            {
+                Type = "private",
+                SessionId = peerId,
+                SessionName = peer?.Nickname ?? $"用户{peerId}",
+                SenderName = m.SenderId == userId ? "我" : (peer?.Nickname ?? "未知"),
+                SenderAvatar = m.SenderId == userId ? null : peer?.Avatar,
+                Content = m.Content,
+                MessageType = m.MessageType,
+                MessageId = m.ClientMessageId,
+                SentAt = AsUtc(m.SentAt)
+            }).ToList();
+
+            return ApiResponse<PagedResult<MessageSearchResultDto>>.Ok(new PagedResult<MessageSearchResultDto>
+            {
+                Items = scopeItems,
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            });
+        }
+
+        if (scopeType == "group")
+        {
+            var groupId = scopeId ?? 0;
+            if (groupId <= 0)
+                return ApiResponse<PagedResult<MessageSearchResultDto>>.Fail("无效的会话");
+            var isMember = await _fsql.Select<GroupMember>()
+                .Where(m => m.GroupId == groupId && m.UserId == userId)
+                .AnyAsync();
+            if (!isMember)
+                return ApiResponse<PagedResult<MessageSearchResultDto>>.Fail("你不是该群成员");
+
+            var msgs = await _fsql.Select<GroupMessage>()
+                .Where(m => m.GroupId == groupId && !m.IsDeleted && m.Content.Contains(keyword))
+                .OrderByDescending(m => m.SentAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+            var total = (int)await _fsql.Select<GroupMessage>()
+                .Where(m => m.GroupId == groupId && !m.IsDeleted && m.Content.Contains(keyword))
+                .CountAsync();
+
+            var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+            var scopeSenderIds = msgs.Select(m => m.SenderId).Distinct().ToList();
+            var scopeUsers = scopeSenderIds.Count > 0
+                ? await _fsql.Select<User>().Where(u => scopeSenderIds.Contains(u.Id)).ToListAsync()
+                : new List<User>();
+            var scopeUserDict = scopeUsers.ToDictionary(u => u.Id);
+
+            var scopeItems = msgs.Select(m => new MessageSearchResultDto
+            {
+                Type = "group",
+                SessionId = groupId,
+                SessionName = group?.Name ?? $"群{groupId}",
+                SenderName = m.SenderId == userId ? "我" : (scopeUserDict.TryGetValue(m.SenderId, out var su) ? su.Nickname : "未知"),
+                SenderAvatar = scopeUserDict.TryGetValue(m.SenderId, out var sa) ? sa.Avatar : null,
+                Content = m.Content,
+                MessageType = m.MessageType,
+                MessageId = m.ClientMessageId,
+                SentAt = AsUtc(m.SentAt)
+            }).ToList();
+
+            return ApiResponse<PagedResult<MessageSearchResultDto>>.Ok(new PagedResult<MessageSearchResultDto>
+            {
+                Items = scopeItems,
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            });
+        }
+
+        // ===== 全局搜索（默认） =====
         var privateMsgs = await _fsql.Select<PrivateMessage>()
             .Where(m => (m.SenderId == userId || m.ReceiverId == userId) && !m.IsDeleted && m.Content.Contains(keyword))
             .OrderByDescending(m => m.SentAt)

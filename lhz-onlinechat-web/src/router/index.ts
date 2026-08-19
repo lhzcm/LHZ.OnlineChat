@@ -16,6 +16,12 @@ const router = createRouter({
       meta: { guest: true }
     },
     {
+      path: '/forgot-password',
+      name: 'ForgotPassword',
+      component: () => import('@/views/ForgotPassword.vue'),
+      meta: { guest: true }
+    },
+    {
       path: '/chat',
       name: 'Chat',
       component: () => import('@/views/ChatLayout.vue'),

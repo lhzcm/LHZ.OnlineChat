@@ -30,10 +30,14 @@
     <!-- 个人资料弹窗 -->
     <ProfileModal v-if="showProfileModal" :notify-sound-enabled="notifySoundEnabled"
       @close="showProfileModal = false" @open-blacklist="showBlacklistModal = true"
+      @open-sessions="showSessionsModal = true"
       @update:notify-sound-enabled="onNotifySoundChange" />
 
     <!-- 黑名单管理弹窗 -->
     <BlacklistModal v-if="showBlacklistModal" @close="showBlacklistModal = false" />
+
+    <!-- 登录设备管理弹窗（多端登录） -->
+    <SessionsModal v-if="showSessionsModal" @close="showSessionsModal = false" />
 
     <!-- 机器人管理/测试弹窗 -->
     <RobotManagerModal v-if="showRobotModal" @close="showRobotModal = false" />
@@ -75,6 +79,7 @@ import SessionSettingModal from '@/components/chat/modals/SessionSettingModal.vu
 import MembersModal from '@/components/chat/modals/MembersModal.vue'
 import AnnouncementModal from '@/components/chat/modals/AnnouncementModal.vue'
 import FriendSettingModal from '@/components/chat/modals/FriendSettingModal.vue'
+import SessionsModal from '@/components/chat/modals/SessionsModal.vue'
 import ChatSidebar from '@/components/chat/ChatSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
 import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
@@ -256,6 +261,14 @@ function backToList() {
 }
 
 function handleWsMessage(msg: WsMessage) {
+  // 会话被踢下线（其他设备踢出本设备/修改密码/重置密码）：清理登录态并回登录页
+  if (msg.type === 'kicked') {
+    toast('该设备已被踢下线，请重新登录')
+    ws.disconnect()
+    auth.logout()
+    router.push('/login')
+    return
+  }
   // 新好友申请：刷新申请列表
   if (msg.type === 'friend_request') {
     friendStore.fetchPendingRequests()
@@ -303,8 +316,7 @@ function handleWsMessage(msg: WsMessage) {
   }
 
   // 被拉黑：发送被拒或对方拉黑通知
-  if (msg.type === 'blocked') {
-    const me = auth.user?.id
+  if (msg.type === 'blocked') {    const me = auth.user?.id
     const peer = Number(msg.from)
     // 对方把我拉黑了（好友关系已被解除）：刷新好友/会话列表
     friendStore.fetchFriends()
@@ -388,6 +400,9 @@ function onFriendTagSaved() {
 
 // ==================== 黑名单 ====================
 const showBlacklistModal = ref(false)
+
+// ==================== 登录设备管理（多端登录） ====================
+const showSessionsModal = ref(false)
 
 // ==================== 机器人 ====================
 const showRobotModal = ref(false)

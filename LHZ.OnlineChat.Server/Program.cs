@@ -42,6 +42,9 @@ fsql.CodeFirst.SyncStructure(
 // 账号 ID 迁移：用户 ID 列改为 int，序列起始值 ≥ 10000（账号从 10000 开始自增）
 EnsureAccountIdSchema(fsql);
 
+// 搜索索引：pg_trgm（trigram）GIN 索引，加速消息内容 LIKE '%keyword%' 模糊搜索（中文同样生效）
+EnsureSearchIndexes(fsql);
+
 builder.Services.AddSingleton(fsql);
 
 // ==================== Redis ====================
@@ -80,6 +83,22 @@ builder.Services.AddAuthentication(options =>
             if (!string.IsNullOrEmpty(accessToken))
             {
                 context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        },
+        // 会话有效性校验：JWT 携带的 sid（登录会话 ID）必须仍存在于 Redis，
+        // 被踢下线 / 修改密码 / 忘记密码后，会话被删除 → 所有 API 立即 401
+        OnTokenValidated = context =>
+        {
+            var sid = context.Principal?.FindFirst("sid")?.Value;
+            if (!string.IsNullOrEmpty(sid))
+            {
+                var sessionValid = redisService.Database.KeyExists($"token:refresh:{sid}");
+                if (!sessionValid)
+                {
+                    context.Fail("会话已失效，请重新登录");
+                    return Task.CompletedTask;
+                }
             }
             return Task.CompletedTask;
         }
@@ -199,6 +218,19 @@ app.UseWebSocket(context =>
         return;
     }
 
+    // 会话标识（JWT sid）：多端登录下按会话管理连接；被踢的会话重连会被拒绝
+    var sessionId = httpContext.User.FindFirst("sid")?.Value ?? $"legacy-{Guid.NewGuid():N}";
+    if (!sessionId.StartsWith("legacy-", StringComparison.Ordinal))
+    {
+        var sessionValid = redisService.Database.KeyExists($"token:refresh:{sessionId}");
+        if (!sessionValid)
+        {
+            Console.WriteLine($"[WS] 连接被拒绝：会话 {sessionId[..Math.Min(8, sessionId.Length)]} 已失效（可能被踢下线）");
+            context.Dispose();
+            return;
+        }
+    }
+
     // 完成 WebSocket 握手
     var client = context.HttpUpgrade();
     if (client == null)
@@ -231,10 +263,13 @@ app.UseWebSocket(context =>
         {
             try
             {
-                // 仅当该连接仍登记在册时清理并广播下线，避免重复触发
-                if (await connectionManager.RemoveConnectionAsync(userId, sender))
+                // 仅当该连接仍登记在册时清理；用户已无任何在线连接才广播下线
+                if (await connectionManager.RemoveConnectionAsync(userId, sessionId, sender))
                 {
-                    await messageHandler.NotifyFriendsStatusAsync(userId, online: false);
+                    if (!connectionManager.IsOnline(userId))
+                    {
+                        await messageHandler.NotifyFriendsStatusAsync(userId, online: false);
+                    }
                 }
             }
             catch (Exception ex)
@@ -244,16 +279,8 @@ app.UseWebSocket(context =>
         });
     };
 
-    // 先登记新连接（覆盖旧映射），再关闭旧连接：
-    // 旧连接的关闭回调因身份不匹配而不会触发清理/离线广播，避免上下线抖动
-    _ = connectionManager.AddConnectionAsync(userId, client);
-
-    var oldClient = connectionManager.GetConnection(userId);
-    if (oldClient != null && oldClient != client && oldClient.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
-    {
-        Console.WriteLine($"[WS] 用户 {userId} 重复登录，关闭旧连接");
-        oldClient.Close();
-    }
+    // 登记新连接（多端共存，不再互踢）
+    _ = connectionManager.AddConnectionAsync(userId, sessionId, client);
 
     // 广播上线状态给在线好友
     _ = messageHandler.NotifyFriendsStatusAsync(userId, online: true);
@@ -261,7 +288,7 @@ app.UseWebSocket(context =>
     // 补发群离线消息（已读游标之后）
     _ = messageHandler.SendGroupOfflineMessagesAsync(userId);
 
-    Console.WriteLine($"[WS] 用户 {userId} WebSocket 握手完成");
+    Console.WriteLine($"[WS] 用户 {userId} WebSocket 握手完成（会话 {sessionId[..Math.Min(8, sessionId.Length)]}）");
 });
 
 app.MapControllers();
@@ -330,4 +357,25 @@ static void EnsureAccountIdSchema(IFreeSql fsql)
         """;
     fsql.Ado.ExecuteNonQuery(sql);
     Console.WriteLine("✅ 账号 ID 迁移完成（int 类型，起始 10000 自增）");
+}
+
+// ==================== 消息搜索索引（pg_trgm，幂等）====================
+// pg_trgm 扩展提供 trigram GIN 索引，使 LIKE '%keyword%' 模糊查询（含中文）走索引，
+// 显著提升消息搜索在大数据量下的性能。官方 postgres 镜像自带 pg_trgm，CREATE EXTENSION 需超级用户（compose 默认即超级用户）。
+static void EnsureSearchIndexes(IFreeSql fsql)
+{
+    try
+    {
+        fsql.Ado.ExecuteNonQuery("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
+        fsql.Ado.ExecuteNonQuery(
+            """CREATE INDEX IF NOT EXISTS "idx_privmsg_content_trgm" ON "PrivateMessage" USING gin ("Content" gin_trgm_ops);""");
+        fsql.Ado.ExecuteNonQuery(
+            """CREATE INDEX IF NOT EXISTS "idx_grpmsg_content_trgm" ON "GroupMessage" USING gin ("Content" gin_trgm_ops);""");
+        Console.WriteLine("✅ pg_trgm 搜索索引就绪（PrivateMessage / GroupMessage.Content）");
+    }
+    catch (Exception ex)
+    {
+        // 扩展创建失败（如权限不足）不阻塞启动，搜索退化为全表扫描
+        Console.WriteLine($"[WARN] pg_trgm 索引创建失败（搜索将退化为全表扫描）: {ex.Message}");
+    }
 }

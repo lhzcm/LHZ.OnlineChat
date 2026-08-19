@@ -25,18 +25,22 @@ public class AuthService
     private readonly AppSettings _appSettings;
     private readonly EmailService _emailService;
     private readonly IWebHostEnvironment _env;
+    private readonly WsConnectionManager _wsConnectionManager;
 
-    public AuthService(IFreeSql fsql, RedisService redis, AppSettings appSettings, EmailService emailService, IWebHostEnvironment env)
+    public AuthService(IFreeSql fsql, RedisService redis, AppSettings appSettings, EmailService emailService,
+        IWebHostEnvironment env, WsConnectionManager wsConnectionManager)
     {
         _fsql = fsql;
         _redis = redis;
         _appSettings = appSettings;
         _emailService = emailService;
         _env = env;
+        _wsConnectionManager = wsConnectionManager;
     }
 
     /// <summary>
     /// 发送邮箱验证码（6 位数字，5 分钟有效，60 秒冷却）
+    /// purpose: register（注册，默认）/ forgot（忘记密码，要求邮箱已注册）
     /// </summary>
     public async Task<ApiResponse<SendCodeResponse>> SendCodeAsync(SendCodeRequest request)
     {
@@ -44,6 +48,14 @@ public class AuthService
             return ApiResponse<SendCodeResponse>.Fail("邮箱格式不正确");
 
         var email = request.Email.Trim().ToLowerInvariant();
+
+        // 忘记密码：邮箱必须已注册（避免向任意邮箱发码）
+        if (request.Purpose == "forgot")
+        {
+            var exists = await _fsql.Select<User>().Where(u => u.Email == email).AnyAsync();
+            if (!exists)
+                return ApiResponse<SendCodeResponse>.Fail("该邮箱未注册");
+        }
 
         // 冷却：已有未过期的验证码则拒绝重复发送
         var key = GetEmailCodeKey(email);
@@ -113,9 +125,9 @@ public class AuthService
     }
 
     /// <summary>
-    /// 用户登录（账号 ID 或邮箱 + 密码）
+    /// 用户登录（账号 ID 或邮箱 + 密码），ip 由 Controller 从请求来源解析
     /// </summary>
-    public async Task<ApiResponse<LoginResponse>> LoginAsync(LoginRequest request)
+    public async Task<ApiResponse<LoginResponse>> LoginAsync(LoginRequest request, string ip)
     {
         var account = request.Account?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(request.Password))
@@ -143,12 +155,15 @@ public class AuthService
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 
-        // 生成 Token
-        var token = GenerateJwtToken(user);
-        var refreshToken = GenerateRefreshToken();
+        // 创建登录会话（多端登录：每台设备一个独立会话，可单独管理/踢下线）
+        var sessionId = Guid.NewGuid().ToString("N");
+        var deviceName = string.IsNullOrWhiteSpace(request.DeviceName) ? "未知设备" : request.DeviceName.Trim();
+        await CreateSessionAsync(user.Id, sessionId, deviceName, ip);
 
-        // 存储 RefreshToken 到 Redis（7天过期），并建立 token→userId 反查索引
-        await StoreRefreshTokenAsync(user.Id, refreshToken);
+        // 生成 Token（携带 sid 会话标识，用于踢下线与 WS 会话关联）
+        var token = GenerateJwtToken(user, sessionId);
+        var refreshToken = GenerateRefreshToken();
+        await StoreRefreshTokenAsync(user.Id, sessionId, refreshToken);
 
         return ApiResponse<LoginResponse>.Ok(new LoginResponse
         {
@@ -165,21 +180,21 @@ public class AuthService
     }
 
     /// <summary>
-    /// 刷新 Token
+    /// 刷新 Token（保持会话不变，轮换 RefreshToken）
     /// </summary>
     public async Task<ApiResponse<LoginResponse>> RefreshTokenAsync(RefreshTokenRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
             return ApiResponse<LoginResponse>.Fail("RefreshToken 不能为空");
 
-        // O(1) 反查：根据 token 哈希找到 userId
+        // O(1) 反查：根据 token 哈希找到 userId:sessionId
         var lookupKey = GetRefreshLookupKey(request.RefreshToken);
-        var userIdStr = await _redis.GetStringAsync(lookupKey);
-        if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out var userId))
+        var lookupValue = await _redis.GetStringAsync(lookupKey);
+        if (string.IsNullOrEmpty(lookupValue) || !TryParseSessionLookup(lookupValue, out var userId, out var sessionId))
             return ApiResponse<LoginResponse>.Fail("RefreshToken 无效或已过期");
 
-        // 二次校验：确保该 token 仍是该用户当前有效的刷新令牌
-        var storedToken = await _redis.GetStringAsync($"token:refresh:{userId}");
+        // 二次校验：确保该 token 仍是该会话当前有效的刷新令牌
+        var storedToken = await _redis.GetStringAsync($"token:refresh:{sessionId}");
         if (storedToken != request.RefreshToken)
             return ApiResponse<LoginResponse>.Fail("RefreshToken 无效或已过期");
 
@@ -187,12 +202,13 @@ public class AuthService
         if (user == null)
             return ApiResponse<LoginResponse>.Fail("用户不存在");
 
-        // 生成新 Token，轮换 RefreshToken（删除旧反查索引）
-        var token = GenerateJwtToken(user);
+        // 生成新 Token，轮换 RefreshToken（会话 ID 不变，多端互不影响）
+        var token = GenerateJwtToken(user, sessionId);
         var refreshToken = GenerateRefreshToken();
 
         await _redis.DeleteKeyAsync(lookupKey);
-        await StoreRefreshTokenAsync(user.Id, refreshToken);
+        await StoreRefreshTokenAsync(user.Id, sessionId, refreshToken);
+        await TouchSessionAsync(sessionId);
 
         return ApiResponse<LoginResponse>.Ok(new LoginResponse
         {
@@ -208,13 +224,156 @@ public class AuthService
         });
     }
 
+    // ==================== 多端会话管理 ====================
+
     /// <summary>
-    /// 存储 RefreshToken（用户维度 + token 哈希反查索引）
+    /// 创建登录会话：记录设备元数据 + 登记到用户会话集合（Redis，7 天）
     /// </summary>
-    private async Task StoreRefreshTokenAsync(int userId, string refreshToken)
+    private async Task CreateSessionAsync(int userId, string sessionId, string deviceName, string ip)
     {
-        await _redis.SetStringAsync($"token:refresh:{userId}", refreshToken, TimeSpan.FromDays(7));
-        await _redis.SetStringAsync(GetRefreshLookupKey(refreshToken), userId.ToString(), TimeSpan.FromDays(7));
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await _redis.SetJsonAsync(GetSessionMetaKey(sessionId), new
+        {
+            DeviceName = deviceName,
+            Ip = ip,
+            CreatedAt = now,
+            LastActiveAt = now
+        }, TimeSpan.FromDays(7));
+
+        await _redis.SetAddAsync(GetUserSessionsKey(userId), sessionId);
+    }
+
+    /// <summary>
+    /// 更新会话最后活跃时间（刷新 Token 时调用）
+    /// </summary>
+    private async Task TouchSessionAsync(string sessionId)
+    {
+        var meta = await _redis.GetJsonAsync<SessionMeta>(GetSessionMetaKey(sessionId));
+        if (meta == null) return;
+        meta.LastActiveAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await _redis.SetJsonAsync(GetSessionMetaKey(sessionId), meta, TimeSpan.FromDays(7));
+    }
+
+    /// <summary>
+    /// 获取当前用户的所有登录会话
+    /// </summary>
+    public async Task<ApiResponse<List<SessionInfoDto>>> GetSessionsAsync(int userId, string currentSessionId)
+    {
+        var sessionIds = await _redis.SetMembersAsync(GetUserSessionsKey(userId));
+        var result = new List<SessionInfoDto>();
+
+        foreach (var sid in sessionIds)
+        {
+            var meta = await _redis.GetJsonAsync<SessionMeta>(GetSessionMetaKey(sid));
+            if (meta == null) continue; // 元数据过期，忽略
+            result.Add(new SessionInfoDto
+            {
+                SessionId = sid,
+                DeviceName = meta.DeviceName,
+                Ip = meta.Ip,
+                CreatedAt = meta.CreatedAt,
+                LastActiveAt = meta.LastActiveAt,
+                IsCurrent = sid == currentSessionId
+            });
+        }
+
+        // 最后活跃时间倒序
+        result = result.OrderByDescending(s => s.LastActiveAt).ToList();
+        return ApiResponse<List<SessionInfoDto>>.Ok(result);
+    }
+
+    /// <summary>
+    /// 踢下线指定会话（当前用户自己的其他设备）：删除令牌 + 关闭该会话的 WebSocket 连接
+    /// </summary>
+    public async Task<ApiResponse> KickSessionAsync(int userId, string sessionId)
+    {
+        var isMember = await _redis.SetContainsAsync(GetUserSessionsKey(userId), sessionId);
+        if (!isMember)
+            return ApiResponse.Fail("会话不存在");
+
+        await RemoveSessionAsync(userId, sessionId);
+        return ApiResponse.Ok("该设备已下线");
+    }
+
+    /// <summary>
+    /// 退出当前用户的其他所有会话（保留当前设备）
+    /// </summary>
+    public async Task<ApiResponse> LogoutOtherSessionsAsync(int userId, string currentSessionId)
+    {
+        var sessionIds = await _redis.SetMembersAsync(GetUserSessionsKey(userId));
+        var kicked = 0;
+        foreach (var sid in sessionIds)
+        {
+            if (sid == currentSessionId) continue;
+            await RemoveSessionAsync(userId, sid);
+            kicked++;
+        }
+        return ApiResponse.Ok(kicked > 0 ? $"已退出 {kicked} 台设备" : "没有其他在线设备");
+    }
+
+    /// <summary>
+    /// 使该账号所有会话失效（修改密码 / 忘记密码重置后调用），并关闭所有 WS 连接
+    /// </summary>
+    public async Task LogoutAllSessionsAsync(int userId)
+    {
+        var sessionIds = await _redis.SetMembersAsync(GetUserSessionsKey(userId));
+        foreach (var sid in sessionIds)
+        {
+            await RemoveSessionAsync(userId, sid);
+        }
+    }
+
+    /// <summary>
+    /// 删除单个会话：刷新令牌、反查索引、元数据、会话集合，并通知 WS 断开（踢下线）
+    /// </summary>
+    private async Task RemoveSessionAsync(int userId, string sessionId)
+    {
+        // 刷新令牌与反查索引
+        var refreshToken = await _redis.GetStringAsync($"token:refresh:{sessionId}");
+        if (!string.IsNullOrEmpty(refreshToken))
+            await _redis.DeleteKeyAsync(GetRefreshLookupKey(refreshToken));
+        await _redis.DeleteKeyAsync($"token:refresh:{sessionId}");
+
+        // 元数据与会话集合
+        await _redis.DeleteKeyAsync(GetSessionMetaKey(sessionId));
+        await _redis.SetRemoveAsync(GetUserSessionsKey(userId), sessionId);
+
+        // 关闭该会话的 WebSocket 连接（通知 + 断开）
+        _wsConnectionManager.CloseSession(sessionId);
+    }
+
+    /// <summary>
+    /// 存储 RefreshToken（会话维度，7 天过期）+ token 哈希反查索引（userId:sessionId）
+    /// </summary>
+    private async Task StoreRefreshTokenAsync(int userId, string sessionId, string refreshToken)
+    {
+        await _redis.SetStringAsync($"token:refresh:{sessionId}", refreshToken, TimeSpan.FromDays(7));
+        await _redis.SetStringAsync(GetRefreshLookupKey(refreshToken), $"{userId}:{sessionId}", TimeSpan.FromDays(7));
+    }
+
+    private static bool TryParseSessionLookup(string value, out int userId, out string sessionId)
+    {
+        userId = 0;
+        sessionId = string.Empty;
+        var idx = value.IndexOf(':');
+        if (idx <= 0 || idx == value.Length - 1) return false;
+        if (!int.TryParse(value[..idx], out userId)) return false;
+        sessionId = value[(idx + 1)..];
+        return sessionId.Length > 0;
+    }
+
+    private static string GetSessionMetaKey(string sessionId) => $"sess:meta:{sessionId}";
+    private static string GetUserSessionsKey(int userId) => $"sess:{userId}";
+
+    /// <summary>
+    /// 会话元数据（Redis JSON）
+    /// </summary>
+    private class SessionMeta
+    {
+        public string DeviceName { get; set; } = string.Empty;
+        public string Ip { get; set; } = string.Empty;
+        public long CreatedAt { get; set; }
+        public long LastActiveAt { get; set; }
     }
 
     /// <summary>
@@ -232,9 +391,9 @@ public class AuthService
     private static string GetEmailCodeKey(string email) => $"email:code:{email}";
 
     /// <summary>
-    /// 生成 JWT Token
+    /// 生成 JWT Token（携带 sid 会话标识：踢下线时按会话精确失效，WS 连接与会话关联）
     /// </summary>
-    private string GenerateJwtToken(User user)
+    private string GenerateJwtToken(User user, string sessionId)
     {
         var secretBytes = Encoding.UTF8.GetBytes(_appSettings.Jwt.Secret);
         var key = new SymmetricSecurityKey(secretBytes);
@@ -244,7 +403,8 @@ public class AuthService
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Name, user.Nickname),
-            new Claim("nickname", user.Nickname)
+            new Claim("nickname", user.Nickname),
+            new Claim("sid", sessionId)
         };
 
         var tokenDescriptor = new JwtSecurityToken(
@@ -270,7 +430,7 @@ public class AuthService
     }
 
     /// <summary>
-    /// 修改密码（验证原密码，改后使 RefreshToken 失效）
+    /// 修改密码（验证原密码，改后所有登录会话失效并强制下线）
     /// </summary>
     public async Task<ApiResponse> ChangePasswordAsync(int userId, ChangePasswordRequest request)
     {
@@ -289,10 +449,46 @@ public class AuthService
             .Where(u => u.Id == userId)
             .ExecuteAffrowsAsync();
 
-        // 使该用户已下发的 RefreshToken 失效（JWT 本身到期自然失效）
-        await _redis.DeleteKeyAsync($"token:refresh:{userId}");
+        // 所有登录会话失效（JWT 本身到期自然失效，会话令牌立即删除）
+        await LogoutAllSessionsAsync(userId);
 
-        return ApiResponse.Ok("密码修改成功，请重新登录");
+        return ApiResponse.Ok("密码修改成功，其他设备已下线，请重新登录");
+    }
+
+    /// <summary>
+    /// 忘记密码（邮箱验证码重置密码，成功后该账号所有登录会话失效）
+    /// </summary>
+    public async Task<ApiResponse> ForgotPasswordAsync(ForgotPasswordRequest request)
+    {
+        var email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(email) || !EmailRegex.IsMatch(email))
+            return ApiResponse.Fail("邮箱格式不正确");
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+            return ApiResponse.Fail("新密码长度不能少于 6 个字符");
+
+        var user = await _fsql.Select<User>().Where(u => u.Email == email).FirstAsync();
+        if (user == null)
+            return ApiResponse.Fail("该邮箱未注册");
+
+        // 验证码校验
+        var codeKey = GetEmailCodeKey(email);
+        var storedCode = await _redis.GetStringAsync(codeKey);
+        if (string.IsNullOrEmpty(storedCode) || storedCode != request.Code)
+            return ApiResponse.Fail("验证码错误或已过期");
+
+        // 重置密码
+        await _fsql.Update<User>()
+            .Set(u => u.PasswordHash, BCrypt.Net.BCrypt.HashPassword(request.NewPassword))
+            .Where(u => u.Id == user.Id)
+            .ExecuteAffrowsAsync();
+
+        // 验证码一次性使用
+        await _redis.DeleteKeyAsync(codeKey);
+
+        // 所有登录会话失效（防止旧设备继续使用）
+        await LogoutAllSessionsAsync(user.Id);
+
+        return ApiResponse.Ok("密码重置成功，请使用新密码登录");
     }
 
     /// <summary>

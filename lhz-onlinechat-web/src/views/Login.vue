@@ -14,6 +14,8 @@
       </form>
       <p class="link">
         还没有账号？<router-link to="/register">立即注册</router-link>
+        <span class="link-sep">·</span>
+        <router-link to="/forgot-password">忘记密码？</router-link>
       </p>
     </div>
   </div>
@@ -177,6 +179,11 @@ async function handleLogin() {
   color: var(--primary);
   text-decoration: none;
   font-weight: 500;
+}
+
+.link-sep {
+  margin: 0 6px;
+  color: var(--border);
 }
 
 /* 深色模式适配 */

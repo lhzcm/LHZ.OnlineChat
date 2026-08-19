@@ -62,13 +62,14 @@ public class MessagesController : ControllerBase
     }
 
     /// <summary>
-    /// 全局搜索消息（私聊 + 群聊）
+    /// 搜索消息（私聊 + 群聊；scopeType/scopeId 可选，限定在单个会话内搜索）
     /// </summary>
     [HttpGet("search")]
     public async Task<IActionResult> SearchMessages(
-        [FromQuery] string keyword, [FromQuery] int page = 1, [FromQuery] int pageSize = 30)
+        [FromQuery] string keyword, [FromQuery] int page = 1, [FromQuery] int pageSize = 30,
+        [FromQuery] string? scopeType = null, [FromQuery] long? scopeId = null)
     {
-        var result = await _messageService.SearchMessagesAsync(GetCurrentUserId(), keyword, page, pageSize);
+        var result = await _messageService.SearchMessagesAsync(GetCurrentUserId(), keyword, page, pageSize, scopeType, scopeId);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 

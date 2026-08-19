@@ -1,5 +1,5 @@
 import request from './request'
-import type { ApiResponse, LoginRequest, RegisterRequest, RegisterResponse, SendCodeRequest, SendCodeResponse, LoginResponse, UserInfo } from '@/types'
+import type { ApiResponse, LoginRequest, RegisterRequest, RegisterResponse, SendCodeRequest, SendCodeResponse, LoginResponse, UserInfo, ForgotPasswordRequest, SessionInfoDto } from '@/types'
 
 export const authApi = {
   sendCode(data: SendCodeRequest): Promise<ApiResponse<SendCodeResponse>> {
@@ -13,6 +13,18 @@ export const authApi = {
   },
   refreshToken(refreshToken: string): Promise<ApiResponse<LoginResponse>> {
     return request.post('/auth/refresh', { refreshToken })
+  },
+  forgotPassword(data: ForgotPasswordRequest): Promise<ApiResponse> {
+    return request.post('/auth/forgot-password', data)
+  },
+  getSessions(): Promise<ApiResponse<SessionInfoDto[]>> {
+    return request.get('/auth/sessions')
+  },
+  kickSession(sessionId: string): Promise<ApiResponse> {
+    return request.delete(`/auth/sessions/${sessionId}`)
+  },
+  logoutOthers(): Promise<ApiResponse> {
+    return request.post('/auth/sessions/logout-others')
   },
   getMe(): Promise<ApiResponse<UserInfo>> {
     return request.get('/auth/me')

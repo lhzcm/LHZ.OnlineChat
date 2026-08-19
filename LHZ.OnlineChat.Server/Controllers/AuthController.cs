@@ -45,7 +45,8 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var result = await _authService.LoginAsync(request);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+        var result = await _authService.LoginAsync(request, ip);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
@@ -56,6 +57,49 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
     {
         var result = await _authService.RefreshTokenAsync(request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 忘记密码（邮箱验证码重置密码，成功后所有登录会话失效）
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        var result = await _authService.ForgotPasswordAsync(request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 获取当前账号的所有登录会话（多端登录管理）
+    /// </summary>
+    [HttpGet("sessions")]
+    [Authorize]
+    public async Task<IActionResult> GetSessions()
+    {
+        var result = await _authService.GetSessionsAsync(GetUserId(), GetSessionId());
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 踢下线指定会话（该设备的 RefreshToken 失效 + WebSocket 断开）
+    /// </summary>
+    [HttpDelete("sessions/{sessionId}")]
+    [Authorize]
+    public async Task<IActionResult> KickSession(string sessionId)
+    {
+        var result = await _authService.KickSessionAsync(GetUserId(), sessionId);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// 退出其他所有设备（保留当前设备）
+    /// </summary>
+    [HttpPost("sessions/logout-others")]
+    [Authorize]
+    public async Task<IActionResult> LogoutOtherSessions()
+    {
+        var result = await _authService.LogoutOtherSessionsAsync(GetUserId(), GetSessionId());
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
@@ -136,4 +180,10 @@ public class AuthController : ControllerBase
         var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         return int.TryParse(claim, out var id) ? id : 0;
     }
+
+    /// <summary>
+    /// 当前 JWT 的会话 ID（sid claim），用于标记"当前设备"
+    /// </summary>
+    private string GetSessionId()
+        => User.FindFirst("sid")?.Value ?? string.Empty;
 }

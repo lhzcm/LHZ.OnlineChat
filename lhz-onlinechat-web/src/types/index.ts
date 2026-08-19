@@ -15,6 +15,8 @@ export interface UserInfo {
 
 export interface SendCodeRequest {
   email: string
+  /** 验证码用途：register（默认）/ forgot */
+  purpose?: string
 }
 
 export interface SendCodeResponse {
@@ -26,6 +28,8 @@ export interface LoginRequest {
   /** 账号 ID 或邮箱 */
   account: string
   password: string
+  /** 设备名称（多端登录管理展示用） */
+  deviceName?: string
 }
 
 export interface RegisterRequest {
@@ -43,6 +47,23 @@ export interface LoginResponse {
   token: string
   refreshToken: string
   user: UserInfo
+}
+
+/** 忘记密码（邮箱验证码重置） */
+export interface ForgotPasswordRequest {
+  email: string
+  code: string
+  newPassword: string
+}
+
+/** 登录会话（多端登录管理） */
+export interface SessionInfoDto {
+  sessionId: string
+  deviceName: string
+  ip: string
+  createdAt: number
+  lastActiveAt: number
+  isCurrent: boolean
 }
 
 // ==================== 好友 ====================

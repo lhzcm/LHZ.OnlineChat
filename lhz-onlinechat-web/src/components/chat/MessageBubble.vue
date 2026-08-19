@@ -11,6 +11,8 @@ const props = defineProps<{
   chatType: ChatType
   chatId: number
   chatName: string
+  /** 搜索高亮关键词（会话内搜索定位时传入） */
+  highlight?: string
 }>()
 const emit = defineEmits<{ reply: [msg: WsMessage]; 'image-click': [url: string] }>()
 
@@ -20,14 +22,38 @@ const ws = useWebSocketStore()
 
 const mine = Number(props.msg.from) === auth.user?.id
 
-/** 渲染消息内容：转义 HTML 后高亮 @提及（防 XSS） */
-function renderContent(content: string): string {
-  const esc = content
+/** 转义 HTML（防 XSS） */
+function escapeHtml(s: string): string {
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-  return esc.replace(/@([^\s@，。！？!?,]+)/g, '<span class="mention">@$1</span>')
+}
+
+/**
+ * 渲染消息内容：转义 HTML → 搜索关键词高亮（<mark>）→ @提及高亮。
+ * 用占位符先提取 @提及 片段，避免关键词高亮的 split/join 拆坏 mention 标签。
+ */
+function renderContent(content: string): string {
+  const esc = escapeHtml(content)
+
+  // 1. 提取 @提及 片段（占位符替换，稍后还原）
+  const mentions: string[] = []
+  const withoutMention = esc.replace(/@([^\s@，。！？!?,]+)/g, (m) => {
+    mentions.push(m)
+    return `\u0000${mentions.length - 1}\u0000`
+  })
+
+  // 2. 搜索关键词高亮（split/join 而非正则，避免特殊字符问题）
+  const kw = escapeHtml(props.highlight?.trim() || '')
+  let html = kw
+    ? withoutMention.split(kw).join(`<mark class="search-mark">${kw}</mark>`)
+    : withoutMention
+
+  // 3. 还原 @提及（若关键词与提及重叠，mark 已包住原文，还原后嵌套正确）
+  html = html.replace(/\u0000(\d+)\u0000/g, (_, i) => `<span class="mention">${mentions[Number(i)]}</span>`)
+  return html
 }
 
 /** 该消息是否提及了当前用户 */
@@ -309,6 +335,19 @@ function recallMessage(msg: WsMessage) {
 .mention {
   color: var(--primary);
   font-weight: 500;
+}
+
+/* 搜索关键词高亮 */
+.search-mark {
+  background: var(--search-mark-bg, #ffd54d);
+  color: #333;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+html[data-theme='dark'] .search-mark {
+  background: #b8860b;
+  color: #fff;
 }
 
 /* 被 @ 的消息主色描边 */

@@ -8,8 +8,8 @@ export const messageApi = {
   getGroupHistory(groupId: number, page = 1, pageSize = 50): Promise<ApiResponse<PagedResult<GroupMessageDto>>> {
     return request.get(`/messages/group/${groupId}`, { params: { page, pageSize } })
   },
-  searchMessages(keyword: string, page = 1, pageSize = 30): Promise<ApiResponse<PagedResult<MessageSearchResult>>> {
-    return request.get('/messages/search', { params: { keyword, page, pageSize } })
+  searchMessages(keyword: string, page = 1, pageSize = 30, scopeType?: string, scopeId?: number): Promise<ApiResponse<PagedResult<MessageSearchResult>>> {
+    return request.get('/messages/search', { params: { keyword, page, pageSize, scopeType, scopeId } })
   },
   getSessions(): Promise<ApiResponse<SessionInfo[]>> {
     return request.get('/messages/sessions')

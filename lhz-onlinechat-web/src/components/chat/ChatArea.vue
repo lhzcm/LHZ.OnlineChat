@@ -11,7 +11,7 @@ import { useWebSocketStore } from '@/stores/websocket'
 import { messageApi } from '@/api/message'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime } from '@/utils/format'
-import type { WsMessage, ChatType, GroupMemberInfo } from '@/types'
+import type { WsMessage, ChatType, GroupMemberInfo, MessageSearchResult } from '@/types'
 
 const props = defineProps<{
   chat: { type: ChatType; id: number; name: string } | null
@@ -31,6 +31,103 @@ const inputEl = ref<HTMLInputElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
 const sendHint = ref('')
 const lightboxUrl = ref('')
+
+// ==================== 会话内搜索 ====================
+const searchOpen = ref(false)
+const searchKeyword = ref('')
+const searchResults = ref<MessageSearchResult[]>([])
+const searching = ref(false)
+const searchNoMore = ref(false)
+const searchPage = ref(1)
+/** 搜索关键词高亮（传给 MessageBubble 渲染 <mark>） */
+const highlightKeyword = ref('')
+let searchTimer: number | null = null
+const searchInputRef = ref<HTMLInputElement | null>(null)
+
+/** 打开/关闭搜索条 */
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (searchOpen.value) {
+    highlightKeyword.value = ''
+    nextTick(() => searchInputRef.value?.focus())
+  } else {
+    clearSearch()
+  }
+}
+
+function clearSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchKeyword.value = ''
+  searchResults.value = []
+  searching.value = false
+  searchNoMore.value = false
+  searchPage.value = 1
+  highlightKeyword.value = ''
+}
+
+/** 会话内搜索（防抖 300ms，带分页） */
+watch(searchKeyword, (kw) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  const chat = props.chat
+  if (!chat) return
+  const keyword = kw.trim()
+  if (!keyword) {
+    searchResults.value = []
+    searchNoMore.value = false
+    searchPage.value = 1
+    searching.value = false
+    return
+  }
+  searchTimer = window.setTimeout(async () => {
+    searchPage.value = 1
+    searching.value = true
+    try {
+      const res = await messageApi.searchMessages(keyword, 1, 20, chat.type, chat.id)
+      if (res.success && res.data) {
+        searchResults.value = res.data.items || []
+        searchNoMore.value = searchResults.value.length >= (res.data.total || 0)
+      } else {
+        searchResults.value = []
+        searchNoMore.value = true
+      }
+    } catch {
+      searchResults.value = []
+    } finally {
+      searching.value = false
+    }
+  }, 300)
+})
+
+/** 加载更多搜索结果 */
+async function loadMoreSearchResults() {
+  const chat = props.chat
+  const keyword = searchKeyword.value.trim()
+  if (!chat || !keyword || searching.value || searchNoMore.value) return
+  searching.value = true
+  try {
+    const page = searchPage.value + 1
+    const res = await messageApi.searchMessages(keyword, page, 20, chat.type, chat.id)
+    if (res.success && res.data) {
+      const seen = new Set(searchResults.value.map(r => r.messageId))
+      const fresh = (res.data.items || []).filter(r => !r.messageId || !seen.has(r.messageId))
+      searchResults.value = [...searchResults.value, ...fresh]
+      searchPage.value = page
+      searchNoMore.value = fresh.length === 0
+    } else {
+      searchNoMore.value = true
+    }
+  } catch {
+    searchNoMore.value = true
+  } finally {
+    searching.value = false
+  }
+}
+
+/** 点击搜索结果：定位到消息并高亮关键词 */
+function locateSearchResult(r: MessageSearchResult) {
+  highlightKeyword.value = searchKeyword.value.trim()
+  if (r.messageId) scrollToMessage(r.messageId)
+}
 
 const currentMessages = computed(() => {
   if (!props.chat) return []
@@ -110,12 +207,13 @@ async function onMessagesScroll() {
   })
 }
 
-/** 会话切换：加载第一页历史并滚到底部（供父级定位等待） */
+/** 会话切换：加载第一页历史并滚到底部（供父级定位等待）；同时清空会话内搜索状态 */
 let historyReady: Promise<void> = Promise.resolve()
 watch(() => props.chat, (chat) => {
   if (!chat) return
   replyTarget.value = null
   sendHint.value = ''
+  clearSearch()
   historyReady = (async () => {
     await chatStore.loadHistory(chat.type, chat.id, 1, auth.user?.id)
     scrollToBottom()
@@ -438,6 +536,34 @@ function openLightbox(url: string) {
             <path d="M16 3.13a4 4 0 0 1 0 7.75" />
           </svg>
         </button>
+        <button class="icon-btn" :class="{ active: searchOpen }" @click="toggleSearch" title="搜索会话内消息">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 会话内搜索条 -->
+      <div class="chat-search-bar" v-if="searchOpen">
+        <input ref="searchInputRef" v-model="searchKeyword" class="input search-input"
+          placeholder="搜索当前会话的消息…" maxlength="50" />
+        <button class="search-close" @click="toggleSearch" title="关闭搜索">✕</button>
+      </div>
+
+      <!-- 搜索结果下拉 -->
+      <div class="chat-search-results" v-if="searchOpen && (searchResults.length > 0 || searching || searchKeyword.trim())">
+        <button v-for="r in searchResults" :key="r.messageId || `${r.sessionId}-${r.sentAt}`"
+          class="search-result-item" @click="locateSearchResult(r)">
+          <span class="contact-name">{{ r.senderName }}</span>
+          <span class="search-content">{{ r.content }}</span>
+          <span class="search-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
+        </button>
+        <div class="search-state" v-if="searching">搜索中…</div>
+        <div class="search-state" v-else-if="!searchResults.length && searchKeyword.trim()">未找到相关消息</div>
+        <div class="search-state" v-else-if="searchResults.length && !searchNoMore">
+          <button class="search-more-btn" @click="loadMoreSearchResults">加载更多</button>
+        </div>
       </div>
 
       <!-- 群公告横幅 -->
@@ -450,6 +576,7 @@ function openLightbox(url: string) {
         <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
         <MessageBubble v-for="msg in currentMessages" :key="msg.messageId" :msg="msg"
           :chat-type="chat.type" :chat-id="chat.id" :chat-name="chat.name"
+          :highlight="highlightKeyword"
           @reply="startReply" @image-click="openLightbox" />
       </div>
 
@@ -517,6 +644,7 @@ function openLightbox(url: string) {
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  position: relative; /* 搜索结果下拉定位锚点 */
 }
 
 .no-chat {
@@ -646,6 +774,135 @@ function openLightbox(url: string) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 会话内搜索条 */
+.chat-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-white);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+}
+
+.search-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.search-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 搜索结果下拉 */
+.chat-search-results {
+  position: absolute;
+  top: 56px;
+  right: 14px;
+  width: 340px;
+  max-width: calc(100% - 28px);
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.search-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-result-item:hover {
+  background: var(--bg-hover);
+}
+
+.search-content {
+  font-size: 13px;
+  color: var(--text);
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.search-state {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  padding: 10px 0;
+}
+
+.search-more-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--primary);
+  font-size: 12px;
+  padding: 5px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.search-more-btn:hover {
+  background: var(--active-bg);
+}
+
+.icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.icon-btn.active {
+  color: var(--primary);
+  background: var(--active-bg);
 }
 
 /* 引用回复横幅 */

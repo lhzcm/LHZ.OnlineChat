@@ -9,6 +9,11 @@ namespace LHZ.OnlineChat.Server.Models.DTOs;
 public class SendCodeRequest
 {
     public string Email { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 验证码用途：register（注册，默认）/ forgot（忘记密码）/ 其他场景可扩展
+    /// </summary>
+    public string Purpose { get; set; } = "register";
 }
 
 public class SendCodeResponse
@@ -51,6 +56,11 @@ public class LoginRequest
     [JsonConverter(typeof(NumberToStringConverter))]
     public string Account { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 设备名称（前端传入，用于多端登录管理展示；不传则默认"未知设备"）
+    /// </summary>
+    public string? DeviceName { get; set; }
 }
 
 /// <summary>
@@ -113,6 +123,32 @@ public class UpdateEmailRequest
 {
     public string NewEmail { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 忘记密码（邮箱验证码重置密码，成功后该账号所有登录会话失效）
+/// </summary>
+public class ForgotPasswordRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 登录会话信息（多端登录管理）
+/// </summary>
+public class SessionInfoDto
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string DeviceName { get; set; } = string.Empty;
+    public string Ip { get; set; } = string.Empty;
+    public long CreatedAt { get; set; }
+    public long LastActiveAt { get; set; }
+    /// <summary>
+    /// 是否为当前请求所在的会话（当前设备）
+    /// </summary>
+    public bool IsCurrent { get; set; }
 }
 
 public class AvatarResponse

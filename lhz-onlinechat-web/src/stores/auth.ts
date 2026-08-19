@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '@/api/auth'
+import { getDeviceName } from '@/utils/device'
 import type { UserInfo, LoginRequest, RegisterRequest } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -16,7 +17,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(data: LoginRequest) {
-    const res = await authApi.login(data)
+    // 登录时携带设备名（多端登录管理展示；同一账号可多设备同时在线）
+    const res = await authApi.login({ ...data, deviceName: getDeviceName() })
     if (res.success && res.data) {
       token.value = res.data.token
       refreshToken.value = res.data.refreshToken

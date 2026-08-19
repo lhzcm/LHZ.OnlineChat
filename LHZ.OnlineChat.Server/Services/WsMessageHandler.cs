@@ -132,11 +132,13 @@ public class WsMessageHandler
 
         var responseJson = JsonConvert.Serialize(message);
 
-        // 如果接收者在线，直接转发
-        var receiverClient = _connectionManager.GetConnection(receiverId);
-        if (receiverClient != null && receiverClient.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        // 如果接收者在线，转发到其所有在线设备（多端同步）
+        foreach (var receiverClient in _connectionManager.GetConnections(receiverId))
         {
             receiverClient.SendMessage(responseJson);
+        }
+        if (_connectionManager.IsOnline(receiverId))
+        {
             Console.WriteLine($"[WS] 私聊消息: {userId} → {receiverId} (已送达)");
         }
         else
@@ -205,13 +207,12 @@ public class WsMessageHandler
             .Where(m => m.GroupId == groupId)
             .ToListAsync();
 
-        // 向所有在线成员广播（除了发送者）
+        // 向所有在线成员的所有设备广播（除了发送者）
         foreach (var member in members)
         {
             if (member.UserId == userId) continue;
 
-            var client = _connectionManager.GetConnection(member.UserId);
-            if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            foreach (var client in _connectionManager.GetConnections(member.UserId))
             {
                 client.SendMessage(responseJson);
             }
@@ -247,25 +248,25 @@ public class WsMessageHandler
     }
 
     /// <summary>
-    /// 处理"正在输入"状态
+    /// 处理"正在输入"状态（转发到对方所有在线设备）
     /// </summary>
     private Task HandleTypingAsync(int userId, WsMessage message)
     {
         if (!int.TryParse(message.To, out var targetId)) return Task.CompletedTask;
 
-        var targetClient = _connectionManager.GetConnection(targetId);
-        if (targetClient != null && targetClient.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        message.From = userId.ToString();
+        message.SenderName = "";
+        var json = JsonConvert.Serialize(message);
+        foreach (var client in _connectionManager.GetConnections(targetId))
         {
-            message.From = userId.ToString();
-            message.SenderName = "";
-            targetClient.SendMessage(JsonConvert.Serialize(message));
+            client.SendMessage(json);
         }
 
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// 处理已读回执：标记消息已读，并转发给被读方（通知对方该会话已读）
+    /// 处理已读回执：标记消息已读，并转发给被读方所有在线设备（通知对方该会话已读）
     /// </summary>
     private async Task HandleReadReceiptAsync(int readerId, WsMessage message)
     {
@@ -281,10 +282,10 @@ public class WsMessageHandler
         // 转发回执给被读方（在线时），from 为已读用户
         if (int.TryParse(message.To, out var targetId))
         {
-            var client = _connectionManager.GetConnection(targetId);
-            if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            var json = JsonConvert.Serialize(message);
+            foreach (var client in _connectionManager.GetConnections(targetId))
             {
-                client.SendMessage(JsonConvert.Serialize(message));
+                client.SendMessage(json);
             }
         }
     }
@@ -362,20 +363,22 @@ public class WsMessageHandler
                 .ToListAsync();
             foreach (var member in members)
             {
-                var client = _connectionManager.GetConnection(member.UserId);
-                if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+                foreach (var client in _connectionManager.GetConnections(member.UserId))
+                {
                     client.SendMessage(json);
+                }
             }
         }
         else
         {
-            // 发送者回显 + 接收者
+            // 发送者回显 + 接收者（所有在线设备）
             var targets = new[] { userId, sessionPeer };
             foreach (var uid in targets)
             {
-                var client = _connectionManager.GetConnection(uid);
-                if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+                foreach (var client in _connectionManager.GetConnections(uid))
+                {
                     client.SendMessage(json);
+                }
             }
         }
     }
@@ -431,8 +434,7 @@ public class WsMessageHandler
         foreach (var f in friendships)
         {
             var friendId = f.UserId == userId ? f.FriendId : f.UserId;
-            var client = _connectionManager.GetConnection(friendId);
-            if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            foreach (var client in _connectionManager.GetConnections(friendId))
             {
                 client.SendMessage(statusMsg);
             }
@@ -477,37 +479,37 @@ public class WsMessageHandler
     /// </summary>
     public void NotifyBlockedAsync(int toUserId, int fromUserId, string content)
     {
-        var client = _connectionManager.GetConnection(toUserId);
-        if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        var json = JsonConvert.Serialize(new WsMessage
         {
-            client.SendMessage(JsonConvert.Serialize(new WsMessage
-            {
-                Type = WsMessageType.Blocked,
-                From = fromUserId.ToString(),
-                To = toUserId.ToString(),
-                Content = content,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                MessageType = 0,
-                SenderName = string.Empty,
-                SenderAvatar = null
-            }));
+            Type = WsMessageType.Blocked,
+            From = fromUserId.ToString(),
+            To = toUserId.ToString(),
+            Content = content,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            MessageType = 0,
+            SenderName = string.Empty,
+            SenderAvatar = null
+        });
+        foreach (var client in _connectionManager.GetConnections(toUserId))
+        {
+            client.SendMessage(json);
         }
     }
 
     /// <summary>
-    /// 向指定用户推送一条 WS 消息（在线时）
+    /// 向指定用户推送一条 WS 消息（推送到其所有在线设备）
     /// </summary>
     private void SendToUser(int userId, string type, string fromUserId)
     {
-        var client = _connectionManager.GetConnection(userId);
-        if (client != null && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        var json = JsonConvert.Serialize(new WsMessage
         {
-            client.SendMessage(JsonConvert.Serialize(new WsMessage
-            {
-                Type = type,
-                From = fromUserId,
-                Content = type
-            }));
+            Type = type,
+            From = fromUserId,
+            Content = type
+        });
+        foreach (var client in _connectionManager.GetConnections(userId))
+        {
+            client.SendMessage(json);
         }
     }
 

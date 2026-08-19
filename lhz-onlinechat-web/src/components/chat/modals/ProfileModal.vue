@@ -3,11 +3,13 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import AvatarCropModal from './AvatarCropModal.vue'
 
 const props = defineProps<{ notifySoundEnabled: boolean }>()
 const emit = defineEmits<{
   close: []
   openBlacklist: []
+  openSessions: []
   'update:notifySoundEnabled': [value: boolean]
 }>()
 
@@ -29,6 +31,9 @@ const savingPassword = ref(false)
 const profileError = ref('')
 const profileSuccess = ref('')
 const avatarInputRef = ref<HTMLInputElement | null>(null)
+// 头像裁剪：选中图片后先裁剪再上传
+const cropFile = ref<File | null>(null)
+const uploadingAvatar = ref(false)
 let emailCountTimer: number | null = null
 
 onMounted(() => {
@@ -52,20 +57,40 @@ function triggerAvatarInput() {
   avatarInputRef.value?.click()
 }
 
-async function onAvatarChange(e: Event) {
+/** 选择图片：校验后打开裁剪弹窗（不直接上传） */
+function onAvatarChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
+  input.value = ''
   if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    profileError.value = '图片大小不能超过 5MB'
+    return
+  }
+  if (!file.type.startsWith('image/')) {
+    profileError.value = '请选择图片文件'
+    return
+  }
+  profileError.value = ''
+  profileSuccess.value = ''
+  cropFile.value = file
+}
+
+/** 裁剪完成：上传裁剪后的 PNG */
+async function onCropped(blob: Blob) {
+  cropFile.value = null
+  uploadingAvatar.value = true
   profileError.value = ''
   profileSuccess.value = ''
   try {
+    const file = new File([blob], 'avatar.png', { type: 'image/png' })
     const res = await auth.uploadAvatar(file)
     if (res.success) profileSuccess.value = res.message || '头像修改成功'
     else profileError.value = res.message
   } catch (err: any) {
     profileError.value = err?.message || '头像上传失败'
   } finally {
-    input.value = ''
+    uploadingAvatar.value = false
   }
 }
 
@@ -170,7 +195,9 @@ async function savePassword() {
       <h3>个人信息</h3>
       <div class="profile-avatar">
         <Avatar :name="auth.user?.nickname || ''" :url="auth.user?.avatar" size="lg" />
-        <button class="btn btn-sm btn-ghost" @click="triggerAvatarInput">更换头像</button>
+        <button class="btn btn-sm btn-ghost" :disabled="uploadingAvatar" @click="triggerAvatarInput">
+          {{ uploadingAvatar ? '上传中…' : '更换头像' }}
+        </button>
         <input ref="avatarInputRef" type="file" accept="image/*" class="hidden-file" @change="onAvatarChange" />
       </div>
       <div class="profile-row">
@@ -237,7 +264,11 @@ async function savePassword() {
       <p class="modal-success" v-if="profileSuccess">{{ profileSuccess }}</p>
       <button class="btn btn-ghost" @click="emit('close')">关闭</button>
       <button class="btn btn-ghost" @click="emit('openBlacklist')">黑名单管理</button>
+      <button class="btn btn-ghost" @click="emit('openSessions')">登录设备</button>
     </div>
+
+    <!-- 头像裁剪弹窗（选中图片后先裁剪再上传） -->
+    <AvatarCropModal v-if="cropFile" :file="cropFile" @cropped="onCropped" @cancel="cropFile = null" />
   </div>
 </template>
 
