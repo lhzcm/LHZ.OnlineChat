@@ -146,10 +146,10 @@ public class WsMessageHandler
             Console.WriteLine($"[WS] 私聊消息: {userId} → {receiverId} (离线，已存库)");
         }
 
-        // 也给发送者回显
-        if (sender.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        // 回显给发送者的所有在线设备（多端同步：自己发的消息其他设备实时可见）
+        foreach (var client in _connectionManager.GetConnections(userId))
         {
-            sender.SendMessage(responseJson);
+            client.SendMessage(responseJson);
         }
 
         // 机器人触发：接收者是启用中的机器人时，异步调度 Webhook（不阻塞消息处理）
@@ -218,10 +218,10 @@ public class WsMessageHandler
             }
         }
 
-        // 给发送者回显
-        if (sender.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+        // 回显给发送者的所有在线设备（多端同步）
+        foreach (var client in _connectionManager.GetConnections(userId))
         {
-            sender.SendMessage(responseJson);
+            client.SendMessage(responseJson);
         }
 
         Console.WriteLine($"[WS] 群聊消息: {userId} → 群 {groupId} ({members.Count} 人)");

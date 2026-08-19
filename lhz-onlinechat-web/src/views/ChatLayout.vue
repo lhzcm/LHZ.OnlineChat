@@ -332,19 +332,21 @@ function handleWsMessage(msg: WsMessage) {
   }
 
   const { key, isNew } = chatStore.addMessage(msg, auth.user?.id)
+  // 是否是自己发出的消息（多端同步：其他设备收到的"自己的消息"不应计未读/提示音）
+  const isMine = Number(msg.from) === auth.user?.id
   const currentKey = currentChat.value ? chatStore.sessionKey(currentChat.value.type, currentChat.value.id) : ''
   if (key === currentKey) {
     // 当前会话：清未读、标记已读、滚到底部；对方发来的消息即时回已读回执
     const chat = currentChat.value
     if (chat) {
       chatStore.markSessionRead(chat.type, chat.id)
-      if (msg.type === 'private_message' && chat.type === 'private') {
+      if (msg.type === 'private_message' && chat.type === 'private' && !isMine) {
         sendReadReceipt(chat.id)
       }
     }
     // 仅在接近底部时自动滚动（用户正在上翻历史时不做打扰）
     chatAreaRef.value?.scrollToBottomIfNear()
-  } else if (isNew) {
+  } else if (isNew && !isMine) {
     // 免打扰会话不增加未读提醒、不播放提示音
     const sep = key.indexOf('_')
     const sType = key.slice(0, sep) as ChatType
