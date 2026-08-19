@@ -466,77 +466,13 @@
       @close="showGroupRobotModal = false" @added="onGroupRobotAdded" />
 
     <!-- 好友申请弹窗 -->
-    <div class="modal-overlay" v-if="showRequestsModal" @click.self="showRequestsModal = false">
-      <div class="modal">
-        <h3>好友申请</h3>
-        <div class="empty" v-if="friendStore.pendingRequests.length === 0">
-          <span class="empty-icon">📭</span>
-          <span>暂无待处理的申请</span>
-        </div>
-        <div v-for="r in friendStore.pendingRequests" :key="r.id" class="request-item">
-          <Avatar :name="r.nickname" :url="r.avatar" size="sm" />
-          <div class="request-info">
-            <span class="request-name">{{ r.nickname }}</span>
-            <span class="request-meta">账号 {{ r.userId }}</span>
-          </div>
-          <div class="request-actions">
-            <button class="btn btn-sm btn-primary" :disabled="handlingRequestId === r.id" @click="acceptRequest(r)">接受</button>
-            <button class="btn btn-sm btn-ghost" :disabled="handlingRequestId === r.id" @click="rejectRequest(r)">拒绝</button>
-          </div>
-        </div>
-        <p class="modal-error" v-if="requestError">{{ requestError }}</p>
-        <button class="btn btn-ghost" @click="showRequestsModal = false">关闭</button>
-      </div>
-    </div>
+    <RequestsModal v-if="showRequestsModal" @close="showRequestsModal = false" />
 
-    <!-- 添加弹窗 -->
-    <div class="modal-overlay" v-if="showAddModal" @click.self="showAddModal = false">
-      <div class="modal">
-        <h3>{{ activeTab === 'friends' ? '添加好友' : '创建群组' }}</h3>
-        <template v-if="activeTab === 'friends'">
-          <input v-model="addFriendAccount" class="input" type="text" inputmode="numeric" placeholder="输入对方账号 ID" @keyup.enter="addFriend" />
-          <button class="btn btn-primary" @click="addFriend">发送申请</button>
-        </template>
-        <template v-else>
-          <input v-model="newGroupName" class="input" placeholder="输入群组名称" @keyup.enter="createGroup" />
-          <button class="btn btn-primary" @click="createGroup">创建</button>
-        </template>
-        <p class="modal-error" v-if="modalError">{{ modalError }}</p>
-        <p class="modal-success" v-if="modalSuccess">{{ modalSuccess }}</p>
-        <button class="btn btn-ghost" @click="showAddModal = false">关闭</button>
-      </div>
-    </div>
+    <!-- 添加弹窗（添加好友/创建群组） -->
+    <AddModal v-if="showAddModal" :mode="activeTab === 'friends' ? 'friend' : 'group'" @close="showAddModal = false" />
 
     <!-- 会话设置弹窗（置顶/免打扰） -->
-    <div class="modal-overlay" v-if="showSessionSetting" @click.self="showSessionSetting = false">
-      <div class="modal">
-        <h3>会话设置</h3>
-        <div class="friend-setting-head">
-          <Avatar :name="sessionSettingTarget?.name || ''" :url="sessionSettingTarget?.avatar" size="sm" />
-          <div class="friend-setting-names">
-            <span class="request-name">{{ sessionSettingTarget?.name }}</span>
-            <span class="request-meta">{{ sessionSettingTarget?.type === 'group' ? '群聊' : '私聊' }}</span>
-          </div>
-        </div>
-        <label class="setting-switch">
-          <span>
-            <span class="set-label">置顶会话</span>
-            <span class="setting-desc">固定显示在会话列表顶部</span>
-          </span>
-          <input type="checkbox" :checked="sessionSettingTarget?.isPinned" @change="toggleSessionPinned" />
-        </label>
-        <label class="setting-switch">
-          <span>
-            <span class="set-label">消息免打扰</span>
-            <span class="setting-desc">静音后不增加未读提醒</span>
-          </span>
-          <input type="checkbox" :checked="sessionSettingTarget?.muted" @change="toggleSessionMuted" />
-        </label>
-        <p class="modal-error" v-if="sessionSettingError">{{ sessionSettingError }}</p>
-        <p class="modal-success" v-if="sessionSettingSuccess">{{ sessionSettingSuccess }}</p>
-        <button class="btn btn-ghost" @click="showSessionSetting = false">关闭</button>
-      </div>
-    </div>
+    <SessionSettingModal v-if="showSessionSetting && sessionSettingTarget" :session="sessionSettingTarget" @close="showSessionSetting = false" />
 
     <!-- 图片放大预览 -->
     <div class="lightbox" v-if="lightboxUrl" @click="lightboxUrl = ''">
@@ -568,7 +504,10 @@ import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
 import GroupRobotModal from '@/components/chat/modals/GroupRobotModal.vue'
 import ProfileModal from '@/components/chat/modals/ProfileModal.vue'
-import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
+import RequestsModal from '@/components/chat/modals/RequestsModal.vue'
+import AddModal from '@/components/chat/modals/AddModal.vue'
+import SessionSettingModal from '@/components/chat/modals/SessionSettingModal.vue'
+import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
 
@@ -583,14 +522,6 @@ const activeTab = ref<'sessions' | 'friends' | 'groups'>('friends')
 const inputText = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
-const showAddModal = ref(false)
-const addFriendAccount = ref('')
-const newGroupName = ref('')
-const modalError = ref('')
-const modalSuccess = ref('')
-const showRequestsModal = ref(false)
-const handlingRequestId = ref<number | null>(null)
-const requestError = ref('')
 const sendHint = ref('')
 // 移动端：聊天窗口全屏开关
 const mobileChatOpen = ref(false)
@@ -602,11 +533,6 @@ const emojiBtnRef = ref<HTMLElement | null>(null)
 const imageInputRef = ref<HTMLInputElement | null>(null)
 const sendingImage = ref(false)
 const lightboxUrl = ref('')
-// 会话设置
-const showSessionSetting = ref(false)
-const sessionSettingTarget = ref<SessionInfo | null>(null)
-const sessionSettingError = ref('')
-const sessionSettingSuccess = ref('')
 // 消息提示音
 const notifySoundEnabled = ref(localStorage.getItem('notifySound') !== '0')
 let notifyAudioCtx: AudioContext | null = null
@@ -666,6 +592,11 @@ const friendTagSuccess = ref('')
 const presetCategories = ['家人', '朋友', '同事', '同学', '客户', '其他']
 // 个人资料
 const showProfileModal = ref(false)
+// 添加/申请/会话设置弹窗开关
+const showAddModal = ref(false)
+const showRequestsModal = ref(false)
+const showSessionSetting = ref(false)
+const sessionSettingTarget = ref<SessionInfo | null>(null)
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
@@ -961,37 +892,7 @@ function recallMessage(msg: WsMessage) {
 // ==================== 会话设置（置顶/免打扰） ====================
 function openSessionSetting(s: SessionInfo) {
   sessionSettingTarget.value = s
-  sessionSettingError.value = ''
-  sessionSettingSuccess.value = ''
   showSessionSetting.value = true
-}
-
-async function toggleSessionPinned(e: Event) {
-  if (!sessionSettingTarget.value) return
-  const checked = (e.target as HTMLInputElement).checked
-  await applySessionSetting({ isPinned: checked })
-}
-
-async function toggleSessionMuted(e: Event) {
-  if (!sessionSettingTarget.value) return
-  const checked = (e.target as HTMLInputElement).checked
-  await applySessionSetting({ muted: checked })
-}
-
-async function applySessionSetting(patch: { isPinned?: boolean; muted?: boolean }) {
-  const target = sessionSettingTarget.value
-  if (!target) return
-  sessionSettingError.value = ''
-  sessionSettingSuccess.value = ''
-  const res = await chatStore.updateSessionSetting(target.type, target.id, patch)
-  if (res.success) {
-    // 同步本地目标对象（开关状态回显）
-    if (patch.isPinned !== undefined) target.isPinned = patch.isPinned
-    if (patch.muted !== undefined) target.muted = patch.muted
-    sessionSettingSuccess.value = '设置已保存'
-  } else {
-    sessionSettingError.value = res.message
-  }
 }
 
 // ==================== @ 提及 ====================
@@ -1469,66 +1370,11 @@ function send() {
 }
 
 function openAddModal() {
-  modalError.value = ''
-  modalSuccess.value = ''
   showAddModal.value = true
 }
 
 function openRequestsModal() {
-  requestError.value = ''
   showRequestsModal.value = true
-}
-
-async function addFriend() {
-  const account = Number(addFriendAccount.value.trim())
-  if (!account || account <= 0) {
-    modalError.value = '请输入正确的账号 ID'
-    modalSuccess.value = ''
-    return
-  }
-  const res = await friendStore.sendRequest(account)
-  if (res.success) {
-    modalSuccess.value = '好友申请已发送'
-    modalError.value = ''
-    addFriendAccount.value = ''
-  } else {
-    modalError.value = res.message
-    modalSuccess.value = ''
-  }
-}
-
-async function createGroup() {
-  const res = await groupStore.createGroup(newGroupName.value)
-  if (res.success) {
-    modalSuccess.value = '群组创建成功'
-    modalError.value = ''
-    newGroupName.value = ''
-  } else {
-    modalError.value = res.message
-    modalSuccess.value = ''
-  }
-}
-
-async function acceptRequest(r: FriendRequestInfo) {
-  handlingRequestId.value = r.id
-  requestError.value = ''
-  try {
-    const res = await friendStore.acceptRequest(r.id)
-    if (!res.success) requestError.value = res.message
-  } finally {
-    handlingRequestId.value = null
-  }
-}
-
-async function rejectRequest(r: FriendRequestInfo) {
-  handlingRequestId.value = r.id
-  requestError.value = ''
-  try {
-    const res = await friendStore.rejectRequest(r.id)
-    if (!res.success) requestError.value = res.message
-  } finally {
-    handlingRequestId.value = null
-  }
 }
 
 // ==================== 群成员管理 ====================
@@ -2389,24 +2235,6 @@ html[data-theme='dark'] .app-toast {
 .friend-more:hover {
   background: var(--bg-hover);
   color: var(--text);
-}
-
-/* 好友设置弹窗 */
-.friend-setting-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0 8px;
-}
-
-.friend-setting-names {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.friend-setting-head .request-name {
-  font-size: 15px;
 }
 
 .cat-chips {
