@@ -326,13 +326,13 @@
     <!-- 好友设置弹窗（备注/分类） -->
     <div class="modal-overlay" v-if="showFriendSetting" @click.self="showFriendSetting = false">
       <div class="modal">
-        <h3>好友设置</h3>
+        <h3>{{friendSetting?.isBot ? "机器人设置" : "好友设置" }}</h3>
         <div class="friend-setting-head">
           <Avatar :name="friendSetting?.nickname || ''" :url="friendSetting?.avatar" size="sm" />
           <div class="friend-setting-names">
             <span class="request-name">{{ friendSetting?.nickname }}</span>
             <span class="request-meta" v-if="friendSetting?.remark">当前备注：{{ friendSetting.remark }}</span>
-            <span class="request-meta">账号 {{ friendSetting?.userId }}</span>
+            <span v-if="!friendSetting?.isBot" class="request-meta">账号 {{ friendSetting?.userId }}</span>
           </div>
         </div>
         <label class="set-label">备注名</label>
@@ -582,9 +582,9 @@
               <span class="role-tag" :class="r.enabled ? 'role-0' : 'role-2'">{{ r.enabled ? '启用' : '停用' }}</span>
             </span>
             <span class="request-meta">账号 {{ r.userId }} · {{ r.webhookUrl || '纯推送（未配置 Webhook）' }}</span>
-            <span class="robot-token-line" title="第三方推送调用 /api/robots/{令牌}/reply">
-              推送令牌 <code>{{ r.token }}</code>
-              <button class="token-copy" @click="copyRobotToken(r.token)">复制</button>
+            <span class="robot-token-line" title="第三方推送调用链接：POST 该地址即可让机器人发消息">
+              调用链接 <code>{{ robotPushUrl(r.token) }}</code>
+              <button class="token-copy" @click="copyRobotToken(robotPushUrl(r.token))">复制</button>
             </span>
           </div>
           <button class="btn btn-sm btn-ghost kick-btn" @click="startEditRobot(r)">编辑</button>
@@ -2130,11 +2130,16 @@ async function runRobotTest() {
   }
 }
 
-/** 复制机器人推送令牌 */
-async function copyRobotToken(token: string) {
+/** 机器人推送调用链接：{当前站点}/api/robots/{令牌}/reply */
+function robotPushUrl(token: string): string {
+  return `${window.location.origin}/api/robots/${token}/reply`
+}
+
+/** 复制机器人调用链接 */
+async function copyRobotToken(url: string) {
   try {
-    await navigator.clipboard.writeText(token)
-    toast('推送令牌已复制')
+    await navigator.clipboard.writeText(url)
+    toast('调用链接已复制')
   } catch {
     toast('复制失败，请手动选择复制')
   }
