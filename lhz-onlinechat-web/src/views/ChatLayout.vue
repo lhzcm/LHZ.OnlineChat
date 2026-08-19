@@ -739,7 +739,11 @@ import { messageApi } from '@/api/message'
 import { groupApi } from '@/api/group'
 import { blacklistApi } from '@/api/blacklist'
 import { robotApi } from '@/api/robot'
+import { useToast } from '@/composables/useToast'
+import { formatMsgTime, pad } from '@/utils/format'
 import type { FriendInfo, FriendRequestInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult, BlacklistUser, RobotInfo, RobotTestResult } from '@/types'
+
+const { toastMsg, toast } = useToast()
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -771,14 +775,6 @@ const emojiBtnRef = ref<HTMLElement | null>(null)
 const imageInputRef = ref<HTMLInputElement | null>(null)
 const sendingImage = ref(false)
 const lightboxUrl = ref('')
-// 轻提示 Toast（自动消失）
-const toastMsg = ref('')
-let toastTimer: number | null = null
-function toast(msg: string) {
-  toastMsg.value = msg
-  if (toastTimer) clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { toastMsg.value = '' }, 2600)
-}
 // 会话设置
 const showSessionSetting = ref(false)
 const sessionSettingTarget = ref<SessionInfo | null>(null)
@@ -954,21 +950,6 @@ const groupedFriends = computed(() => {
   return groups
 })
 
-// ==================== 时间 ====================
-function pad(n: number): string {
-  return String(n).padStart(2, '0')
-}
-
-function formatMsgTime(ts: number): string {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  if (d.toDateString() === now.toDateString()) return hm
-  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`
-}
-
 // 主题（深色/浅色）
 const isDark = ref(false)
 
@@ -1028,7 +1009,6 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
   if (copyTipTimer) clearTimeout(copyTipTimer)
   if (emailCountTimer) clearInterval(emailCountTimer)
-  if (toastTimer) clearTimeout(toastTimer)
 })
 
 function onDocClick(e: MouseEvent) {
