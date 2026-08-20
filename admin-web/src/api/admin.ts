@@ -59,10 +59,19 @@ export interface DashboardOverview {
   totalGroups: number
   totalRobots: number
   totalMessages: number
+  privateMessageTotal: number
+  groupMessageTotal: number
   todayMessages: number
+  todayPrivateMessages: number
+  todayGroupMessages: number
   todayRegistrations: number
+  todayNewGroups: number
+  todayActiveUsers: number
   registerTrend: { date: string; count: number }[]
   messageTrend: { date: string; count: number }[]
+  messageHourTrend: { hour: string; count: number }[]
+  topUsers: { userId: number; nickname: string; avatar: string | null; count: number }[]
+  topGroups: { groupId: number; name: string; count: number }[]
 }
 
 export interface AdminLog {

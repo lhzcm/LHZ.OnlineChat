@@ -305,6 +305,8 @@ public class AdminService
     public async Task<ApiResponse<DashboardOverviewDto>> GetDashboardAsync()
     {
         var today = DateTime.UtcNow.Date;
+        var now = DateTime.UtcNow;
+        var dayAgo = now.AddHours(-24);
 
         var dto = new DashboardOverviewDto
         {
@@ -314,28 +316,144 @@ public class AdminService
             BannedUsers = (int)await _fsql.Select<User>().Where(u => u.IsBanned).CountAsync(),
             TotalGroups = (int)await _fsql.Select<Group_>().CountAsync(),
             TotalRobots = (int)await _fsql.Select<RobotProfile>().CountAsync(),
-            TotalMessages = await _fsql.Select<PrivateMessage>().CountAsync() + await _fsql.Select<GroupMessage>().CountAsync(),
-            TodayMessages = await _fsql.Select<PrivateMessage>().Where(m => m.SentAt >= today).CountAsync()
-                + await _fsql.Select<GroupMessage>().Where(m => m.SentAt >= today).CountAsync(),
-            TodayRegistrations = (int)await _fsql.Select<User>().Where(u => u.CreatedAt >= today).CountAsync()
+            PrivateMessageTotal = await _fsql.Select<PrivateMessage>().CountAsync(),
+            GroupMessageTotal = await _fsql.Select<GroupMessage>().CountAsync(),
+            TodayPrivateMessages = await _fsql.Select<PrivateMessage>().Where(m => m.SentAt >= today).CountAsync(),
+            TodayGroupMessages = await _fsql.Select<GroupMessage>().Where(m => m.SentAt >= today).CountAsync(),
+            TodayRegistrations = (int)await _fsql.Select<User>().Where(u => u.CreatedAt >= today).CountAsync(),
+            TodayNewGroups = (int)await _fsql.Select<Group_>().Where(g => g.CreatedAt >= today).CountAsync()
         };
+        dto.TotalMessages = dto.PrivateMessageTotal + dto.GroupMessageTotal;
+        dto.TodayMessages = dto.TodayPrivateMessages + dto.TodayGroupMessages;
 
-        // 近 7 日注册趋势
+        // 今日活跃用户（今日发送过消息的去重用户数）
+        var activePm = await _fsql.Select<PrivateMessage>()
+            .Where(m => m.SentAt >= today)
+            .GroupBy(m => m.SenderId)
+            .ToListAsync(g => new { g.Key });
+        var activeGm = await _fsql.Select<GroupMessage>()
+            .Where(m => m.SentAt >= today)
+            .GroupBy(m => m.SenderId)
+            .ToListAsync(g => new { g.Key });
+        dto.TodayActiveUsers = activePm.Select(x => x.Key)
+            .Concat(activeGm.Select(x => x.Key))
+            .Distinct().Count();
+
+        // 近 7 日注册/消息趋势
         for (var i = 6; i >= 0; i--)
         {
             var day = today.AddDays(-i);
             var next = day.AddDays(1);
-            var cnt = (int)await _fsql.Select<User>().Where(u => u.CreatedAt >= day && u.CreatedAt < next).CountAsync();
-            dto.RegisterTrend.Add(new TrendPointDto { Date = day.ToString("MM-dd"), Count = cnt });
+            dto.RegisterTrend.Add(new TrendPointDto
+            {
+                Date = day.ToString("MM-dd"),
+                Count = (int)await _fsql.Select<User>().Where(u => u.CreatedAt >= day && u.CreatedAt < next).CountAsync()
+            });
+            dto.MessageTrend.Add(new TrendPointDto
+            {
+                Date = day.ToString("MM-dd"),
+                Count = await _fsql.Select<PrivateMessage>().Where(m => m.SentAt >= day && m.SentAt < next).CountAsync()
+                    + await _fsql.Select<GroupMessage>().Where(m => m.SentAt >= day && m.SentAt < next).CountAsync()
+            });
         }
-        // 近 7 日消息趋势
-        for (var i = 6; i >= 0; i--)
+
+        // 近 24 小时消息分布（按小时，原生 SQL 一次聚合）
+        try
         {
-            var day = today.AddDays(-i);
-            var next = day.AddDays(1);
-            var cnt = await _fsql.Select<PrivateMessage>().Where(m => m.SentAt >= day && m.SentAt < next).CountAsync()
-                + await _fsql.Select<GroupMessage>().Where(m => m.SentAt >= day && m.SentAt < next).CountAsync();
-            dto.MessageTrend.Add(new TrendPointDto { Date = day.ToString("MM-dd"), Count = cnt });
+            var hourRows = _fsql.Ado.ExecuteDataTable("""
+                SELECT date_trunc('hour', "SentAt") AS "H", COUNT(*) AS "Cnt"
+                FROM "PrivateMessage" WHERE "SentAt" >= NOW() - INTERVAL '24 hours' GROUP BY 1
+                """);
+            var hourDict = new Dictionary<DateTime, long>();
+            foreach (System.Data.DataRow row in hourRows.Rows)
+            {
+                var h = DateTime.SpecifyKind((DateTime)row["H"], DateTimeKind.Utc);
+                hourDict[h] = Convert.ToInt64(row["Cnt"]);
+            }
+            var hourRowsG = _fsql.Ado.ExecuteDataTable("""
+                SELECT date_trunc('hour', "SentAt") AS "H", COUNT(*) AS "Cnt"
+                FROM "GroupMessage" WHERE "SentAt" >= NOW() - INTERVAL '24 hours' GROUP BY 1
+                """);
+            foreach (System.Data.DataRow row in hourRowsG.Rows)
+            {
+                var h = DateTime.SpecifyKind((DateTime)row["H"], DateTimeKind.Utc);
+                hourDict[h] = hourDict.GetValueOrDefault(h) + Convert.ToInt64(row["Cnt"]);
+            }
+            for (var i = 23; i >= 0; i--)
+            {
+                var h = DateTime.SpecifyKind(dayAgo.Date.AddHours(dayAgo.Hour).AddHours(-i), DateTimeKind.Utc);
+                h = DateTime.UtcNow.Date.AddHours(DateTime.UtcNow.Hour).AddHours(-i);
+                dto.MessageHourTrend.Add(new HourPointDto
+                {
+                    Hour = h.ToString("HH:00"),
+                    Count = hourDict.GetValueOrDefault(h)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ADMIN] 24h 分布查询失败: {ex.Message}");
+        }
+
+        // 最活跃用户 TOP10（私聊+群聊发送量）
+        try
+        {
+            var topUsers = new Dictionary<int, long>();
+            var pmTop = await _fsql.Select<PrivateMessage>()
+                .GroupBy(m => m.SenderId)
+                .OrderByDescending(g => g.Count())
+                .Take(20)
+                .ToListAsync(g => new { SenderId = g.Key, Cnt = g.Count() });
+            var gmTop = await _fsql.Select<GroupMessage>()
+                .GroupBy(m => m.SenderId)
+                .OrderByDescending(g => g.Count())
+                .Take(20)
+                .ToListAsync(g => new { SenderId = g.Key, Cnt = g.Count() });
+            foreach (var x in pmTop) topUsers[x.SenderId] = topUsers.GetValueOrDefault(x.SenderId) + x.Cnt;
+            foreach (var x in gmTop) topUsers[x.SenderId] = topUsers.GetValueOrDefault(x.SenderId) + x.Cnt;
+
+            var userIds = topUsers.OrderByDescending(x => x.Value).Take(10).Select(x => x.Key).ToList();
+            var users = userIds.Count > 0
+                ? await _fsql.Select<User>().Where(u => userIds.Contains(u.Id)).ToListAsync()
+                : new List<User>();
+            var userDict = users.ToDictionary(u => u.Id);
+            dto.TopUsers = userIds
+                .Select(id => new TopUserDto
+                {
+                    UserId = id,
+                    Nickname = userDict.GetValueOrDefault(id)?.Nickname ?? $"用户{id}",
+                    Avatar = userDict.GetValueOrDefault(id)?.Avatar,
+                    Count = topUsers.GetValueOrDefault(id)
+                }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ADMIN] TOP 用户查询失败: {ex.Message}");
+        }
+
+        // 最活跃群 TOP10
+        try
+        {
+            var gmTop = await _fsql.Select<GroupMessage>()
+                .GroupBy(m => m.GroupId)
+                .OrderByDescending(g => g.Count())
+                .Take(10)
+                .ToListAsync(g => new { GroupId = g.Key, Cnt = g.Count() });
+            var groupIds = gmTop.Select(x => x.GroupId).ToList();
+            var groups = groupIds.Count > 0
+                ? await _fsql.Select<Group_>().Where(g => groupIds.Contains(g.Id)).ToListAsync()
+                : new List<Group_>();
+            var groupDict = groups.ToDictionary(g => g.Id);
+            dto.TopGroups = gmTop.Select(x => new TopGroupDto
+            {
+                GroupId = x.GroupId,
+                Name = groupDict.GetValueOrDefault(x.GroupId)?.Name ?? $"群{x.GroupId}",
+                Count = x.Cnt
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ADMIN] TOP 群查询失败: {ex.Message}");
         }
 
         return ApiResponse<DashboardOverviewDto>.Ok(dto);

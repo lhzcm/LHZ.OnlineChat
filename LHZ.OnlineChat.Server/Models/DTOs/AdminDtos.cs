@@ -95,15 +95,49 @@ public class DashboardOverviewDto
     public int TotalGroups { get; set; }
     public int TotalRobots { get; set; }
     public long TotalMessages { get; set; }
+    public long PrivateMessageTotal { get; set; }
+    public long GroupMessageTotal { get; set; }
     public long TodayMessages { get; set; }
+    public long TodayPrivateMessages { get; set; }
+    public long TodayGroupMessages { get; set; }
     public int TodayRegistrations { get; set; }
+    public int TodayNewGroups { get; set; }
+    /// <summary>今日活跃用户（今日发过消息的去重用户数）</summary>
+    public int TodayActiveUsers { get; set; }
     public List<TrendPointDto> RegisterTrend { get; set; } = new();
     public List<TrendPointDto> MessageTrend { get; set; } = new();
+    /// <summary>近 24 小时消息分布（24 个点，按小时）</summary>
+    public List<HourPointDto> MessageHourTrend { get; set; } = new();
+    /// <summary>最活跃用户 TOP10（消息数）</summary>
+    public List<TopUserDto> TopUsers { get; set; } = new();
+    /// <summary>最活跃群 TOP10（群消息数）</summary>
+    public List<TopGroupDto> TopGroups { get; set; } = new();
 }
 
 public class TrendPointDto
 {
     public string Date { get; set; } = string.Empty;
+    public long Count { get; set; }
+}
+
+public class HourPointDto
+{
+    public string Hour { get; set; } = string.Empty;
+    public long Count { get; set; }
+}
+
+public class TopUserDto
+{
+    public int UserId { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public long Count { get; set; }
+}
+
+public class TopGroupDto
+{
+    public long GroupId { get; set; }
+    public string Name { get; set; } = string.Empty;
     public long Count { get; set; }
 }
 
