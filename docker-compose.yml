@@ -49,6 +49,9 @@ services:
       Smtp__Password: ${SMTP_PASSWORD:-}
       Smtp__From: ${SMTP_FROM:-no-reply@onlinechat.local}
       Robot__TokenKey: ${ROBOT_TOKEN_KEY:-}
+      # 管理后台：Admin 表为空时创建初始超级管理员（密码至少 6 位）
+      Admin__InitialUsername: ${ADMIN_INITIAL_USERNAME:-}
+      Admin__InitialPassword: ${ADMIN_INITIAL_PASSWORD:-}
       ASPNETCORE_ENVIRONMENT: Production
     depends_on:
       postgres:
@@ -66,6 +69,15 @@ services:
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - backend
+
+  # ==================== 管理后台前端（/admin 由主前端 nginx 反代） ====================
+  frontend-admin:
+    build:
+      context: .
+      dockerfile: admin-web/Dockerfile
+    restart: unless-stopped
     depends_on:
       - backend
       

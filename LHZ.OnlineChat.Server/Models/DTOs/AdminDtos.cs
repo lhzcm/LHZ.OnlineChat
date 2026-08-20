@@ -1,0 +1,121 @@
+namespace LHZ.OnlineChat.Server.Models.DTOs;
+
+/// <summary>
+/// 管理后台 DTO
+/// </summary>
+
+public class AdminLoginRequest
+{
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+}
+
+public class AdminInfo
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    /// <summary>0=超级管理员 1=运营管理员</summary>
+    public int Role { get; set; }
+    /// <summary>0=停用 1=启用</summary>
+    public int Status { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+}
+
+public class AdminLoginResponse
+{
+    public string Token { get; set; } = string.Empty;
+    public AdminInfo Admin { get; set; } = new();
+}
+
+public class AdminCreateRequest
+{
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public int Role { get; set; } = 1;
+}
+
+public class AdminUpdateRequest
+{
+    public int? Role { get; set; }
+    public int? Status { get; set; }
+}
+
+public class AdminChangePasswordRequest
+{
+    public string OldPassword { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+/// <summary>管理后台用户列表项</summary>
+public class AdminUserDto
+{
+    public int Id { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public string? Email { get; set; }
+    public string? Avatar { get; set; }
+    public bool IsBot { get; set; }
+    public bool IsBanned { get; set; }
+    public string? BanReason { get; set; }
+    public DateTime? BannedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public bool IsOnline { get; set; }
+    /// <summary>好友数</summary>
+    public int FriendCount { get; set; }
+    /// <summary>群数</summary>
+    public int GroupCount { get; set; }
+    /// <summary>消息总数（私聊+群聊）</summary>
+    public long MessageCount { get; set; }
+}
+
+/// <summary>用户详情（含登录设备）</summary>
+public class AdminUserDetailDto
+{
+    public AdminUserDto User { get; set; } = new();
+    public List<SessionInfoDto> Sessions { get; set; } = new();
+}
+
+public class AdminBanRequest
+{
+    public bool Banned { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class AdminResetPasswordRequest
+{
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+/// <summary>仪表盘概览</summary>
+public class DashboardOverviewDto
+{
+    public int OnlineUsers { get; set; }
+    public int WsConnections { get; set; }
+    public int TotalUsers { get; set; }
+    public int BannedUsers { get; set; }
+    public int TotalGroups { get; set; }
+    public int TotalRobots { get; set; }
+    public long TotalMessages { get; set; }
+    public long TodayMessages { get; set; }
+    public int TodayRegistrations { get; set; }
+    public List<TrendPointDto> RegisterTrend { get; set; } = new();
+    public List<TrendPointDto> MessageTrend { get; set; } = new();
+}
+
+public class TrendPointDto
+{
+    public string Date { get; set; } = string.Empty;
+    public long Count { get; set; }
+}
+
+/// <summary>审计日志项</summary>
+public class AdminLogDto
+{
+    public long Id { get; set; }
+    public string AdminName { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string TargetType { get; set; } = string.Empty;
+    public string? TargetId { get; set; }
+    public string? Detail { get; set; }
+    public string? Ip { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

@@ -38,7 +38,9 @@ fsql.CodeFirst.SyncStructure(
     typeof(LHZ.OnlineChat.Server.Models.Entities.GroupMessage),
     typeof(LHZ.OnlineChat.Server.Models.Entities.SessionSetting),
     typeof(LHZ.OnlineChat.Server.Models.Entities.Blacklist),
-    typeof(LHZ.OnlineChat.Server.Models.Entities.RobotProfile)
+    typeof(LHZ.OnlineChat.Server.Models.Entities.RobotProfile),
+    typeof(LHZ.OnlineChat.Server.Models.Entities.Admin),
+    typeof(LHZ.OnlineChat.Server.Models.Entities.AdminLog)
 );
 
 // 账号 ID 迁移：用户 ID 列改为 int，序列起始值 ≥ 10000（账号从 10000 开始自增）
@@ -46,6 +48,9 @@ EnsureAccountIdSchema(fsql);
 
 // 搜索索引：pg_trgm（trigram）GIN 索引，加速消息内容 LIKE '%keyword%' 模糊搜索（中文同样生效）
 EnsureSearchIndexes(fsql);
+
+// 初始化超管：Admin 表为空且配置了 ADMIN_INITIAL_USERNAME/PASSWORD 时创建首个超级管理员
+EnsureInitialAdmin(fsql, appSettings);
 
 builder.Services.AddSingleton(fsql);
 
@@ -113,6 +118,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<FriendService>();
 builder.Services.AddScoped<GroupService>();
 builder.Services.AddScoped<MessageService>();
+builder.Services.AddScoped<AdminService>();
 builder.Services.AddSingleton<BlacklistService>();
 builder.Services.AddSingleton<BotService>();
 builder.Services.AddHttpClient("bot").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -340,8 +346,7 @@ static void EnsureDatabaseExists(string connectionString)
     }
 }
 
-// ==================== 账号 ID 迁移（幂等）====================
-// 用户 ID 列统一为 int；User_ 序列起始值设为 ≥10000，新账号从 10000 开始自增
+// ==================== 账号 ID 迁移（幂等）====================// 用户 ID 列统一为 int；User_ 序列起始值设为 ≥10000，新账号从 10000 开始自增
 static void EnsureAccountIdSchema(IFreeSql fsql)
 {
     var sql = """
@@ -395,5 +400,39 @@ static void EnsureSearchIndexes(IFreeSql fsql)
     {
         // 扩展创建失败（如权限不足）不阻塞启动，搜索退化为全表扫描
         Console.WriteLine($"[WARN] pg_trgm 索引创建失败（搜索将退化为全表扫描）: {ex.Message}");
+    }
+}
+
+// ==================== 初始化超级管理员（幂等）====================
+// Admin 表为空且配置了 Admin__InitialUsername/Admin__InitialPassword 时创建首个超级管理员
+static void EnsureInitialAdmin(IFreeSql fsql, AppSettings appSettings)
+{
+    try
+    {
+        var hasAdmin = fsql.Select<LHZ.OnlineChat.Server.Models.Entities.Admin>().Any();
+        if (hasAdmin) return;
+
+        var username = appSettings.Admin.InitialUsername?.Trim() ?? string.Empty;
+        var password = appSettings.Admin.InitialPassword ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(username) || password.Length < 6)
+        {
+            Console.WriteLine("[ADMIN] 未配置 Admin__InitialUsername/Admin__InitialPassword（或密码过短），跳过初始管理员创建");
+            return;
+        }
+
+        // ExecuteIdentity：走数据库序列分配主键（ExecuteAffrows 会把默认值 0 作为显式主键插入，破坏自增）
+        var id = fsql.Insert(new LHZ.OnlineChat.Server.Models.Entities.Admin
+        {
+            Username = username,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+            Role = 0, // 超级管理员
+            Status = 1,
+            CreatedAt = DateTime.UtcNow
+        }).ExecuteIdentity();
+        Console.WriteLine($"✅ 初始超级管理员已创建: {username}（ID={id}，管理后台 /admin）");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[ADMIN] 初始管理员创建失败: {ex.Message}");
     }
 }

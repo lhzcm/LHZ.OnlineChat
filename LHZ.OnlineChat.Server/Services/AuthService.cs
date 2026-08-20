@@ -152,6 +152,10 @@ public class AuthService
         if (user.IsBot)
             return ApiResponse<LoginResponse>.Fail("机器人账号不能登录");
 
+        // 封禁账号禁止登录（管理后台封禁）
+        if (user.IsBanned)
+            return ApiResponse<LoginResponse>.Fail(user.BanReason ?? "账号已被封禁，请联系管理员");
+
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return ApiResponse<LoginResponse>.Fail("账号或密码错误");
 

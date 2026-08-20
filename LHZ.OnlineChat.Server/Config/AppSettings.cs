@@ -11,6 +11,19 @@ public class AppSettings
     public CorsConfig Cors { get; set; } = new();
     public SmtpConfig Smtp { get; set; } = new();
     public RobotConfig Robot { get; set; } = new();
+    public AdminConfig Admin { get; set; } = new();
+}
+
+/// <summary>
+/// 管理后台配置
+/// </summary>
+public class AdminConfig
+{
+    /// <summary>
+    /// 初始超级管理员账号（Admin 表为空时自动创建）
+    /// </summary>
+    public string InitialUsername { get; set; } = string.Empty;
+    public string InitialPassword { get; set; } = string.Empty;
 }
 
 public class ConnectionStringsConfig

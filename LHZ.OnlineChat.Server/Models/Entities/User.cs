@@ -39,6 +39,21 @@ public class User
     [Column(IsNullable = false)]
     public bool IsBot { get; set; }
 
+    /// <summary>
+    /// 是否被封禁（管理后台操作；封禁后不能登录，会话立即失效）
+    /// </summary>
+    [Column(IsNullable = false)]
+    public bool IsBanned { get; set; }
+
+    /// <summary>
+    /// 封禁原因
+    /// </summary>
+    [Column(IsNullable = true, StringLength = 500)]
+    public string? BanReason { get; set; }
+
+    [Column(IsNullable = true)]
+    public DateTime? BannedAt { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
