@@ -19,10 +19,12 @@ Console.WriteLine($"[CFG] Smtp.Host='{appSettings.Smtp.Host}', Port={appSettings
 EnsureDatabaseExists(appSettings.ConnectionStrings.Default);
 
 // ==================== FreeSql ORM ====================
+var isDev = builder.Environment.IsDevelopment();
 var fsql = new FreeSql.FreeSqlBuilder()
     .UseConnectionString(FreeSql.DataType.PostgreSQL, appSettings.ConnectionStrings.Default)
     .UseAutoSyncStructure(true)  // 自动同步表结构（CodeFirst）
-    .UseMonitorCommand(cmd => Console.WriteLine($"[SQL] {cmd.CommandText}"))
+    // SQL 日志仅开发环境输出：生产环境高并发下 Console 写入会阻塞请求线程（线程池饥饿）
+    .UseMonitorCommand(cmd => { if (isDev) Console.WriteLine($"[SQL] {cmd.CommandText}"); })
     .Build();
 
 // 初始化数据库表结构
@@ -87,20 +89,20 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         },
         // 会话有效性校验：JWT 携带的 sid（登录会话 ID）必须仍存在于 Redis，
-        // 被踢下线 / 修改密码 / 忘记密码后，会话被删除 → 所有 API 立即 401
-        OnTokenValidated = context =>
+        // 被踢下线 / 修改密码 / 忘记密码后，会话被删除 → 所有 API 立即 401。
+        // 必须用异步 API：同步 KeyExists 在高并发下会因 Redis 命令堆积而超时（5000ms）导致空 500
+        OnTokenValidated = async context =>
         {
             var sid = context.Principal?.FindFirst("sid")?.Value;
             if (!string.IsNullOrEmpty(sid))
             {
-                var sessionValid = redisService.Database.KeyExists($"token:refresh:{sid}");
+                var sessionValid = await redisService.Database.KeyExistsAsync($"token:refresh:{sid}");
                 if (!sessionValid)
                 {
                     context.Fail("会话已失效，请重新登录");
-                    return Task.CompletedTask;
+                    return;
                 }
             }
-            return Task.CompletedTask;
         }
     };
 });
@@ -196,6 +198,21 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// 全局异常日志：生产环境 500 也必须留痕（否则线上故障无法定位）
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[500] {context.Request.Method} {context.Request.Path}{context.Request.QueryString} — {ex.GetType().Name}: {ex.Message}");
+        Console.WriteLine(ex.StackTrace);
+        throw;
+    }
+});
+
 // ==================== WebSocket 中间件 ====================
 app.UseWebSocket(async context =>
 {
@@ -222,7 +239,8 @@ app.UseWebSocket(async context =>
     var sessionId = httpContext.User.FindFirst("sid")?.Value ?? $"legacy-{Guid.NewGuid():N}";
     if (!sessionId.StartsWith("legacy-", StringComparison.Ordinal))
     {
-        var sessionValid = redisService.Database.KeyExists($"token:refresh:{sessionId}");
+        // 异步校验：同步 KeyExists 在高并发握手时会因 Redis 堆积超时
+        var sessionValid = await redisService.Database.KeyExistsAsync($"token:refresh:{sessionId}");
         if (!sessionValid)
         {
             Console.WriteLine($"[WS] 连接被拒绝：会话 {sessionId[..Math.Min(8, sessionId.Length)]} 已失效（可能被踢下线）");
