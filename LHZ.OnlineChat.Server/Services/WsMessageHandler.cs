@@ -163,12 +163,34 @@ public class WsMessageHandler
     {
         if (!int.TryParse(message.To, out var groupId)) return;
 
-        // 验证发送者是否在群中
-        var isMember = await _fsql.Select<GroupMember>()
+        // 验证发送者是否在群中（顺带取成员记录用于禁言校验）
+        var senderMember = await _fsql.Select<GroupMember>()
             .Where(m => m.GroupId == groupId && m.UserId == userId)
-            .AnyAsync();
+            .FirstAsync();
 
-        if (!isMember) return;
+        if (senderMember == null) return;
+
+        // 禁言校验：禁言截止时间未到则拒绝发送
+        if (senderMember.MutedUntil.HasValue && senderMember.MutedUntil.Value > DateTime.UtcNow)
+        {
+            var untilLocal = TimeZoneInfo.ConvertTimeFromUtc(senderMember.MutedUntil.Value,
+                TimeZoneInfo.FindSystemTimeZoneById("China Standard Time"));
+            var msg = new WsMessage
+            {
+                Type = WsMessageType.Muted,
+                From = userId.ToString(),
+                To = groupId.ToString(),
+                Content = $"你已被禁言至 {untilLocal:MM-dd HH:mm}，期间无法在群里发言",
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                MessageId = message.MessageId ?? string.Empty,
+                MessageType = 0,
+                SenderName = string.Empty,
+                SenderAvatar = null
+            };
+            sender.SendMessage(JsonConvert.Serialize(msg));
+            Console.WriteLine($"[WS] 群消息被拒绝: {userId} → 群 {groupId}（禁言中）");
+            return;
+        }
 
         // 保存到数据库
         var groupMsg = new GroupMessage

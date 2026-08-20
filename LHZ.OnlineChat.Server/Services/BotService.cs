@@ -290,7 +290,27 @@ public class BotService
         if (profile == null)
             return ApiResponse.Fail("机器人不存在");
 
-        await _fsql.Delete<RobotProfile>().Where(p => p.Id == robotId).ExecuteAffrowsAsync();
+        await DeleteRobotCoreAsync(profile);
+        return ApiResponse.Ok("机器人已删除");
+    }
+
+    /// <summary>
+    /// 管理后台删除机器人（不校验创建者）
+    /// </summary>
+    public async Task<ApiResponse> DeleteRobotByAdminAsync(long robotId)
+    {
+        var profile = await _fsql.Select<RobotProfile>().Where(p => p.Id == robotId).FirstAsync();
+        if (profile == null)
+            return ApiResponse.Fail("机器人不存在");
+
+        await DeleteRobotCoreAsync(profile);
+        return ApiResponse.Ok("机器人已删除");
+    }
+
+    /// <summary>删除机器人核心清理（资料/好友关系/群成员/账号）</summary>
+    private async Task DeleteRobotCoreAsync(RobotProfile profile)
+    {
+        await _fsql.Delete<RobotProfile>().Where(p => p.Id == profile.Id).ExecuteAffrowsAsync();
         await _fsql.Delete<Friend>()
             .Where(f => f.UserId == profile.UserId || f.FriendId == profile.UserId)
             .ExecuteAffrowsAsync();
@@ -298,8 +318,6 @@ public class BotService
             .Where(m => m.UserId == profile.UserId)
             .ExecuteAffrowsAsync();
         await _fsql.Delete<User>().Where(u => u.Id == profile.UserId).ExecuteAffrowsAsync();
-
-        return ApiResponse.Ok("机器人已删除");
     }
 
     // ==================== 群机器人管理 ====================
@@ -565,6 +583,14 @@ public class BotService
             {
                 sendReply(new BotWebhookResponse { Content = result.Reply });
             }
+            else if (!result.Success)
+            {
+                // 回调失败埋点（管理后台统计）
+                await _fsql.Update<RobotProfile>()
+                    .Set(p => p.CallbackFailCount + 1)
+                    .Where(p => p.Id == profile.Id)
+                    .ExecuteAffrowsAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -731,6 +757,12 @@ public class BotService
         {
             Console.WriteLine($"[BOT] 机器人 {botUserId} → {targetId} (离线，已存库)");
         }
+
+        // 推送统计埋点（管理后台）
+        await _fsql.Update<RobotProfile>()
+            .Set(p => p.PushCount + 1)
+            .Where(p => p.UserId == botUserId)
+            .ExecuteAffrowsAsync();
     }
 
     /// <summary>
@@ -791,6 +823,12 @@ public class BotService
             }
         }
         Console.WriteLine($"[BOT] 机器人 {botUserId} → 群 {groupId} ({members.Count} 人)");
+
+        // 推送统计埋点（管理后台）
+        await _fsql.Update<RobotProfile>()
+            .Set(p => p.PushCount + 1)
+            .Where(p => p.UserId == botUserId)
+            .ExecuteAffrowsAsync();
     }
 
     private static string profileFallbackName(int botUserId) => $"机器人{botUserId}";

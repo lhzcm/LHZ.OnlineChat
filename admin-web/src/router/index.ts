@@ -26,6 +26,21 @@ const router = createRouter({
           component: () => import('@/views/Users.vue')
         },
         {
+          path: 'groups',
+          name: 'Groups',
+          component: () => import('@/views/Groups.vue')
+        },
+        {
+          path: 'messages',
+          name: 'Messages',
+          component: () => import('@/views/Messages.vue')
+        },
+        {
+          path: 'robots',
+          name: 'Robots',
+          component: () => import('@/views/Robots.vue')
+        },
+        {
           path: 'admins',
           name: 'Admins',
           component: () => import('@/views/Admins.vue'),

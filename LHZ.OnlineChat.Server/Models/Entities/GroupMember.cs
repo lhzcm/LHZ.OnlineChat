@@ -30,6 +30,12 @@ public class GroupMember
     [Column(IsNullable = false)]
     public long LastReadMessageId { get; set; }
 
+    /// <summary>
+    /// 禁言截止时间（管理后台/群管理设置；null=未禁言，到期自动解除）
+    /// </summary>
+    [Column(IsNullable = true)]
+    public DateTime? MutedUntil { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
 }

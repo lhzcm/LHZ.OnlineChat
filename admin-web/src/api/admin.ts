@@ -76,6 +76,62 @@ export interface AdminLog {
   createdAt: string
 }
 
+// ==================== P1：群 / 消息 / 机器人 ====================
+
+export interface AdminGroupDto {
+  id: number
+  name: string
+  avatar: string | null
+  ownerId: number
+  ownerName: string
+  memberCount: number
+  messageCount: number
+  announcement: string | null
+  createdAt: string
+}
+
+export interface AdminGroupMemberDto {
+  userId: number
+  nickname: string
+  avatar: string | null
+  role: number
+  isOnline: boolean
+  isBot: boolean
+  mutedUntil: string | null
+}
+
+export interface AdminGroupDetailDto {
+  group: AdminGroupDto
+  members: AdminGroupMemberDto[]
+}
+
+export interface AdminMessageDto {
+  id: number
+  messageId: string
+  type: 'private' | 'group'
+  senderId: number
+  senderName: string
+  senderAvatar: string | null
+  content: string
+  messageType: number
+  sessionId: number
+  isDeleted: boolean
+  sentAt: string
+}
+
+export interface AdminRobotDto {
+  id: number
+  userId: number
+  name: string
+  ownerId: number
+  ownerName: string
+  webhookUrl: string
+  enabled: boolean
+  pushCount: number
+  callbackFailCount: number
+  createdAt: string
+}
+
 export const adminApi = {
   login(username: string, password: string): Promise<ApiResponse<{ token: string; admin: AdminInfo }>> {
     return request.post('/admin/auth/login', { username, password })
@@ -118,5 +174,39 @@ export const adminApi = {
   },
   listLogs(params: { page?: number; pageSize?: number; action?: string }): Promise<ApiResponse<PagedResult<AdminLog>>> {
     return request.get('/admin/logs', { params })
+  },
+  // ==================== P1 ====================
+  listGroups(params: { keyword?: string; page?: number; pageSize?: number }): Promise<ApiResponse<PagedResult<AdminGroupDto>>> {
+    return request.get('/admin/groups', { params })
+  },
+  groupDetail(groupId: number): Promise<ApiResponse<AdminGroupDetailDto>> {
+    return request.get(`/admin/groups/${groupId}`)
+  },
+  dissolveGroup(groupId: number): Promise<ApiResponse> {
+    return request.delete(`/admin/groups/${groupId}`)
+  },
+  removeGroupMember(groupId: number, userId: number): Promise<ApiResponse> {
+    return request.delete(`/admin/groups/${groupId}/members/${userId}`)
+  },
+  muteGroupMember(groupId: number, userId: number, mutedUntil: string | null): Promise<ApiResponse> {
+    return request.put(`/admin/groups/${groupId}/members/${userId}/mute`, { mutedUntil })
+  },
+  transferOwner(groupId: number, newOwnerId: number): Promise<ApiResponse> {
+    return request.put(`/admin/groups/${groupId}/owner`, { newOwnerId })
+  },
+  searchMessages(params: { keyword?: string; userId?: number; groupId?: number; page?: number; pageSize?: number }): Promise<ApiResponse<PagedResult<AdminMessageDto>>> {
+    return request.get('/admin/messages', { params })
+  },
+  deleteMessage(type: string, id: number): Promise<ApiResponse> {
+    return request.delete(`/admin/messages/${type}/${id}`)
+  },
+  listRobots(params: { keyword?: string; page?: number; pageSize?: number }): Promise<ApiResponse<PagedResult<AdminRobotDto>>> {
+    return request.get('/admin/robots', { params })
+  },
+  setRobotEnabled(robotId: number, enabled: boolean): Promise<ApiResponse> {
+    return request.put(`/admin/robots/${robotId}/status`, { enabled })
+  },
+  deleteRobot(robotId: number): Promise<ApiResponse> {
+    return request.delete(`/admin/robots/${robotId}`)
   }
 }

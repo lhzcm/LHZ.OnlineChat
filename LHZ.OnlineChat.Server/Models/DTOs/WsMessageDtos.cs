@@ -109,4 +109,12 @@ public static class WsMessageType
     /// 服务端 → 客户端：该登录会话已被踢下线（随后连接被关闭）
     /// </summary>
     public const string Kicked = "kicked";
+    /// <summary>
+    /// 服务端 → 客户端：群消息被拒绝（成员被禁言中），content 为原因说明
+    /// </summary>
+    public const string Muted = "muted";
+    /// <summary>
+    /// 服务端 → 客户端：所在群被解散（管理后台操作），to 为群 ID
+    /// </summary>
+    public const string GroupDissolved = "group_dissolved";
 }

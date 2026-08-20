@@ -25,7 +25,10 @@ function logout() {
 const navs = computed(() => {
   const items = [
     { path: '/dashboard', label: '📊 仪表盘' },
-    { path: '/users', label: '👥 用户管理' }
+    { path: '/users', label: '👥 用户管理' },
+    { path: '/groups', label: '👪 群组管理' },
+    { path: '/messages', label: '💬 消息检索' },
+    { path: '/robots', label: '🤖 机器人管理' }
   ]
   if (isSuper.value) {
     items.push({ path: '/admins', label: '🛡️ 管理员' })

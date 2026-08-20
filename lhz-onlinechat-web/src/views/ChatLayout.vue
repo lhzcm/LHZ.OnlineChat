@@ -332,7 +332,8 @@ function handleWsMessage(msg: WsMessage) {
   }
 
   // 被拉黑：发送被拒或对方拉黑通知
-  if (msg.type === 'blocked') {    const me = auth.user?.id
+  if (msg.type === 'blocked') {
+    const me = auth.user?.id
     const peer = Number(msg.from)
     // 对方把我拉黑了（好友关系已被解除）：刷新好友/会话列表
     friendStore.fetchFriends()
@@ -343,6 +344,29 @@ function handleWsMessage(msg: WsMessage) {
         chatStore.removeMessage(chatStore.sessionKey('private', peer), msg.messageId)
       }
       chatAreaRef.value?.setHint(msg.content || '对方已将你拉黑，无法发送消息')
+    }
+    return
+  }
+
+  // 群消息被拒绝（禁言中）：移除乐观消息并提示
+  if (msg.type === 'muted') {
+    if (msg.messageId) {
+      chatStore.removeMessage(chatStore.sessionKey('group', Number(msg.to)), msg.messageId)
+    }
+    chatAreaRef.value?.setHint(msg.content || '你已被禁言，无法发送消息')
+    return
+  }
+
+  // 所在群被解散（管理后台操作）：刷新群/会话列表，若正在该群则退出
+  if (msg.type === 'group_dissolved') {
+    toast(msg.content || '群已被解散')
+    groupStore.fetchGroups()
+    chatStore.fetchSessions()
+    const gid = Number(msg.to)
+    if (currentChat.value?.type === 'group' && currentChat.value.id === gid) {
+      currentChat.value = null
+      chatStore.setCurrentSession('group', gid, '')
+      mobileChatOpen.value = false
     }
     return
   }

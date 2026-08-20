@@ -119,3 +119,77 @@ public class AdminLogDto
     public string? Ip { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+// ==================== P1：群 / 消息 / 机器人管理 ====================
+
+public class AdminGroupDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public int OwnerId { get; set; }
+    public string OwnerName { get; set; } = string.Empty;
+    public int MemberCount { get; set; }
+    public long MessageCount { get; set; }
+    public string? Announcement { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class AdminGroupMemberDto
+{
+    public int UserId { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public int Role { get; set; }
+    public bool IsOnline { get; set; }
+    public bool IsBot { get; set; }
+    public DateTime? MutedUntil { get; set; }
+}
+
+public class AdminGroupDetailDto
+{
+    public AdminGroupDto Group { get; set; } = new();
+    public List<AdminGroupMemberDto> Members { get; set; } = new();
+}
+
+public class AdminMuteRequest
+{
+    /// <summary>禁言截止时间（UTC）；null 或过去时间 = 解除禁言</summary>
+    public DateTime? MutedUntil { get; set; }
+}
+
+public class AdminTransferOwnerRequest
+{
+    public int NewOwnerId { get; set; }
+}
+
+public class AdminMessageDto
+{
+    public long Id { get; set; }
+    public string MessageId { get; set; } = string.Empty;
+    /// <summary>private / group</summary>
+    public string Type { get; set; } = string.Empty;
+    public int SenderId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public string? SenderAvatar { get; set; }
+    public string Content { get; set; } = string.Empty;
+    public int MessageType { get; set; }
+    /// <summary>私聊=对方账号 ID；群聊=群 ID</summary>
+    public long SessionId { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime SentAt { get; set; }
+}
+
+public class AdminRobotDto
+{
+    public long Id { get; set; }
+    public int UserId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int OwnerId { get; set; }
+    public string OwnerName { get; set; } = string.Empty;
+    public string WebhookUrl { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+    public long PushCount { get; set; }
+    public long CallbackFailCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

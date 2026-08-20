@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using LHZ.FastJson;
 using LHZ.OnlineChat.Server.Config;
 using LHZ.OnlineChat.Server.Models.DTOs;
 using LHZ.OnlineChat.Server.Models.Entities;
@@ -20,15 +21,17 @@ public class AdminService
     private readonly AppSettings _appSettings;
     private readonly AuthService _authService;
     private readonly WsConnectionManager _wsConnectionManager;
+    private readonly BotService _botService;
 
     public AdminService(IFreeSql fsql, RedisService redis, AppSettings appSettings,
-        AuthService authService, WsConnectionManager wsConnectionManager)
+        AuthService authService, WsConnectionManager wsConnectionManager, BotService botService)
     {
         _fsql = fsql;
         _redis = redis;
         _appSettings = appSettings;
         _authService = authService;
         _wsConnectionManager = wsConnectionManager;
+        _botService = botService;
     }
 
     // ==================== 管理员认证 ====================
@@ -375,6 +378,490 @@ public class AdminService
             Page = page,
             PageSize = pageSize
         });
+    }
+
+    // ==================== 群管理（P1） ====================
+
+    public async Task<ApiResponse<PagedResult<AdminGroupDto>>> ListGroupsAsync(
+        string? keyword, int page = 1, int pageSize = 20)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
+        var query = _fsql.Select<Group_>();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim();
+            query = query.Where(g => g.Name.Contains(kw));
+        }
+
+        var total = (int)await query.CountAsync();
+        var groups = await query
+            .OrderByDescending(g => g.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var ownerIds = groups.Select(g => g.OwnerId).Distinct().ToList();
+        var owners = ownerIds.Count > 0
+            ? await _fsql.Select<User>().Where(u => ownerIds.Contains(u.Id)).ToListAsync()
+            : new List<User>();
+        var ownerDict = owners.ToDictionary(u => u.Id);
+
+        var memberCounts = await _fsql.Select<GroupMember>()
+            .Where(m => groups.Select(g => g.Id).Contains(m.GroupId))
+            .GroupBy(m => m.GroupId)
+            .ToListAsync(g => new { GroupId = g.Key, Cnt = g.Count() });
+        var memberDict = memberCounts.ToDictionary(x => x.GroupId, x => x.Cnt);
+
+        var msgCounts = await _fsql.Select<GroupMessage>()
+            .Where(m => groups.Select(g => g.Id).Contains(m.GroupId))
+            .GroupBy(m => m.GroupId)
+            .ToListAsync(g => new { GroupId = g.Key, Cnt = g.Count() });
+        var msgDict = msgCounts.ToDictionary(x => x.GroupId, x => x.Cnt);
+
+        var items = groups.Select(g => new AdminGroupDto
+        {
+            Id = g.Id,
+            Name = g.Name,
+            Avatar = g.Avatar,
+            OwnerId = g.OwnerId,
+            OwnerName = ownerDict.GetValueOrDefault(g.OwnerId)?.Nickname ?? $"用户{g.OwnerId}",
+            MemberCount = memberDict.GetValueOrDefault(g.Id),
+            MessageCount = msgDict.GetValueOrDefault(g.Id),
+            Announcement = g.Announcement,
+            CreatedAt = g.CreatedAt
+        }).ToList();
+
+        return ApiResponse<PagedResult<AdminGroupDto>>.Ok(new PagedResult<AdminGroupDto>
+        {
+            Items = items,
+            Total = total,
+            Page = page,
+            PageSize = pageSize
+        });
+    }
+
+    public async Task<ApiResponse<AdminGroupDetailDto>> GetGroupDetailAsync(long groupId)
+    {
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse<AdminGroupDetailDto>.Fail("群不存在");
+
+        var owner = await _fsql.Select<User>().Where(u => u.Id == group.OwnerId).FirstAsync();
+        var members = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId)
+            .OrderBy(m => m.Role)
+            .ToListAsync();
+        var userIds = members.Select(m => m.UserId).ToList();
+        var users = userIds.Count > 0
+            ? await _fsql.Select<User>().Where(u => userIds.Contains(u.Id)).ToListAsync()
+            : new List<User>();
+        var userDict = users.ToDictionary(u => u.Id);
+        var msgCount = await _fsql.Select<GroupMessage>().Where(m => m.GroupId == groupId).CountAsync();
+
+        var dto = new AdminGroupDetailDto
+        {
+            Group = new AdminGroupDto
+            {
+                Id = group.Id,
+                Name = group.Name,
+                Avatar = group.Avatar,
+                OwnerId = group.OwnerId,
+                OwnerName = owner?.Nickname ?? $"用户{group.OwnerId}",
+                MemberCount = members.Count,
+                MessageCount = msgCount,
+                Announcement = group.Announcement,
+                CreatedAt = group.CreatedAt
+            },
+            Members = members.Select(m => new AdminGroupMemberDto
+            {
+                UserId = m.UserId,
+                Nickname = userDict.GetValueOrDefault(m.UserId)?.Nickname ?? $"用户{m.UserId}",
+                Avatar = userDict.GetValueOrDefault(m.UserId)?.Avatar,
+                Role = m.Role,
+                IsOnline = _wsConnectionManager.IsOnline(m.UserId),
+                IsBot = userDict.GetValueOrDefault(m.UserId)?.IsBot ?? false,
+                MutedUntil = m.MutedUntil
+            }).ToList()
+        };
+        return ApiResponse<AdminGroupDetailDto>.Ok(dto);
+    }
+
+    /// <summary>解散群（强制）：删除群/成员/消息，通知在线成员</summary>
+    public async Task<ApiResponse> DissolveGroupAsync(int adminId, long groupId)
+    {
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群不存在");
+
+        var members = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId)
+            .ToListAsync();
+
+        await _fsql.Delete<GroupMessage>().Where(m => m.GroupId == groupId).ExecuteAffrowsAsync();
+        await _fsql.Delete<GroupMember>().Where(m => m.GroupId == groupId).ExecuteAffrowsAsync();
+        await _fsql.Delete<Group_>().Where(g => g.Id == groupId).ExecuteAffrowsAsync();
+        await _fsql.Delete<SessionSetting>().Where(s => s.SessionType == "group" && s.SessionId == groupId).ExecuteAffrowsAsync();
+
+        // 通知在线成员：群已解散
+        var notify = new Models.DTOs.WsMessage
+        {
+            Type = Models.DTOs.WsMessageType.GroupDissolved,
+            From = groupId.ToString(),
+            To = groupId.ToString(),
+            Content = $"群「{group.Name}」已被解散",
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            MessageId = string.Empty,
+            MessageType = 0,
+            SenderName = string.Empty,
+            SenderAvatar = null
+        };
+        var json = FastJson.JsonConvert.Serialize(notify);
+        foreach (var m in members)
+        {
+            foreach (var client in _wsConnectionManager.GetConnections(m.UserId))
+            {
+                client.SendMessage(json);
+            }
+        }
+
+        await LogAsync(adminId, "group.dissolve", "group", groupId.ToString(), $"解散群「{group.Name}」（{members.Count} 人）");
+        return ApiResponse.Ok($"群已解散（{members.Count} 名成员）");
+    }
+
+    /// <summary>移除群成员（强制）</summary>
+    public async Task<ApiResponse> RemoveGroupMemberAsync(int adminId, long groupId, int userId)
+    {
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群不存在");
+        if (group.OwnerId == userId)
+            return ApiResponse.Fail("不能移除群主，请先转让群主");
+
+        var member = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == userId)
+            .FirstAsync();
+        if (member == null)
+            return ApiResponse.Fail("该用户不在群中");
+
+        await _fsql.Delete<GroupMember>().Where(m => m.Id == member.Id).ExecuteAffrowsAsync();
+
+        var user = await _fsql.Select<User>().Where(u => u.Id == userId).FirstAsync();
+        await LogAsync(adminId, "group.remove_member", "group", groupId.ToString(),
+            $"从群「{group.Name}」移除成员 {user?.Nickname ?? $"用户{userId}"}");
+        return ApiResponse.Ok("已移除该成员");
+    }
+
+    /// <summary>禁言/解除禁言群成员</summary>
+    public async Task<ApiResponse> MuteGroupMemberAsync(int adminId, long groupId, int userId, AdminMuteRequest request)
+    {
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群不存在");
+        if (group.OwnerId == userId)
+            return ApiResponse.Fail("不能禁言群主");
+
+        var member = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == userId)
+            .FirstAsync();
+        if (member == null)
+            return ApiResponse.Fail("该用户不在群中");
+
+        var mutedUntil = request.MutedUntil.HasValue && request.MutedUntil.Value > DateTime.UtcNow
+            ? request.MutedUntil.Value
+            : (DateTime?)null;
+        await _fsql.Update<GroupMember>()
+            .Set(m => m.MutedUntil, mutedUntil)
+            .Where(m => m.Id == member.Id)
+            .ExecuteAffrowsAsync();
+
+        var user = await _fsql.Select<User>().Where(u => u.Id == userId).FirstAsync();
+        var detail = mutedUntil.HasValue
+            ? $"禁言 {user?.Nickname ?? $"用户{userId}"} 至 {mutedUntil.Value:yyyy-MM-dd HH:mm}（UTC）"
+            : $"解除 {user?.Nickname ?? $"用户{userId}"} 的禁言";
+        await LogAsync(adminId, "group.mute", "group", groupId.ToString(), $"群「{group.Name}」{detail}");
+        return ApiResponse.Ok(mutedUntil.HasValue ? "已禁言" : "已解除禁言");
+    }
+
+    /// <summary>转让群主（原群主降为成员）</summary>
+    public async Task<ApiResponse> TransferGroupOwnerAsync(int adminId, long groupId, AdminTransferOwnerRequest request)
+    {
+        var group = await _fsql.Select<Group_>().Where(g => g.Id == groupId).FirstAsync();
+        if (group == null)
+            return ApiResponse.Fail("群不存在");
+
+        var newOwner = await _fsql.Select<GroupMember>()
+            .Where(m => m.GroupId == groupId && m.UserId == request.NewOwnerId)
+            .FirstAsync();
+        if (newOwner == null)
+            return ApiResponse.Fail("新群主必须是群成员");
+
+        await _fsql.Update<Group_>().Set(g => g.OwnerId, request.NewOwnerId).Where(g => g.Id == groupId).ExecuteAffrowsAsync();
+        await _fsql.Update<GroupMember>()
+            .Set(m => m.Role, 0)
+            .Where(m => m.Id == newOwner.Id)
+            .ExecuteAffrowsAsync();
+        await _fsql.Update<GroupMember>()
+            .Set(m => m.Role, 2)
+            .Where(m => m.GroupId == groupId && m.UserId == group.OwnerId)
+            .ExecuteAffrowsAsync();
+
+        await LogAsync(adminId, "group.transfer", "group", groupId.ToString(),
+            $"群「{group.Name}」群主转让为 #{request.NewOwnerId}");
+        return ApiResponse.Ok("群主已转让");
+    }
+
+    // ==================== 消息管理（P1） ====================
+
+    public async Task<ApiResponse<PagedResult<AdminMessageDto>>> SearchMessagesAdminAsync(
+        string? keyword, int? userId, long? groupId, int page = 1, int pageSize = 20)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
+        var result = new List<AdminMessageDto>();
+        var total = 0;
+
+        // 群聊（groupId 指定时只查该群）
+        var gmQuery = _fsql.Select<GroupMessage>();
+        if (groupId.HasValue) gmQuery = gmQuery.Where(m => m.GroupId == groupId.Value);
+        if (userId.HasValue) gmQuery = gmQuery.Where(m => m.SenderId == userId.Value);
+        if (!string.IsNullOrWhiteSpace(keyword)) gmQuery = gmQuery.Where(m => m.Content.Contains(keyword.Trim()));
+
+        // 私聊（userId 指定时只查该用户相关；否则查全部）
+        var pmQuery = _fsql.Select<PrivateMessage>();
+        if (userId.HasValue) pmQuery = pmQuery.Where(m => m.SenderId == userId.Value || m.ReceiverId == userId.Value);
+        if (!string.IsNullOrWhiteSpace(keyword)) pmQuery = pmQuery.Where(m => m.Content.Contains(keyword.Trim()));
+
+        var groupTotal = (int)await gmQuery.CountAsync();
+        var pmTotal = (int)await pmQuery.CountAsync();
+        total = groupTotal + pmTotal;
+
+        // 合并取最近（两边各取 take 条，合并排序后统一分页裁剪）
+        var take = page * pageSize;
+        var gmList = groupTotal > 0
+            ? await gmQuery.OrderByDescending(m => m.SentAt).Take(take).ToListAsync()
+            : new List<GroupMessage>();
+        var pmList = pmTotal > 0
+            ? await pmQuery.OrderByDescending(m => m.SentAt).Take(take).ToListAsync()
+            : new List<PrivateMessage>();
+
+        var senderIds = gmList.Select(m => m.SenderId)
+            .Concat(pmList.Select(m => m.SenderId))
+            .Concat(pmList.Select(m => m.ReceiverId))
+            .Distinct().ToList();
+        var users = senderIds.Count > 0
+            ? await _fsql.Select<User>().Where(u => senderIds.Contains(u.Id)).ToListAsync()
+            : new List<User>();
+        var userDict = users.ToDictionary(u => u.Id);
+
+        var merged = new List<(DateTime SentAt, AdminMessageDto Dto)>();
+        foreach (var m in gmList)
+        {
+            merged.Add((m.SentAt, new AdminMessageDto
+            {
+                Id = m.Id,
+                MessageId = m.ClientMessageId ?? m.Id.ToString(),
+                Type = "group",
+                SenderId = m.SenderId,
+                SenderName = userDict.GetValueOrDefault(m.SenderId)?.Nickname ?? $"用户{m.SenderId}",
+                SenderAvatar = userDict.GetValueOrDefault(m.SenderId)?.Avatar,
+                Content = m.Content,
+                MessageType = m.MessageType,
+                SessionId = m.GroupId,
+                IsDeleted = m.IsDeleted,
+                SentAt = m.SentAt
+            }));
+        }
+        foreach (var m in pmList)
+        {
+            var peer = m.SenderId == (userId ?? -1) ? m.ReceiverId : m.SenderId;
+            merged.Add((m.SentAt, new AdminMessageDto
+            {
+                Id = m.Id,
+                MessageId = m.ClientMessageId ?? m.Id.ToString(),
+                Type = "private",
+                SenderId = m.SenderId,
+                SenderName = userDict.GetValueOrDefault(m.SenderId)?.Nickname ?? $"用户{m.SenderId}",
+                SenderAvatar = userDict.GetValueOrDefault(m.SenderId)?.Avatar,
+                Content = m.Content,
+                MessageType = m.MessageType,
+                SessionId = peer,
+                IsDeleted = m.IsDeleted,
+                SentAt = m.SentAt
+            }));
+        }
+
+        var sorted = merged.OrderByDescending(x => x.SentAt).ToList();
+        var items = sorted.Skip((page - 1) * pageSize).Take(pageSize).Select(x => x.Dto).ToList();
+
+        return ApiResponse<PagedResult<AdminMessageDto>>.Ok(new PagedResult<AdminMessageDto>
+        {
+            Items = items,
+            Total = total,
+            Page = page,
+            PageSize = pageSize
+        });
+    }
+
+    /// <summary>强制删除消息（标记 IsDeleted + 广播撤回通知，历史/搜索即隐藏）</summary>
+    public async Task<ApiResponse> DeleteMessageAdminAsync(int adminId, string type, long messageId)
+    {
+        if (type == "private")
+        {
+            var msg = await _fsql.Select<PrivateMessage>().Where(m => m.Id == messageId).FirstAsync();
+            if (msg == null)
+                return ApiResponse.Fail("消息不存在");
+            await _fsql.Update<PrivateMessage>()
+                .Set(m => m.IsDeleted, true)
+                .Where(m => m.Id == messageId)
+                .ExecuteAffrowsAsync();
+
+            // 通知双方刷新（复用撤回协议）
+            BroadcastRecallAsync(messageId.ToString(), msg.SenderId, msg.ReceiverId, null);
+            await LogAsync(adminId, "message.delete", "message", messageId.ToString(),
+                $"删除私聊消息 #{messageId}（发送者 #{msg.SenderId}）");
+        }
+        else if (type == "group")
+        {
+            var msg = await _fsql.Select<GroupMessage>().Where(m => m.Id == messageId).FirstAsync();
+            if (msg == null)
+                return ApiResponse.Fail("消息不存在");
+            await _fsql.Update<GroupMessage>()
+                .Set(m => m.IsDeleted, true)
+                .Where(m => m.Id == messageId)
+                .ExecuteAffrowsAsync();
+
+            BroadcastRecallAsync(messageId.ToString(), msg.SenderId, null, msg.GroupId);
+            await LogAsync(adminId, "message.delete", "message", messageId.ToString(),
+                $"删除群消息 #{messageId}（群 {msg.GroupId}）");
+        }
+        else
+        {
+            return ApiResponse.Fail("无效的消息类型");
+        }
+        return ApiResponse.Ok("消息已删除");
+    }
+
+    /// <summary>广播撤回通知（私聊双方 / 群内全部在线成员）</summary>
+    private void BroadcastRecallAsync(string targetId, int senderId, int? peerId, long? groupId)
+    {
+        var notify = new Models.DTOs.WsMessage
+        {
+            Type = Models.DTOs.WsMessageType.MessageRecalled,
+            From = senderId.ToString(),
+            To = groupId?.ToString() ?? peerId?.ToString() ?? string.Empty,
+            Content = targetId,
+            MessageId = targetId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            MessageType = 0,
+            SenderName = string.Empty,
+            SenderAvatar = null
+        };
+        var json = FastJson.JsonConvert.Serialize(notify);
+
+        if (groupId.HasValue)
+        {
+            var members = _fsql.Select<GroupMember>().Where(m => m.GroupId == groupId.Value).ToList();
+            foreach (var m in members)
+            {
+                foreach (var client in _wsConnectionManager.GetConnections(m.UserId))
+                {
+                    client.SendMessage(json);
+                }
+            }
+        }
+        else
+        {
+            foreach (var uid in new[] { senderId, peerId ?? 0 }.Where(i => i > 0))
+            {
+                foreach (var client in _wsConnectionManager.GetConnections(uid))
+                {
+                    client.SendMessage(json);
+                }
+            }
+        }
+    }
+
+    // ==================== 机器人管理（P1） ====================
+
+    public async Task<ApiResponse<PagedResult<AdminRobotDto>>> ListRobotsAsync(
+        string? keyword, int page = 1, int pageSize = 20)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+
+        var query = _fsql.Select<RobotProfile>();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim();
+            if (int.TryParse(kw, out var id))
+                query = query.Where(p => p.Id == id || p.UserId == id || p.Name.Contains(kw));
+            else
+                query = query.Where(p => p.Name.Contains(kw));
+        }
+
+        var total = (int)await query.CountAsync();
+        var robots = await query
+            .OrderByDescending(p => p.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var ownerIds = robots.Select(r => r.OwnerId).Distinct().ToList();
+        var owners = ownerIds.Count > 0
+            ? await _fsql.Select<User>().Where(u => ownerIds.Contains(u.Id)).ToListAsync()
+            : new List<User>();
+        var ownerDict = owners.ToDictionary(u => u.Id);
+
+        var items = robots.Select(r => new AdminRobotDto
+        {
+            Id = r.Id,
+            UserId = r.UserId,
+            Name = r.Name,
+            OwnerId = r.OwnerId,
+            OwnerName = ownerDict.GetValueOrDefault(r.OwnerId)?.Nickname ?? $"用户{r.OwnerId}",
+            WebhookUrl = r.WebhookUrl,
+            Enabled = r.Enabled,
+            PushCount = r.PushCount,
+            CallbackFailCount = r.CallbackFailCount,
+            CreatedAt = r.CreatedAt
+        }).ToList();
+
+        return ApiResponse<PagedResult<AdminRobotDto>>.Ok(new PagedResult<AdminRobotDto>
+        {
+            Items = items,
+            Total = total,
+            Page = page,
+            PageSize = pageSize
+        });
+    }
+
+    public async Task<ApiResponse> SetRobotEnabledAsync(int adminId, long robotId, bool enabled)
+    {
+        var profile = await _fsql.Select<RobotProfile>().Where(p => p.Id == robotId).FirstAsync();
+        if (profile == null)
+            return ApiResponse.Fail("机器人不存在");
+
+        await _fsql.Update<RobotProfile>()
+            .Set(p => p.Enabled, enabled)
+            .Where(p => p.Id == robotId)
+            .ExecuteAffrowsAsync();
+
+        await LogAsync(adminId, "robot.set_enabled", "robot", robotId.ToString(),
+            $"{(enabled ? "启用" : "停用")}机器人「{profile.Name}」");
+        return ApiResponse.Ok(enabled ? "机器人已启用" : "机器人已停用");
+    }
+
+    public async Task<ApiResponse> DeleteRobotAsync(int adminId, long robotId)
+    {
+        var result = await _botService.DeleteRobotByAdminAsync(robotId);
+        if (result.Success)
+        {
+            await LogAsync(adminId, "robot.delete", "robot", robotId.ToString(), "删除机器人");
+        }
+        return result;
     }
 
     // ==================== 内部 ====================

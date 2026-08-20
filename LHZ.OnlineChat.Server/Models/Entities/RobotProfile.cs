@@ -59,6 +59,18 @@ public class RobotProfile
     [Column(IsNullable = false)]
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// 主动推送累计次数（第三方 /api/robots/{token}/reply + 机器人回复）
+    /// </summary>
+    [Column(IsNullable = false)]
+    public long PushCount { get; set; }
+
+    /// <summary>
+    /// 回调失败累计次数（Webhook 调度失败/超时）
+    /// </summary>
+    [Column(IsNullable = false)]
+    public long CallbackFailCount { get; set; }
+
     [Column(IsNullable = false)]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
