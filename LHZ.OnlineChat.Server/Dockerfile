@@ -2,11 +2,18 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# 先复制项目文件与 NuGet 配置，利用层缓存
-COPY LHZ.OnlineChat.Server/nuget.config LHZ.OnlineChat.Server/
+# 先复制解决方案级配置与全部项目文件，利用层缓存（依赖未变则跳过 restore）
+COPY nuget.config Directory.Build.props ./
+COPY LHZ.OnlineChat.Domain/LHZ.OnlineChat.Domain.csproj LHZ.OnlineChat.Domain/
+COPY LHZ.OnlineChat.Application/LHZ.OnlineChat.Application.csproj LHZ.OnlineChat.Application/
+COPY LHZ.OnlineChat.Infrastructure/LHZ.OnlineChat.Infrastructure.csproj LHZ.OnlineChat.Infrastructure/
 COPY LHZ.OnlineChat.Server/LHZ.OnlineChat.Server.csproj LHZ.OnlineChat.Server/
 RUN dotnet restore LHZ.OnlineChat.Server/LHZ.OnlineChat.Server.csproj
 
+# 再复制源码（四层）
+COPY LHZ.OnlineChat.Domain/ LHZ.OnlineChat.Domain/
+COPY LHZ.OnlineChat.Application/ LHZ.OnlineChat.Application/
+COPY LHZ.OnlineChat.Infrastructure/ LHZ.OnlineChat.Infrastructure/
 COPY LHZ.OnlineChat.Server/ LHZ.OnlineChat.Server/
 RUN dotnet publish LHZ.OnlineChat.Server/LHZ.OnlineChat.Server.csproj -c Release -o /app/publish --no-restore
 

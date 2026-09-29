@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    领域层：零外部依赖（连 ORM / JSON / DI 都不引用）。
+    持久化映射由 Infrastructure 的 FreeSql FluentApi 完成，实体保持纯 C#。
+  -->
+</Project>

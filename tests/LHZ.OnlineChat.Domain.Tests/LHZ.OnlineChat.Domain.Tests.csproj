@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    领域层单元测试：纯内存、无任何替身/mock。
+    领域层零外部依赖正是为了让这一层能这样测 —— 不需要数据库、不需要容器、毫秒级跑完。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\LHZ.OnlineChat.Domain\LHZ.OnlineChat.Domain.csproj" />
+  </ItemGroup>
+</Project>

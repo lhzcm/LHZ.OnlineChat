@@ -1,0 +1,27 @@
+<Project>
+  <!-- 四层共用的编译设置（Domain / Application / Infrastructure / Server） -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EffectiveAnalysisLevel>9</EffectiveAnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <!--
+      有意抑制的分析器规则（每条都与本项目的设计选择直接冲突，而非「懒得改」）：
+        CA1000 泛型类型不应有静态成员 —— ApiResponse<T>.Ok/Fail 是对前端的既有契约，不能改签名
+        CA1711 类型名不应以 EventHandler 结尾 —— DomainEventHandler<T> 正是 DDD 里该用的名字
+        CA1716 参数名不应与保留关键字冲突 —— to / from 在收发消息语境下最贴切
+        CA1848 应改用 LoggerMessage 委托 —— 本项目日志量不构成瓶颈，可读性优先
+        CA1873 日志参数求值可能昂贵 —— 与 CA1848 成对出现，同理
+        CA2007 await 应带 ConfigureAwait —— ASP.NET Core 无同步上下文，仅在库代码显式标注
+    -->
+    <NoWarn>$(NoWarn);CA1000;CA1711;CA1716;CA1848;CA1873;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.302">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

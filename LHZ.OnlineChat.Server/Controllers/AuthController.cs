@@ -1,189 +1,140 @@
-using LHZ.OnlineChat.Server.Models.DTOs;
-using LHZ.OnlineChat.Server.Services;
+using LHZ.OnlineChat.Application.Abstractions;
+using LHZ.OnlineChat.Application.Users.Commands;
+using LHZ.OnlineChat.Application.Users.Queries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LHZ.OnlineChat.Server.Controllers;
 
-/// <summary>
-/// 用户认证控制器
-/// </summary>
-[ApiController]
+/// <summary>用户认证与个人信息</summary>
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
+public sealed class AuthController : ApiControllerBase
 {
-    private readonly AuthService _authService;
-
-    public AuthController(AuthService authService)
-    {
-        _authService = authService;
-    }
-
-    /// <summary>
-    /// 发送邮箱验证码（6 位数字）
-    /// </summary>
+    /// <summary>发送邮箱验证码（6 位数字）</summary>
     [HttpPost("send-code")]
-    public async Task<IActionResult> SendCode([FromBody] SendCodeRequest request)
-    {
-        var result = await _authService.SendCodeAsync(request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
+    public Task<IActionResult> SendCode([FromBody] SendVerificationCodeCommand command, CancellationToken ct)
+        => Send(command, ct);
 
-    /// <summary>
-    /// 用户注册
-    /// </summary>
+    /// <summary>用户注册</summary>
     [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
-    {
-        var result = await _authService.RegisterAsync(request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
+    public Task<IActionResult> Register([FromBody] RegisterUserCommand command, CancellationToken ct)
+        => Send(command, ct);
 
-    /// <summary>
-    /// 用户登录
-    /// </summary>
+    /// <summary>用户登录（账号 ID 或邮箱）</summary>
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    public Task<IActionResult> Login([FromBody] LoginCommand command, CancellationToken ct)
     {
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
-        var result = await _authService.LoginAsync(request, ip);
-        return result.Success ? Ok(result) : BadRequest(result);
+        // IP 由服务端从连接解析，不信任客户端传值
+        command.Ip = CurrentUser.ClientIp;
+        return Send(command, ct);
     }
 
-    /// <summary>
-    /// 刷新 Token
-    /// </summary>
+    /// <summary>刷新访问令牌</summary>
     [HttpPost("refresh")]
-    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
-    {
-        var result = await _authService.RefreshTokenAsync(request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
+    public Task<IActionResult> RefreshToken([FromBody] RefreshTokenCommand command, CancellationToken ct)
+        => Send(command, ct);
 
-    /// <summary>
-    /// 忘记密码（邮箱验证码重置密码，成功后所有登录会话失效）
-    /// </summary>
+    /// <summary>忘记密码（邮箱验证码重置）</summary>
     [HttpPost("forgot-password")]
-    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
-    {
-        var result = await _authService.ForgotPasswordAsync(request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
+    public Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordCommand command, CancellationToken ct)
+        => Send(command, ct);
 
-    /// <summary>
-    /// 获取当前账号的所有登录会话（多端登录管理）
-    /// </summary>
-    [HttpGet("sessions")]
-    [Authorize]
-    public async Task<IActionResult> GetSessions()
-    {
-        var result = await _authService.GetSessionsAsync(GetUserId(), GetSessionId());
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 踢下线指定会话（该设备的 RefreshToken 失效 + WebSocket 断开）
-    /// </summary>
-    [HttpDelete("sessions/{sessionId}")]
-    [Authorize]
-    public async Task<IActionResult> KickSession(string sessionId)
-    {
-        var result = await _authService.KickSessionAsync(GetUserId(), sessionId);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 退出其他所有设备（保留当前设备）
-    /// </summary>
-    [HttpPost("sessions/logout-others")]
-    [Authorize]
-    public async Task<IActionResult> LogoutOtherSessions()
-    {
-        var result = await _authService.LogoutOtherSessionsAsync(GetUserId(), GetSessionId());
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 修改密码（验证原密码）
-    /// </summary>
-    [HttpPut("password")]
-    [Authorize]
-    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
-    {
-        var result = await _authService.ChangePasswordAsync(GetUserId(), request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 修改昵称
-    /// </summary>
-    [HttpPut("profile")]
-    [Authorize]
-    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
-    {
-        var result = await _authService.UpdateProfileAsync(GetUserId(), request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 上传头像
-    /// </summary>
-    [HttpPost("avatar")]
-    [Authorize]
-    public async Task<IActionResult> UploadAvatar(IFormFile? file)
-    {
-        var result = await _authService.UploadAvatarAsync(GetUserId(), file);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 换绑邮箱（需新邮箱验证码，且不能与其他账号重复）
-    /// </summary>
-    [HttpPut("email")]
-    [Authorize]
-    public async Task<IActionResult> UpdateEmail([FromBody] UpdateEmailRequest request)
-    {
-        var result = await _authService.UpdateEmailAsync(GetUserId(), request);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    /// <summary>
-    /// 获取当前用户信息（需要认证）
-    /// </summary>
+    /// <summary>当前用户信息</summary>
     [HttpGet("me")]
     [Authorize]
-    public async Task<IActionResult> GetCurrentUser()
+    public Task<IActionResult> GetCurrentUser(CancellationToken ct)
+        => Send(new GetCurrentUserQuery { UserId = UserId }, ct);
+
+    /// <summary>当前账号的全部登录设备</summary>
+    [HttpGet("sessions")]
+    [Authorize]
+    public Task<IActionResult> GetSessions(CancellationToken ct)
+        => Send(new GetLoginSessionsQuery { UserId = UserId, CurrentSessionId = SessionId }, ct);
+
+    /// <summary>踢下线指定设备</summary>
+    [HttpDelete("sessions/{sessionId}")]
+    [Authorize]
+    public Task<IActionResult> KickSession(string sessionId, CancellationToken ct)
+        => Send(new KickSessionCommand { UserId = UserId, SessionId = sessionId }, ct);
+
+    /// <summary>退出其他所有设备</summary>
+    [HttpPost("sessions/logout-others")]
+    [Authorize]
+    public Task<IActionResult> LogoutOtherSessions(CancellationToken ct)
+        => Send(new LogoutOtherSessionsCommand { UserId = UserId, CurrentSessionId = SessionId }, ct);
+
+    /// <summary>修改密码（验证原密码）</summary>
+    [HttpPut("password")]
+    [Authorize]
+    public Task<IActionResult> ChangePassword([FromBody] ChangePasswordCommand command, CancellationToken ct)
     {
-        var userId = GetUserId();
-        if (userId <= 0)
-            return Unauthorized(ApiResponse.Fail("无效的 Token"));
-
-        var fsql = HttpContext.RequestServices.GetRequiredService<IFreeSql>();
-        var user = await fsql.Select<LHZ.OnlineChat.Server.Models.Entities.User>()
-            .Where(u => u.Id == userId)
-            .FirstAsync();
-
-        if (user == null)
-            return NotFound(ApiResponse.Fail("用户不存在"));
-
-        return Ok(ApiResponse<UserInfo>.Ok(new UserInfo
-        {
-            Id = user.Id,
-            Nickname = user.Nickname,
-            Avatar = user.Avatar,
-            Email = user.Email
-        }));
+        command.UserId = UserId;
+        return Send(command, ct);
     }
 
-    private int GetUserId()
+    /// <summary>修改昵称</summary>
+    [HttpPut("profile")]
+    [Authorize]
+    public Task<IActionResult> UpdateProfile([FromBody] UpdateNicknameCommand command, CancellationToken ct)
     {
-        var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        return int.TryParse(claim, out var id) ? id : 0;
+        command.UserId = UserId;
+        return Send(command, ct);
     }
 
-    /// <summary>
-    /// 当前 JWT 的会话 ID（sid claim），用于标记"当前设备"
-    /// </summary>
-    private string GetSessionId()
-        => User.FindFirst("sid")?.Value ?? string.Empty;
+    /// <summary>换绑邮箱（需新邮箱验证码）</summary>
+    [HttpPut("email")]
+    [Authorize]
+    public Task<IActionResult> UpdateEmail([FromBody] ChangeEmailCommand command, CancellationToken ct)
+    {
+        command.UserId = UserId;
+        return Send(command, ct);
+    }
+
+    /// <summary>上传头像</summary>
+    [HttpPost("avatar")]
+    [Authorize]
+    public async Task<IActionResult> UploadAvatar(IFormFile? file, CancellationToken ct)
+    {
+        await using var upload = file.ToFileUpload();
+        return await Send(new UploadAvatarCommand { UserId = UserId, File = upload.Value }, ct);
+    }
+}
+
+/// <summary>
+/// IFormFile → 应用层的 FileUpload。
+/// 应用层不引用 ASP.NET 类型，所以在表现层做这层转换；
+/// 流的生命周期由 using 管到用例执行结束。
+/// </summary>
+internal static class FormFileExtensions
+{
+    internal static FileUploadScope ToFileUpload(this IFormFile? file)
+        => file is null || file.Length == 0
+            ? new FileUploadScope(null, null)
+            : new FileUploadScope(
+                new FileUpload
+                {
+                    FileName = file.FileName,
+                    Length = file.Length,
+                    Content = file.OpenReadStream()
+                },
+                null);
+}
+
+/// <summary>承载 FileUpload 并负责释放底层流</summary>
+internal sealed class FileUploadScope : IAsyncDisposable
+{
+    private readonly Stream? _stream;
+
+    internal FileUploadScope(FileUpload? value, Stream? stream)
+    {
+        Value = value;
+        _stream = stream ?? value?.Content;
+    }
+
+    internal FileUpload? Value { get; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_stream is not null) await _stream.DisposeAsync();
+    }
 }

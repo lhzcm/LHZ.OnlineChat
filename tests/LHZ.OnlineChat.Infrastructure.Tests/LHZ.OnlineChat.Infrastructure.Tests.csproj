@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    基础设施层单元测试：只覆盖「不需要外部依赖的纯逻辑」——
+    加密/签名、值对象转换器、映射配置、Redis 键位规则、本地文件存储。
+
+    需要真实 PostgreSQL / Redis / SMTP / HTTP 的部分（仓储查询、会话存储、Webhook 调度）
+    属于集成测试范畴，不在这里用假数据库糊弄过去 —— 那只会测出替身自己的行为。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\LHZ.OnlineChat.Infrastructure\LHZ.OnlineChat.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

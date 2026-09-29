@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- 持久化 -->
+    <PackageReference Include="FreeSql.Provider.PostgreSQL" Version="3.5.311" />
+    <PackageReference Include="FreeSql.Repository" Version="3.5.311" />
+    <!-- 缓存 / 会话 / 在线状态 -->
+    <PackageReference Include="StackExchange.Redis" Version="3.1.3" />
+    <!-- 实时通信（自研 RFC 6455 库；AspNetCore 包会传递引入 LHZ.WebSocket 核心） -->
+    <PackageReference Include="LHZ.WebSocket.AspNetCore" Version="1.2.0" />
+    <!-- WS 协议 / Webhook 载荷序列化（camelCase 双向兼容） -->
+    <PackageReference Include="LHZ.FastJson" Version="2.0.1-pre" />
+    <!-- 邮件 / 口令哈希 / 令牌签发 -->
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+    <!-- 宿主集成 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LHZ.OnlineChat.Application\LHZ.OnlineChat.Application.csproj" />
+  </ItemGroup>
+</Project>

@@ -70,29 +70,80 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 
 | 端 | 技术 |
 |---|---|
-| 后端 | .NET 10 (ASP.NET Core)、FreeSql (PostgreSQL, CodeFirst 自动建表)、StackExchange.Redis、JWT Bearer、BCrypt、MailKit (SMTP)、Swagger |
+| 后端 | .NET 10 (ASP.NET Core)、**DDD 四层架构 + MediatR CQRS**、FreeSql (PostgreSQL, CodeFirst 自动建表)、StackExchange.Redis、JWT Bearer、BCrypt、MailKit (SMTP)、Swagger |
 | 前端 | Vue 3 (Composition API) + TypeScript、Vite 6、Pinia、Vue Router、Axios |
 | 实时通信 | LHZ.WebSocket (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 中间件 |
 | 序列化 | LHZ.FastJson 2.0.1-pre(WS 协议 camelCase,`[JsonProperty]` 标注) |
+
+## 🧱 后端架构(DDD 四层)
+
+依赖方向严格由外向内,用**独立 csproj 在编译期强制**,而非靠自觉:
+
+```
+Server ──→ Infrastructure ──→ Application ──→ Domain
+(HTTP/WS)    (FreeSql/Redis)    (用例/CQRS)    (领域模型,零依赖)
+```
+
+| 层 | 职责 | 不允许出现 |
+|---|---|---|
+| **Domain** | 聚合根、值对象、领域事件、仓储接口。业务规则的唯一归属地 | 任何外部包(连 ORM / JSON / DI 都不引用) |
+| **Application** | 一个用例一个 Command/Query + Handler;声明基础设施端口(接口) | SQL、HttpContext、协议报文 |
+| **Infrastructure** | 仓储实现、Redis、WS 推送、JWT、邮件、Webhook;实现 Application 声明的端口 | 业务规则 |
+| **Server** | 控制器(仅转发到 MediatR)、鉴权管道、DI 组合根 | 业务逻辑 |
+
+**限界上下文**:Users / Friends / Blacklists / Groups / Messaging / Robots / Admins
+
+几个关键设计点:
+
+- **领域层零 ORM 依赖**:实体是纯 C#(私有 setter + 私有构造),持久化映射由 Infrastructure 的 FreeSql **FluentApi** 完成,`CodeFirst` 自动建表能力不受影响
+- **值对象**:`Email`、`PasswordHash`、`GroupAnnouncement`、`MentionList`、`MessageReply`、`WebhookUrl` —— 校验与归一化收敛在类型内部;需要落库的经 FreeSql `TypeHandler` 双向转换
+- **领域事件解耦副作用**:`UserPasswordChanged` → 踢全部会话;`UserBanned` → 踢设备;`UserBlocked` → 解好友 + 推通知;`GroupDissolved` → 通知成员 + 清会话设置。改造前这些副作用在各个 Service 里被分别手写,漏一处就是缺陷
+- **管道统一错误转换**:领域层只 `throw DomainException`,`DomainExceptionBehavior` 统一转成 `ApiResponse.Fail` —— HTTP 响应形状与改造前完全一致,前端无需改动
+- **小聚合**:`Group` 与 `GroupMember`、消息都是独立聚合,按标识引用,避免每次发言把整群成员载入内存
 
 ## 📁 目录结构
 
 ```
 LHZ.OnlineChat/
 ├── docker-compose.yml            # Docker 编排(Postgres/Redis/后端/前端 nginx)
+├── Directory.Build.props         # 四层共用编译设置
+├── nuget.config
 ├── .env.example                  # 部署配置模板
 ├── DEPLOY.md                     # 线上部署手册(HTTPS/备份/运维)
 ├── README.md
 ├── LHZ.WebSocket.README.md       # 自研 WebSocket 库文档
-├── LHZ.OnlineChat.Server/        # 后端 API + WebSocket
-│   ├── Program.cs                # 入口:DI、JWT、FreeSql、Redis、WS 中间件、uploads 静态服务
-│   ├── Dockerfile                # 多阶段构建(restore → publish → aspnet 10)
-│   ├── Config/                   # AppSettings(连接串/Redis/JWT/CORS/SMTP)
-│   ├── Controllers/              # Auth / Friends / Groups / Messages
-│   ├── Services/                 # 业务服务 + Email + Redis + WS 连接管理/消息分发
-│   └── Models/
-│       ├── Entities/             # User / Friend / FriendTag / Group_ / GroupMember / PrivateMessage / GroupMessage
-│       └── DTOs/                 # 请求/响应 + WS 协议(WsMessage)
+│
+├── LHZ.OnlineChat.Domain/        # ① 领域层(零外部依赖)
+│   ├── Common/                   # AggregateRoot / ValueObject / DomainException / IClock
+│   ├── Users/                    # User 聚合 + Email/PasswordHash 值对象 + 事件
+│   ├── Friends/                  # Friendship / FriendSetting
+│   ├── Blacklists/               # BlacklistEntry
+│   ├── Groups/                   # Group / GroupMember / GroupAnnouncement + GroupRole
+│   ├── Messaging/                # PrivateMessage / GroupMessage / SessionSetting + MentionList / RecallPolicy
+│   ├── Robots/                   # Robot + WebhookUrl
+│   └── Admins/                   # Admin / AdminAuditLog + AuditActions
+│
+├── LHZ.OnlineChat.Application/   # ② 应用层(用例 + 端口)
+│   ├── Common/                   # ApiResponse / 管道 Behavior / 领域事件派发
+│   ├── Abstractions/             # 基础设施端口:实时推送/会话/缓存/邮件/存储/Webhook
+│   └── <上下文>/Commands|Queries|EventHandlers/
+│
+├── LHZ.OnlineChat.Infrastructure/# ③ 基础设施层(端口实现)
+│   ├── Persistence/              # FluentApi 映射 + 仓储 + TypeHandler + 启动迁移
+│   ├── Caching/                  # Redis:会话/验证码/在线状态/消息缓存
+│   ├── Realtime/                 # WS 连接管理 + 协议封包 + 入站分发
+│   ├── Security/                 # JWT / BCrypt / 机器人令牌 AES-GCM / HMAC
+│   ├── Messaging/ Storage/ Bots/ # 邮件 / 文件 / Webhook 调度
+│   └── DependencyInjection.cs
+│
+├── LHZ.OnlineChat.Server/        # ④ 表现层(HTTP + WebSocket)
+│   ├── Program.cs                # 组合根:分层装配、JWT、CORS、管道
+│   ├── Controllers/              # 薄转发到 MediatR(含 Admin/)
+│   ├── Authentication/           # ICurrentUser 实现 + AdminAuthorize
+│   ├── Realtime/                 # WS 端点(握手鉴权)
+│   ├── Configuration/            # appsettings 绑定
+│   └── Dockerfile                # 多阶段构建(四层 restore → publish → aspnet 10)
+│
 └── lhz-onlinechat-web/           # 前端
     ├── Dockerfile + nginx.conf   # 构建 → nginx 托管静态文件 + 反代 API/WS/uploads
     ├── .env.development          # 开发环境 WS 地址
@@ -105,6 +156,27 @@ LHZ.OnlineChat/
         ├── views/                # Login / Register / ChatLayout
         └── router/ types/ assets/
 ```
+
+## 🧪 单元测试
+
+```bash
+dotnet test                                       # 全部 903 个用例，约 1.5 秒
+dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
+```
+
+| 测试工程 | 用例数 | 覆盖内容 | 依赖 |
+|---|---:|---|---|
+| `Domain.Tests` | 343 | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
+| `Application.Tests` | 420 | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
+| `Infrastructure.Tests` | 140 | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储 | 无 |
+
+几点约定:
+
+- **不用 mock 框架**,一律手写内存测试替身([TestDoubles/](tests/LHZ.OnlineChat.Application.Tests/TestDoubles/))。内存仓储会真的分配自增主键,因此"忘了回填 Id 就发事件"这类顺序错误测得出来;mock 测不出。
+- **领域层零依赖的直接收益**:343 个领域测试不需要数据库、不需要容器,全部跑完 121 毫秒。
+- **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
+- **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
+- **需要真实 PostgreSQL / Redis / SMTP 的部分不在单元测试里糊弄**(那只会测出替身自己的行为),仓储查询与会话存储属于集成测试范畴。
 
 ## 🚀 本地运行
 
@@ -121,8 +193,9 @@ dotnet run --project LHZ.OnlineChat.Server
 
 - HTTP API:`http://localhost:5000`,Swagger(开发环境):`/swagger`
 - WebSocket:`ws://localhost:5000/?access_token=<JWT>`
-- 启动自动:创建数据库(若不存在)→ CodeFirst 同步表结构 → 账号 ID 序列迁移(起始 10000)
+- 启动自动:创建数据库(若不存在)→ CodeFirst 同步表结构 → 账号 ID 序列迁移(起始 10000)→ pg_trgm 搜索索引 → 初始超管
 - 上传的头像保存在 `LHZ.OnlineChat.Server/uploads/`,经 `/uploads/*` 访问
+- `LHZ.OnlineChat.Server` 只是启动项目;`dotnet build` 会按依赖顺序构建四层
 
 ### 前端
 

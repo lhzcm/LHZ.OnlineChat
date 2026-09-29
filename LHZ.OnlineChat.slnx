@@ -1,3 +1,11 @@
 <Solution>
+  <Project Path="LHZ.OnlineChat.Domain/LHZ.OnlineChat.Domain.csproj" />
+  <Project Path="LHZ.OnlineChat.Application/LHZ.OnlineChat.Application.csproj" />
+  <Project Path="LHZ.OnlineChat.Infrastructure/LHZ.OnlineChat.Infrastructure.csproj" />
   <Project Path="LHZ.OnlineChat.Server/LHZ.OnlineChat.Server.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/LHZ.OnlineChat.Domain.Tests/LHZ.OnlineChat.Domain.Tests.csproj" />
+    <Project Path="tests/LHZ.OnlineChat.Application.Tests/LHZ.OnlineChat.Application.Tests.csproj" />
+    <Project Path="tests/LHZ.OnlineChat.Infrastructure.Tests/LHZ.OnlineChat.Infrastructure.Tests.csproj" />
+  </Folder>
 </Solution>

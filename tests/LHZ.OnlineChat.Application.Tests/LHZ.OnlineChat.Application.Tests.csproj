@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    应用层用例测试：不用 mock 框架，一律用手写的内存测试替身（TestDoubles/）。
+    理由：这些替身有真实行为（内存仓储会真的存取、真的分配自增主键），
+    能测出 mock 测不出的问题（比如"忘了回填主键就发事件"）；
+    而且写一次能被 60+ 个用例复用，总成本低于逐个用例摆 mock。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\LHZ.OnlineChat.Application\LHZ.OnlineChat.Application.csproj" />
+    <ProjectReference Include="..\..\LHZ.OnlineChat.Domain\LHZ.OnlineChat.Domain.csproj" />
+  </ItemGroup>
+</Project>

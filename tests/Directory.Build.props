@@ -1,0 +1,31 @@
+<Project>
+  <!-- 先继承仓库根的公共设置（TargetFramework / Nullable / 分析器 / NoWarn） -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!--
+      测试工程额外放开的分析器规则（都是「测试代码的惯例与产品代码不同」，不是降低要求）：
+        CA1707 标识符不应含下划线 —— 测试方法名用 方法_场景_预期 三段式，可读性远胜驼峰
+        CA1034 不应嵌套公开类型     —— 用嵌套类给测试分组（Theory 数据、场景固定装置）
+        CA1812 未实例化的内部类     —— 测试替身与 Theory 数据类由反射/xUnit 实例化
+        CA1051 不应有可见实例字段   —— 测试替身用公开字段记录调用，比属性更省事
+        CA5394 不应使用不安全随机数 —— 测试数据不需要密码学强度
+        CA1861 常量数组应提取为静态 —— 内联数组在 Theory/断言里更直观
+    -->
+    <NoWarn>$(NoWarn);CA1707;CA1034;CA1812;CA1051;CA5394;CA1861</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>
