@@ -6,10 +6,11 @@
 
 **http://chat.onlinemusic.top/chat** — 注册账号即可体验(建议电脑端访问,移动端同样支持)
 
-- 后端:ASP.NET Core (.NET 10) + FreeSql + PostgreSQL + Redis
+- 后端:ASP.NET Core (.NET 10) + **DDD 四层架构 + MediatR CQRS** + FreeSql + PostgreSQL + Redis
 - 前端:Vue 3 + TypeScript + Vite + Pinia
-- 实时通信:自研 [LHZ.WebSocket](LHZ.WebSocket.README.md) 库(RFC 6455 实现)
+- 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
 - JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
+- 测试:903 个单元测试(xUnit),全量约 1.3 秒
 
 ## ✨ 功能总览
 
@@ -56,24 +57,15 @@
 - **全局免打扰时段**:设置起止时间(支持跨午夜),时段内不弹通知、不响提示音,未读角标照常累计
 - **PWA**:manifest + 图标 + Service Worker,可安装到桌面/主屏,离线打开应用;`/manifest.webmanifest` 已配正确 MIME
 
-### 6. 官方示例插件:DeepSeek Harness 客户端推送插件(plugins/dsh-bot-notify)
-
-装在 **DeepSeek Harness 客户端里**的插件(与上面的 `dsh-bot` 方向相反):监听 Harness 会话事件,把任务的**执行过程与结果**通过机器人主动推送链接(`/api/robots/{令牌}/reply`)通知用户——`🧠 任务开始(含任务内容)` → `🔧 工具调用(可选)` → `✅ 执行结果(turn/step+回复)` → `⚠️ 异常结束`。详见 [plugins/dsh-bot-notify/README.md](plugins/dsh-bot-notify/README.md),安装 3 步:
-
-```bash
-dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
-# 编辑 $DSH_HOME/profiles/web/cordis.patch.yml 填入 pushUrl/sessionId(模板已写入)
-# 重启 dsh web 生效(日志出现 [dsh-bot-notify] 已启用)
-```
-
 ## 🏗️ 技术栈
 
 | 端 | 技术 |
 |---|---|
 | 后端 | .NET 10 (ASP.NET Core)、**DDD 四层架构 + MediatR CQRS**、FreeSql (PostgreSQL, CodeFirst 自动建表)、StackExchange.Redis、JWT Bearer、BCrypt、MailKit (SMTP)、Swagger |
 | 前端 | Vue 3 (Composition API) + TypeScript、Vite 6、Pinia、Vue Router、Axios |
-| 实时通信 | LHZ.WebSocket (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 中间件 |
+| 实时通信 | LHZ.WebSocket 1.2.0 (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 中间件 |
 | 序列化 | LHZ.FastJson 2.0.1-pre(WS 协议 camelCase,`[JsonProperty]` 标注) |
+| 测试 | xUnit 2.9,手写内存测试替身(不依赖 mock 框架) |
 
 ## 🧱 后端架构(DDD 四层)
 
@@ -103,79 +95,98 @@ Server ──→ Infrastructure ──→ Application ──→ Domain
 
 ## 📁 目录结构
 
+仓库按**部署单元**分区:`backend/` 与 `frontend/` 各自独立,根目录只放编排与共享配置。
+
 ```
 LHZ.OnlineChat/
-├── docker-compose.yml            # Docker 编排(Postgres/Redis/后端/前端 nginx)
-├── Directory.Build.props         # 四层共用编译设置
+├── docker-compose.yml                  # 编排(Postgres/Redis/后端/前端/管理后台)
+├── .env.example                        # 部署配置模板
 ├── nuget.config
-├── .env.example                  # 部署配置模板
-├── DEPLOY.md                     # 线上部署手册(HTTPS/备份/运维)
 ├── README.md
-├── LHZ.WebSocket.README.md       # 自研 WebSocket 库文档
+├── docs/
+│   └── DEPLOY.md                       # 线上部署手册(HTTPS/备份/运维)
 │
-├── LHZ.OnlineChat.Domain/        # ① 领域层(零外部依赖)
-│   ├── Common/                   # AggregateRoot / ValueObject / DomainException / IClock
-│   ├── Users/                    # User 聚合 + Email/PasswordHash 值对象 + 事件
-│   ├── Friends/                  # Friendship / FriendSetting
-│   ├── Blacklists/               # BlacklistEntry
-│   ├── Groups/                   # Group / GroupMember / GroupAnnouncement + GroupRole
-│   ├── Messaging/                # PrivateMessage / GroupMessage / SessionSetting + MentionList / RecallPolicy
-│   ├── Robots/                   # Robot + WebhookUrl
-│   └── Admins/                   # Admin / AdminAuditLog + AuditActions
+├── backend/                            # ===== 后端(DDD 四层)=====
+│   ├── LHZ.OnlineChat.slnx             # 解决方案(四层 + 三个测试工程)
+│   ├── Directory.Build.props           # 四层共用编译设置
+│   │
+│   ├── LHZ.OnlineChat.Domain/          # ① 领域层(零外部依赖)
+│   │   ├── Common/                     # AggregateRoot / ValueObject / DomainException / IClock
+│   │   ├── Users/                      # User 聚合 + Email/PasswordHash 值对象 + 事件
+│   │   ├── Friends/                    # Friendship / FriendSetting
+│   │   ├── Blacklists/                 # BlacklistEntry
+│   │   ├── Groups/                     # Group / GroupMember / GroupAnnouncement + GroupRole
+│   │   ├── Messaging/                  # PrivateMessage / GroupMessage / SessionSetting
+│   │   │                               #   + MentionList / MessageReply / RecallPolicy
+│   │   ├── Robots/                     # Robot + WebhookUrl
+│   │   └── Admins/                     # Admin / AdminAuditLog + AuditActions
+│   │
+│   ├── LHZ.OnlineChat.Application/     # ② 应用层(用例 + 端口)
+│   │   ├── Common/                     # ApiResponse / 管道 Behavior / 领域事件派发
+│   │   ├── Abstractions/               # 端口:实时推送/会话/缓存/邮件/存储/Webhook/审计
+│   │   └── <上下文>/Commands|Queries|EventHandlers/
+│   │
+│   ├── LHZ.OnlineChat.Infrastructure/  # ③ 基础设施层(端口实现)
+│   │   ├── Persistence/                # FluentApi 映射 + 仓储 + TypeHandler + 启动迁移
+│   │   ├── Caching/                    # Redis:会话/验证码/在线状态/消息缓存
+│   │   ├── Realtime/                   # WS 连接管理 + 协议封包 + 入站分发
+│   │   ├── Security/                   # JWT / BCrypt / 机器人令牌 AES-GCM / HMAC
+│   │   ├── Messaging/ Storage/ Bots/   # 邮件 / 文件 / Webhook 调度
+│   │   └── DependencyInjection.cs
+│   │
+│   ├── LHZ.OnlineChat.Server/          # ④ 表现层(HTTP + WebSocket)
+│   │   ├── Program.cs                  # 组合根:分层装配、JWT、CORS、管道
+│   │   ├── Controllers/                # 薄转发到 MediatR(含 Admin/)
+│   │   ├── Authentication/             # ICurrentUser 实现 + AdminAuthorize
+│   │   ├── Realtime/                   # WS 端点(握手鉴权)
+│   │   ├── Configuration/              # appsettings 绑定
+│   │   └── Dockerfile                  # 多阶段构建(四层 restore → publish → aspnet 10)
+│   │
+│   └── tests/                          # 单元测试(见「单元测试」一节)
+│       ├── LHZ.OnlineChat.Domain.Tests/
+│       ├── LHZ.OnlineChat.Application.Tests/
+│       └── LHZ.OnlineChat.Infrastructure.Tests/
 │
-├── LHZ.OnlineChat.Application/   # ② 应用层(用例 + 端口)
-│   ├── Common/                   # ApiResponse / 管道 Behavior / 领域事件派发
-│   ├── Abstractions/             # 基础设施端口:实时推送/会话/缓存/邮件/存储/Webhook
-│   └── <上下文>/Commands|Queries|EventHandlers/
+├── frontend/                           # ===== 前端 =====
+│   ├── lhz-onlinechat-web/             # 用户端(PWA)
+│   │   ├── Dockerfile + nginx.conf     # 构建 → nginx 托管静态文件 + 反代 API/WS/uploads
+│   │   ├── .env.development            # 开发环境 WS 地址
+│   │   └── src/
+│   │       ├── api/                    # axios 封装(auth/friend/group/message)
+│   │       ├── stores/                 # auth / websocket / chat / friend / group (Pinia)
+│   │       ├── components/             # Avatar / 聊天区 / 各类弹窗
+│   │       ├── constants/ utils/       # emoji 数据 / 头像工具
+│   │       ├── views/                  # Login / Register / ForgotPassword / ChatLayout
+│   │       └── router/ types/ assets/
+│   │
+│   └── admin-web/                      # 管理后台(独立构建,经主前端 /admin 反代)
+│       ├── Dockerfile + nginx.conf
+│       └── src/views/                  # Dashboard / Users / Groups / Admins / 审计日志
 │
-├── LHZ.OnlineChat.Infrastructure/# ③ 基础设施层(端口实现)
-│   ├── Persistence/              # FluentApi 映射 + 仓储 + TypeHandler + 启动迁移
-│   ├── Caching/                  # Redis:会话/验证码/在线状态/消息缓存
-│   ├── Realtime/                 # WS 连接管理 + 协议封包 + 入站分发
-│   ├── Security/                 # JWT / BCrypt / 机器人令牌 AES-GCM / HMAC
-│   ├── Messaging/ Storage/ Bots/ # 邮件 / 文件 / Webhook 调度
-│   └── DependencyInjection.cs
-│
-├── LHZ.OnlineChat.Server/        # ④ 表现层(HTTP + WebSocket)
-│   ├── Program.cs                # 组合根:分层装配、JWT、CORS、管道
-│   ├── Controllers/              # 薄转发到 MediatR(含 Admin/)
-│   ├── Authentication/           # ICurrentUser 实现 + AdminAuthorize
-│   ├── Realtime/                 # WS 端点(握手鉴权)
-│   ├── Configuration/            # appsettings 绑定
-│   └── Dockerfile                # 多阶段构建(四层 restore → publish → aspnet 10)
-│
-└── lhz-onlinechat-web/           # 前端
-    ├── Dockerfile + nginx.conf   # 构建 → nginx 托管静态文件 + 反代 API/WS/uploads
-    ├── .env.development          # 开发环境 WS 地址
-    └── src/
-        ├── api/                  # axios 封装(auth/friend/group/message)
-        ├── stores/               # auth / websocket / chat / friend / group (Pinia)
-        ├── components/           # Avatar 组件(真实头像/渐变首字母)
-        ├── constants/            # emoji 数据
-        ├── utils/                # 头像工具
-        ├── views/                # Login / Register / ChatLayout
-        └── router/ types/ assets/
+└── plugins/
+    └── dsh-bot-notify/                 # DeepSeek Harness 客户端推送插件(见下)
 ```
 
 ## 🧪 单元测试
 
 ```bash
-dotnet test                                       # 全部 903 个用例，约 1.5 秒
+cd backend
+dotnet test                                       # 全部 903 个用例，约 1.3 秒
 dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ```
 
-| 测试工程 | 用例数 | 覆盖内容 | 依赖 |
-|---|---:|---|---|
-| `Domain.Tests` | 343 | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
-| `Application.Tests` | 420 | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
-| `Infrastructure.Tests` | 140 | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储 | 无 |
+| 测试工程 | 用例数 | 耗时 | 覆盖内容 | 外部依赖 |
+|---|---:|---:|---|---|
+| `Domain.Tests` | 343 | 94ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
+| `Application.Tests` | 420 | 161ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
+| `Infrastructure.Tests` | 140 | 1s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储 | 无 |
 
 几点约定:
 
-- **不用 mock 框架**,一律手写内存测试替身([TestDoubles/](tests/LHZ.OnlineChat.Application.Tests/TestDoubles/))。内存仓储会真的分配自增主键,因此"忘了回填 Id 就发事件"这类顺序错误测得出来;mock 测不出。
-- **领域层零依赖的直接收益**:343 个领域测试不需要数据库、不需要容器,全部跑完 121 毫秒。
+- **不用 mock 框架**,一律手写内存测试替身([TestDoubles/](backend/tests/LHZ.OnlineChat.Application.Tests/TestDoubles/))。内存仓储会真的分配自增主键,因此"忘了回填 Id 就发事件"这类顺序错误测得出来;mock 测不出。
+- **领域层零依赖的直接收益**:343 个领域测试不需要数据库、不需要容器,全部跑完 94 毫秒。
 - **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
-- **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
+- **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](backend/tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
 - **需要真实 PostgreSQL / Redis / SMTP 的部分不在单元测试里糊弄**(那只会测出替身自己的行为),仓储查询与会话存储属于集成测试范畴。
 
 ## 🚀 本地运行
@@ -188,24 +199,24 @@ dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ### 后端
 
 ```bash
-dotnet run --project LHZ.OnlineChat.Server
+dotnet run --project backend/LHZ.OnlineChat.Server
 ```
 
 - HTTP API:`http://localhost:5000`,Swagger(开发环境):`/swagger`
 - WebSocket:`ws://localhost:5000/?access_token=<JWT>`
 - 启动自动:创建数据库(若不存在)→ CodeFirst 同步表结构 → 账号 ID 序列迁移(起始 10000)→ pg_trgm 搜索索引 → 初始超管
-- 上传的头像保存在 `LHZ.OnlineChat.Server/uploads/`,经 `/uploads/*` 访问
-- `LHZ.OnlineChat.Server` 只是启动项目;`dotnet build` 会按依赖顺序构建四层
+- 上传的头像保存在 `backend/LHZ.OnlineChat.Server/uploads/`,经 `/uploads/*` 访问
+- `LHZ.OnlineChat.Server` 只是启动项目;`dotnet build backend/LHZ.OnlineChat.slnx` 会按依赖顺序构建四层
 
 ### 前端
 
 ```bash
-cd lhz-onlinechat-web
+cd frontend/lhz-onlinechat-web
 npm install
 npm run dev        # http://localhost:3000，/api 代理到 5000
 ```
 
-生产构建:`npm run build`(产物 `dist/`)。
+生产构建:`npm run build`(产物 `dist/`)。管理后台在 `frontend/admin-web`,命令相同。
 
 ### 配置(appsettings.json / 环境变量)
 
@@ -221,7 +232,7 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 
 ## 🐳 生产部署
 
-**详细手册见 [DEPLOY.md](DEPLOY.md)**(服务器准备 / HTTPS / 备份 / 运维)。核心三步:
+**详细手册见 [docs/DEPLOY.md](docs/DEPLOY.md)**(服务器准备 / HTTPS / 备份 / 运维)。核心两步:
 
 ```bash
 cp .env.example .env        # 修改 POSTGRES_PASSWORD、JWT_SECRET、SMTP 等
@@ -351,37 +362,15 @@ print(r.json())  # {'success': True, 'message': '已发送'}
 
 管理面板「我的机器人」→ 该机器人「测试」按钮:模拟一条私聊消息,展示机器人同步回复结果(未配置 Webhook 时提示仅支持主动推送)。
 
-### 5. 官方示例插件:DeepSeek Harness 任务助手(plugins/dsh-bot)
+### 4. 官方示例插件:DeepSeek Harness 客户端推送插件(plugins/dsh-bot-notify)
 
-把机器人变成 **DeepSeek Harness 任务入口**——用户私聊或群聊 @ 机器人发送任务,插件调用本机 Harness(`dsh --profile headless` 单任务模式)执行,并把**过程通知**(「🧠 任务已提交,执行中…」)和**执行结果**通过机器人通知用户(自动引用原消息)。详见 [plugins/dsh-bot/README.md](plugins/dsh-bot/README.md):
-
-```bash
-cd plugins/dsh-bot
-cp .env.example .env    # 填 BOT_ROBOT_TOKEN；Windows 开发机按示例配 DSH_CMD/DSH_SCRIPT/DSH_CWD
-node bot.mjs            # 机器人 WebhookUrl 填 http://host.docker.internal:9312/hook
-```
-
-- 串行任务队列(排队的任务收到「⏳ 已排队」通知)、任务超时保护(默认 10 分钟)
-- 支持回调验签 + 推送签名双向 HMAC(`BOT_SECRET` 与机器人的签名密钥一致)
-- 插件与 DeepSeek Harness 需同机运行(开发机/服务器均可)
-
-### 4. 官方示例插件:DeepSeek AI 助手(plugins/deepseek-bot)
-
-把机器人变成 **DeepSeek AI 对话助手**——用户私聊或群聊 @ 机器人,插件调用 DeepSeek API,并把**过程通知**(「🤔 正在思考…」)和**结果**通过机器人回复给用户(自动引用原消息)。零依赖纯 Node 脚本,详见 [plugins/deepseek-bot/README.md](plugins/deepseek-bot/README.md),支持**两种部署方式**:
-
-**方式一(Docker Compose,推荐)**:栈内已内置 `deepseek-bot` 服务,`.env` 配好 `DEEPSEEK_API_KEY` + `BOT_ROBOT_TOKEN` 后 `docker compose up -d --build deepseek-bot` 即完成;机器人 WebhookUrl 填 `http://deepseek-bot:9311/hook`(容器间服务名)。
-
-**方式二(宿主机直接跑)**:
+装在 **DeepSeek Harness 客户端里**的插件:监听 Harness 会话事件,把任务的**执行过程与结果**通过机器人主动推送链接(`/api/robots/{令牌}/reply`)通知用户——`🧠 任务开始(含任务内容)` → `🔧 工具调用(可选)` → `✅ 执行结果(turn/step+回复)` → `⚠️ 异常结束`。详见 [plugins/dsh-bot-notify/README.md](plugins/dsh-bot-notify/README.md),安装 3 步:
 
 ```bash
-cd plugins/deepseek-bot
-cp .env.example .env        # 填 DEEPSEEK_API_KEY 与 BOT_ROBOT_TOKEN(管理面板复制)
-node bot.mjs                # 机器人 WebhookUrl 填 http://host.docker.internal:9311/hook
+dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
+# 编辑 $DSH_HOME/profiles/web/cordis.patch.yml 填入 pushUrl/sessionId(模板已写入)
+# 重启 dsh web 生效(日志出现 [dsh-bot-notify] 已启用)
 ```
-
-- 支持回调验签 + 推送签名双向 HMAC(`BOT_SECRET` 与机器人的签名密钥一致)
-- 可选对话记忆(每会话最近 N 轮)、消息去重防重试重复回复
-- 未配置 `DEEPSEEK_API_KEY` 时进入模拟模式,可无 Key 联调
 
 ## 📡 WebSocket 协议
 
@@ -398,13 +387,17 @@ node bot.mjs                # 机器人 WebhookUrl 填 http://host.docker.intern
 | `private_message` | 双向 | 私聊;转发接收者 + 回显发送者(保留客户端 messageId 去重) |
 | `group_message` | 双向 | 群聊;广播群内在线成员 + 回显;`mentions` 携带被 @ 的成员 ID |
 | `heartbeat` | 客户端→服务端 | 心跳,服务端回复 `{"type":"pong"}` |
-| `typing` | 双向 | 正在输入(预留) |
-| `read_receipt` | 双向 | 已读回执(预留) |
+| `typing` | 双向 | 正在输入;转发给对方全部在线设备 |
+| `read_receipt` | 双向 | 已读回执;标记已读并转发给被读方 |
+| `message_recalled` | 双向 | 撤回;客户端 `content` 填待撤回的 messageId(仅本人、2 分钟内),服务端向相关方广播 |
 | `online_status` | 服务端→客户端 | 好友上下线(`content`: `online`/`offline`) |
 | `friend_request` | 服务端→客户端 | 收到新好友申请 |
 | `friend_accepted` / `friend_rejected` | 服务端→客户端 | 申请被接受(双向)/ 被拒绝 |
 | `group_invited` | 服务端→客户端 | 被邀请加入群组(`from` 为群 ID) |
-| `kicked` | 服务端→客户端 | 该登录会话被踢下线(设备管理踢出/修改密码/忘记密码重置),随后连接关闭 |
+| `group_dissolved` | 服务端→客户端 | 所在群被解散(`to` 为群 ID),客户端自动退出该会话 |
+| `muted` | 服务端→客户端 | 群发言被拒(禁言中),`content` 含禁言截止时间说明 |
+| `blocked` | 服务端→客户端 | 被对方拉黑,或私聊消息因对方拉黑而未送达 |
+| `kicked` | 服务端→客户端 | 该登录会话被踢下线(设备管理踢出/改密/重置/封禁),随后连接关闭 |
 
 **字段**:`from`(发送者ID)、`to`(接收者ID/群ID)、`content`、`messageId`(客户端生成则保留用于去重,否则用数据库 ID)、`messageType`(0文字/1图片/2文件)、`timestamp`(毫秒)、`senderName`、`senderAvatar`、`mentions`(群聊 @ 的成员 ID 列表)。
 
@@ -415,15 +408,24 @@ node bot.mjs                # 机器人 WebhookUrl 填 http://host.docker.intern
 
 ## 🗄️ 数据表
 
-| 表 | 说明 |
-|---|---|
-| `User_` | 用户(Id=账号,Email 唯一,Avatar/昵称) |
-| `Friend` | 好友关系(Status: 0待确认/1已接受/2已屏蔽) |
-| `FriendTag` | 好友设置(设置者视角的备注 Remark / 分类 Category) |
-| `Group_` | 群组(OwnerId,公告 Announcement) |
-| `GroupMember` | 群成员(Role: 0群主/1管理员/2成员,LastReadMessageId 已读游标) |
-| `PrivateMessage` / `GroupMessage` | 私聊/群聊消息(ClientMessageId 客户端 ID,Mentions 提及) |
-| `RobotProfile` | 机器人配置(机器人账号=User 表 IsBot=true 的行,WebhookUrl/Secret/超时) |
+共 12 张表,启动时由 FreeSql CodeFirst 自动同步(映射见 [EntityConfiguration.cs](backend/LHZ.OnlineChat.Infrastructure/Persistence/EntityConfiguration.cs))。
+
+| 表 | 对应聚合 | 说明 |
+|---|---|---|
+| `User_` | `User` | 用户(Id=账号 ID,起始 10000;Email 唯一;IsBot 机器人;IsBanned/BanReason 封禁) |
+| `Friend` | `Friendship` | 好友关系(Status: 0待确认/1已接受/2已屏蔽,一条记录表达双向) |
+| `FriendTag` | `FriendSetting` | 好友设置(设置者视角的备注 Remark / 分类 Category) |
+| `Blacklist` | `BlacklistEntry` | 黑名单(拉黑者 → 被拉黑者) |
+| `Group_` | `Group` | 群组(OwnerId;公告三列 Announcement/At/By) |
+| `GroupMember` | `GroupMember` | 群成员(Role: 0群主/1管理员/2成员;LastReadMessageId 已读游标;MutedUntil 禁言) |
+| `PrivateMessage` | `PrivateMessage` | 私聊消息(ClientMessageId 去重键;IsRead;IsDeleted 撤回;引用三列) |
+| `GroupMessage` | `GroupMessage` | 群聊消息(Mentions 逗号分隔的 @ 列表;IsDeleted;引用三列) |
+| `SessionSetting` | `SessionSetting` | 会话设置(用户 × 会话维度的置顶 IsPinned / 免打扰 Muted) |
+| `RobotProfile` | `Robot` | 机器人配置(账号=`User_` 中 IsBot=true 的行;WebhookUrl/Secret/超时/加密令牌/推送统计) |
+| `Admin` | `Admin` | 管理员(独立于用户体系;Role: 0超管/1运营;Status: 0停用/1启用) |
+| `AdminLog` | `AdminAuditLog` | 管理操作审计(Action/TargetType/TargetId/Detail/Ip) |
+
+**索引**:`PrivateMessage.Content` 与 `GroupMessage.Content` 上建有 pg_trgm(trigram)GIN 索引,使 `LIKE '%关键词%'`(含中文)走索引,大数据量下搜索不退化。
 
 ## 📜 License
 

@@ -1,7 +1,7 @@
 services:
   # ==================== PostgreSQL ====================
   postgres:
-    image: postgres:16-alpine
+    image: docker.m.daocloud.io/library/postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -18,7 +18,7 @@ services:
 
   # ==================== Redis ====================
   redis:
-    image: redis:7-alpine
+    image: docker.m.daocloud.io/library/redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -29,7 +29,7 @@ services:
   # ==================== 后端 API + WebSocket ====================
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: LHZ.OnlineChat.Server/Dockerfile
     restart: unless-stopped
     volumes:
@@ -62,7 +62,7 @@ services:
   # ==================== 前端(nginx:静态文件 + API/WS 反代) ====================
   frontend:
     build:
-      context: .
+      context: ./frontend
       dockerfile: lhz-onlinechat-web/Dockerfile
       args:
         VITE_WS_URL: ${VITE_WS_URL:-}
@@ -75,7 +75,7 @@ services:
   # ==================== 管理后台前端（/admin 由主前端 nginx 反代） ====================
   frontend-admin:
     build:
-      context: .
+      context: ./frontend
       dockerfile: admin-web/Dockerfile
     restart: unless-stopped
     depends_on:

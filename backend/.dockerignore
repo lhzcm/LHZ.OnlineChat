@@ -1,0 +1,21 @@
+# Docker 只认「构建上下文根目录」下的 .dockerignore。
+# 仓库重组后 backend 的 context 是 ./backend，仓库根的 .dockerignore 不再生效，
+# 因此必须在这里再放一份 —— 否则宿主机的 obj/ 会被 COPY 进镜像，
+# 覆盖容器内 dotnet restore 的产物，而 obj/*.nuget.g.props 里写的是
+# 宿主机的包目录（C:\Users\...\.nuget\packages 与 VS 的 NuGetPackages），
+# 随后 publish --no-restore 就会报 "Unable to find fallback package folder"。
+
+# ===== .NET 构建产物 =====
+**/bin/
+**/obj/
+**/artifacts/
+
+# ===== 测试工程不参与镜像构建 =====
+tests/
+
+# ===== 其他 =====
+.vs/
+.vscode/
+.idea/
+*.user
+*.log

@@ -1,0 +1,15 @@
+# 同 backend/.dockerignore：frontend 的构建上下文是 ./frontend，
+# 仓库根的 .dockerignore 不生效，需在此再放一份。
+# 排除 node_modules 既是为了避免把宿主机(Windows)装的依赖带进 Linux 镜像，
+# 也能显著减小构建上下文体积。
+
+# ===== Node =====
+**/node_modules/
+**/dist/
+**/.vite/
+npm-debug.log*
+
+# ===== 其他 =====
+.vscode/
+.idea/
+*.log
