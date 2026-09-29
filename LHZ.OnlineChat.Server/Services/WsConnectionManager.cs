@@ -80,7 +80,7 @@ public class WsConnectionManager
 
         try
         {
-            if (client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            if (client.Status == LHZ.WebSocket.Enums.ClientStatus.Opened)
             {
                 client.SendMessage("{\"type\":\"kicked\"}");
             }
@@ -112,7 +112,7 @@ public class WsConnectionManager
         {
             foreach (var sid in set)
             {
-                if (_connections.TryGetValue(sid, out var client) && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+                if (_connections.TryGetValue(sid, out var client) && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opened)
                     return client;
             }
         }
@@ -130,7 +130,7 @@ public class WsConnectionManager
             var list = new List<IWebSocketClient>(set.Count);
             foreach (var sid in set)
             {
-                if (_connections.TryGetValue(sid, out var client) && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+                if (_connections.TryGetValue(sid, out var client) && client.Status == LHZ.WebSocket.Enums.ClientStatus.Opened)
                     list.Add(client);
             }
             return list.ToArray();

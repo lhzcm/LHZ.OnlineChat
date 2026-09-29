@@ -260,7 +260,7 @@ public class WsMessageHandler
         // 简单回复 pong（不做额外处理，连接管理在 WsConnectionManager 中）
         try
         {
-            if (sender.Status == LHZ.WebSocket.Enums.ClientStatus.Opend)
+            if (sender.Status == LHZ.WebSocket.Enums.ClientStatus.Opened)
             {
                 sender.SendMessage("{\"type\":\"pong\"}");
             }
@@ -546,7 +546,7 @@ public class WsMessageHandler
         if (members.Count == 0) return;
 
         var client = _connectionManager.GetConnection(userId);
-        if (client == null || client.Status != LHZ.WebSocket.Enums.ClientStatus.Opend) return;
+        if (client == null || client.Status != LHZ.WebSocket.Enums.ClientStatus.Opened) return;
 
         foreach (var member in members)
         {

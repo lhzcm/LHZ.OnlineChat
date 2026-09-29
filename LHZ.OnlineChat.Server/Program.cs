@@ -273,7 +273,7 @@ app.UseWebSocket(async context =>
     };
 
     // 收到关闭帧：关闭连接，统一由 OnClientClose 完成清理
-    client.OnCloseRecived += (IWebSocketClient sender, CloseMessage msg) =>
+    client.OnCloseReceived += (IWebSocketClient sender, CloseMessage msg) =>
     {
         Console.WriteLine($"[WS] 收到关闭帧: {userId} — {msg.CloseCode}");
         sender.Close();
