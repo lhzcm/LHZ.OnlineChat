@@ -35,17 +35,20 @@ internal sealed class LoginHandler : IRequestHandler<LoginCommand, ApiResponse<L
     private readonly IPasswordHasher _hasher;
     private readonly ITokenIssuer _tokens;
     private readonly ISessionStore _sessions;
+    private readonly ILoginThrottle _throttle;
 
     public LoginHandler(
         IUserRepository users,
         IPasswordHasher hasher,
         ITokenIssuer tokens,
-        ISessionStore sessions)
+        ISessionStore sessions,
+        ILoginThrottle throttle)
     {
         _users = users;
         _hasher = hasher;
         _tokens = tokens;
         _sessions = sessions;
+        _throttle = throttle;
     }
 
     public async Task<ApiResponse<LoginResponse>> Handle(LoginCommand command, CancellationToken ct)
@@ -55,13 +58,31 @@ internal sealed class LoginHandler : IRequestHandler<LoginCommand, ApiResponse<L
             account.Length > 0 && !string.IsNullOrWhiteSpace(command.Password),
             "请输入账号和密码");
 
+        var lockoutSeconds = await _throttle
+            .GetLockoutSecondsAsync(account, command.Ip, ct)
+            .ConfigureAwait(false);
+
+        DomainException.Ensure(lockoutSeconds == 0, LoginThrottleMessages.Describe(lockoutSeconds));
+
         var user = await FindByAccountAsync(account, ct).ConfigureAwait(false);
-        DomainException.Ensure(user is not null, BadCredentials);
+
+        // 口令校验放在账号状态校验之前。
+        //
+        // 反过来（先 EnsureCanLogin 再验密）会让「机器人账号不能登录」「账号已被封禁」
+        // 这些提示语在密码错误时也照样返回 —— 任何人都能用任意密码探测账号状态，
+        // 上面统一 BadCredentials 的设计就被抵消了。
+        // 顺序调整后，只有已经知道正确口令的人才会看到具体状态。
+        var passwordOk = user is not null && _hasher.Verify(command.Password, user.PasswordHash);
+        if (!passwordOk)
+        {
+            await _throttle.RecordFailureAsync(account, command.Ip, ct).ConfigureAwait(false);
+            throw new DomainException(BadCredentials);
+        }
 
         // 机器人不可登录 / 封禁拦截（带原因）—— 规则在聚合根上
         user!.EnsureCanLogin();
 
-        DomainException.Ensure(_hasher.Verify(command.Password, user.PasswordHash), BadCredentials);
+        await _throttle.ResetAsync(account, command.Ip, ct).ConfigureAwait(false);
 
         var sessionId = Guid.NewGuid().ToString("N");
         var deviceName = string.IsNullOrWhiteSpace(command.DeviceName) ? UnknownDevice : command.DeviceName.Trim();

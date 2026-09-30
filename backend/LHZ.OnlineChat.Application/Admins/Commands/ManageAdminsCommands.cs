@@ -98,11 +98,14 @@ public sealed class UpdateAdminCommand : ICommand<ApiResponse>
 internal sealed class UpdateAdminHandler : IRequestHandler<UpdateAdminCommand, ApiResponse>
 {
     private readonly IAdminRepository _admins;
+    private readonly IAdminSessionStore _sessions;
     private readonly IAuditLogger _audit;
 
-    public UpdateAdminHandler(IAdminRepository admins, IAuditLogger audit)
+    public UpdateAdminHandler(
+        IAdminRepository admins, IAdminSessionStore sessions, IAuditLogger audit)
     {
         _admins = admins;
+        _sessions = sessions;
         _audit = audit;
     }
 
@@ -122,6 +125,11 @@ internal sealed class UpdateAdminHandler : IRequestHandler<UpdateAdminCommand, A
         // 「不能停用或降级自己」在聚合根里
         target.ChangeRoleAndStatus(role, status, command.OperatorId);
         await _admins.UpdateAsync(target, ct).ConfigureAwait(false);
+
+        // 停用或降级后必须吊销他手上的令牌，否则改动要等令牌自然过期才生效：
+        // 停用的人继续操作后台、降级的人仍带着旧 arole 走超管专属接口
+        if (status == AdminStatus.Disabled || role.HasValue)
+            await _sessions.RevokeAllAsync(command.TargetId, ct).ConfigureAwait(false);
 
         await _audit.RecordAsync(
             command.OperatorId, AuditActions.AdminUpdate, AuditActions.TargetAdmin,
@@ -143,11 +151,14 @@ public sealed class DeleteAdminCommand : ICommand<ApiResponse>
 internal sealed class DeleteAdminHandler : IRequestHandler<DeleteAdminCommand, ApiResponse>
 {
     private readonly IAdminRepository _admins;
+    private readonly IAdminSessionStore _sessions;
     private readonly IAuditLogger _audit;
 
-    public DeleteAdminHandler(IAdminRepository admins, IAuditLogger audit)
+    public DeleteAdminHandler(
+        IAdminRepository admins, IAdminSessionStore sessions, IAuditLogger audit)
     {
         _admins = admins;
+        _sessions = sessions;
         _audit = audit;
     }
 
@@ -158,6 +169,9 @@ internal sealed class DeleteAdminHandler : IRequestHandler<DeleteAdminCommand, A
 
         target.EnsureDeletableBy(command.OperatorId);
         await _admins.DeleteAsync(command.TargetId, ct).ConfigureAwait(false);
+
+        // 账号行删了但令牌仍在有效期内 —— 必须同时吊销会话
+        await _sessions.RevokeAllAsync(command.TargetId, ct).ConfigureAwait(false);
 
         await _audit.RecordAsync(
             command.OperatorId, AuditActions.AdminDelete, AuditActions.TargetAdmin,

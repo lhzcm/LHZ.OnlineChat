@@ -8,22 +8,22 @@ namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 /// <summary>私聊消息仓储（FreeSql）</summary>
 internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 {
-    private readonly IFreeSql _fsql;
+    private readonly DbSession _db;
 
-    public PrivateMessageRepository(IFreeSql fsql) => _fsql = fsql;
+    public PrivateMessageRepository(DbSession db) => _db = db;
 
     public Task<PrivateMessage?> FindByIdAsync(long id, CancellationToken ct = default)
-        => _fsql.Select<PrivateMessage>().Where(m => m.Id == id).FirstAsync(ct)!;
+        => _db.Select<PrivateMessage>().Where(m => m.Id == id).FirstAsync(ct)!;
 
     public async Task<(IReadOnlyList<PrivateMessage> Items, int Total)> PageBetweenAsync(
         int userId, int peerId, PageRequest page, CancellationToken ct = default)
     {
-        var total = (int)await _fsql.Select<PrivateMessage>()
+        var total = (int)await _db.Select<PrivateMessage>()
             .Where(m => (m.SenderId == userId && m.ReceiverId == peerId)
                         || (m.SenderId == peerId && m.ReceiverId == userId))
             .CountAsync(ct);
 
-        var items = await _fsql.Select<PrivateMessage>()
+        var items = await _db.Select<PrivateMessage>()
             .Where(m => (m.SenderId == userId && m.ReceiverId == peerId)
                         || (m.SenderId == peerId && m.ReceiverId == userId))
             .OrderByDescending(m => m.SentAt)
@@ -62,7 +62,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
     public async Task<(IReadOnlyList<PrivateMessage> Items, int Total)> SearchForAdminAsync(
         string? keyword, int? userId, int take, CancellationToken ct = default)
     {
-        var query = _fsql.Select<PrivateMessage>();
+        var query = _db.Select<PrivateMessage>();
         if (userId.HasValue)
             query = query.Where(m => m.SenderId == userId.Value || m.ReceiverId == userId.Value);
         if (!string.IsNullOrWhiteSpace(keyword))
@@ -82,13 +82,13 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 
     public async Task<IReadOnlyList<PrivateMessage>> ListUnreadForAsync(
         int userId, CancellationToken ct = default)
-        => await _fsql.Select<PrivateMessage>()
+        => await _db.Select<PrivateMessage>()
             .Where(m => m.ReceiverId == userId && !m.IsRead)
             .OrderBy(m => m.SentAt)
             .ToListAsync(ct);
 
     public async Task<int> CountUnreadForAsync(int userId, CancellationToken ct = default)
-        => (int)await _fsql.Select<PrivateMessage>()
+        => (int)await _db.Select<PrivateMessage>()
             .Where(m => m.ReceiverId == userId && !m.IsRead)
             .CountAsync(ct);
 
@@ -99,7 +99,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
     public async Task<IReadOnlyDictionary<int, int>> CountUnreadBySenderAsync(
         int userId, CancellationToken ct = default)
     {
-        var rows = await _fsql.Select<PrivateMessage>()
+        var rows = await _db.Select<PrivateMessage>()
             .Where(m => m.ReceiverId == userId && !m.IsRead)
             .GroupBy(m => m.SenderId)
             .ToListAsync(g => new { SenderId = g.Key, Count = g.Count() }, ct);
@@ -109,7 +109,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 
     public async Task<IReadOnlyList<PrivateMessage>> ListRecentOfUserAsync(
         int userId, int take, CancellationToken ct = default)
-        => await _fsql.Select<PrivateMessage>()
+        => await _db.Select<PrivateMessage>()
             .Where(m => m.SenderId == userId || m.ReceiverId == userId)
             .OrderByDescending(m => m.SentAt)
             .Take(take)
@@ -121,7 +121,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
     /// </summary>
     public Task<PrivateMessage?> FindRecallableAsync(
         int senderId, int receiverId, string messageId, DateTime earliestSentAt, CancellationToken ct = default)
-        => _fsql.Select<PrivateMessage>()
+        => _db.Select<PrivateMessage>()
             .Where(m => m.SenderId == senderId
                         && m.ReceiverId == receiverId
                         && !m.IsDeleted
@@ -130,35 +130,35 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
             .FirstAsync(ct)!;
 
     public Task<int> MarkAllReadAsync(int senderId, int receiverId, CancellationToken ct = default)
-        => _fsql.Update<PrivateMessage>()
+        => _db.Update<PrivateMessage>()
             .Set(m => m.IsRead, true)
             .Where(m => m.SenderId == senderId && m.ReceiverId == receiverId && !m.IsRead)
             .ExecuteAffrowsAsync(ct);
 
     public Task AddAsync(PrivateMessage message, CancellationToken ct = default)
-        => _fsql.InsertWithLongIdentityAsync(message, ct);
+        => _db.InsertWithLongIdentityAsync(message, ct);
 
     public Task UpdateAsync(PrivateMessage message, CancellationToken ct = default)
-        => _fsql.Update<PrivateMessage>().SetSource(message).ExecuteAffrowsAsync(ct);
+        => _db.Update<PrivateMessage>().SetSource(message).ExecuteAffrowsAsync(ct);
 
     // ==================== 统计 ====================
 
     public Task<long> CountAsync(CancellationToken ct = default)
-        => _fsql.Select<PrivateMessage>().CountAsync(ct);
+        => _db.Select<PrivateMessage>().CountAsync(ct);
 
     public Task<long> CountSentBetweenAsync(
         DateTime fromInclusive, DateTime toExclusive, CancellationToken ct = default)
-        => _fsql.Select<PrivateMessage>()
+        => _db.Select<PrivateMessage>()
             .Where(m => m.SentAt >= fromInclusive && m.SentAt < toExclusive)
             .CountAsync(ct);
 
     public Task<long> CountSentSinceAsync(DateTime since, CancellationToken ct = default)
-        => _fsql.Select<PrivateMessage>().Where(m => m.SentAt >= since).CountAsync(ct);
+        => _db.Select<PrivateMessage>().Where(m => m.SentAt >= since).CountAsync(ct);
 
     public async Task<IReadOnlyList<int>> ListDistinctSendersSinceAsync(
         DateTime since, CancellationToken ct = default)
     {
-        var rows = await _fsql.Select<PrivateMessage>()
+        var rows = await _db.Select<PrivateMessage>()
             .Where(m => m.SentAt >= since)
             .GroupBy(m => m.SenderId)
             .ToListAsync(g => new { g.Key }, ct);
@@ -169,7 +169,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
     public async Task<IReadOnlyDictionary<int, long>> TopSendersAsync(
         int take, CancellationToken ct = default)
     {
-        var rows = await _fsql.Select<PrivateMessage>()
+        var rows = await _db.Select<PrivateMessage>()
             .GroupBy(m => m.SenderId)
             .OrderByDescending(g => g.Count())
             .Take(take)
@@ -184,7 +184,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
         var ids = userIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<int, long>();
 
-        var rows = await _fsql.Select<PrivateMessage>()
+        var rows = await _db.Select<PrivateMessage>()
             .Where(m => ids.Contains(m.SenderId))
             .GroupBy(m => m.SenderId)
             .ToListAsync(g => new { SenderId = g.Key, Count = g.Count() }, ct);
@@ -194,19 +194,19 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 
     public Task<IReadOnlyDictionary<DateTime, long>> CountByHourSinceAsync(
         int hours, CancellationToken ct = default)
-        => Task.FromResult(HourlyAggregate.Query(_fsql, "PrivateMessage", hours));
+        => Task.FromResult(HourlyAggregate.Query(_db.Orm, "PrivateMessage", hours));
 
     // ==================== 查询片段 ====================
 
     private ISelect<PrivateMessage> BetweenMatching(int userId, int peerId, string keyword)
-        => _fsql.Select<PrivateMessage>()
+        => _db.Select<PrivateMessage>()
             .Where(m => ((m.SenderId == userId && m.ReceiverId == peerId)
                          || (m.SenderId == peerId && m.ReceiverId == userId))
                         && !m.IsDeleted
                         && m.Content.Contains(keyword));
 
     private ISelect<PrivateMessage> OfUserMatching(int userId, string keyword)
-        => _fsql.Select<PrivateMessage>()
+        => _db.Select<PrivateMessage>()
             .Where(m => (m.SenderId == userId || m.ReceiverId == userId)
                         && !m.IsDeleted
                         && m.Content.Contains(keyword));

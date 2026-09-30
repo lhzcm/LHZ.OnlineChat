@@ -12,17 +12,70 @@ public interface IPasswordHasher
     bool Verify(string? rawPassword, PasswordHash? hash);
 }
 
-/// <summary>JWT 签发（用户令牌带 sid 会话标识，管理员令牌带 role=admin）</summary>
+/// <summary>JWT 签发（用户令牌与管理员令牌都带 sid 会话标识，后者额外带 role=admin）</summary>
 public interface ITokenIssuer
 {
     /// <summary>签发用户访问令牌</summary>
     string IssueUserToken(User user, string sessionId);
 
     /// <summary>签发管理员访问令牌</summary>
-    string IssueAdminToken(Admin admin);
+    string IssueAdminToken(Admin admin, string sessionId);
 
     /// <summary>生成高熵刷新令牌</summary>
     string GenerateRefreshToken();
+}
+
+/// <summary>
+/// 管理员会话存储。
+///
+/// 改造前管理员令牌不带 sid、鉴权过滤器也只读 claim 不查库，
+/// 结果是「停用/删除某个管理员」对他手上已签发的令牌完全无效 ——
+/// 最长 Jwt:ExpireMinutes（默认 24 小时）内他依然能操作后台。
+/// 有了会话记录，停用即可立刻吊销。
+/// </summary>
+public interface IAdminSessionStore
+{
+    /// <summary>登记一个管理员会话（TTL 与令牌有效期一致）</summary>
+    Task CreateAsync(int adminId, string sessionId, CancellationToken ct = default);
+
+    /// <summary>该会话是否仍有效（每次管理接口鉴权时校验）</summary>
+    Task<bool> IsValidAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>吊销该管理员的全部会话（停用 / 删除 / 改密）</summary>
+    Task RevokeAllAsync(int adminId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// 登录失败限流。
+///
+/// 账号 ID 是从 10000 起连续自增的，等于攻击者不需要猜账号、只需要猜密码 ——
+/// 没有限流时撞库的成本几乎为零（BCrypt 只能拖慢单次尝试，挡不住持续并发）。
+///
+/// 按两个维度分别计数：
+///   账号维度 —— 拦住针对单个账号的密码穷举
+///   IP 维度   —— 拦住用同一出口在大量账号间喷洒弱密码
+/// </summary>
+public interface ILoginThrottle
+{
+    /// <summary>剩余锁定秒数；0 表示允许尝试</summary>
+    Task<int> GetLockoutSecondsAsync(string accountKey, string? ip, CancellationToken ct = default);
+
+    /// <summary>记一次登录失败</summary>
+    Task RecordFailureAsync(string accountKey, string? ip, CancellationToken ct = default);
+
+    /// <summary>登录成功后清零（避免长期使用者被历史失败拖累）</summary>
+    Task ResetAsync(string accountKey, string? ip, CancellationToken ct = default);
+}
+
+/// <summary>被限流时的提示语（用户登录与管理员登录共用）</summary>
+public static class LoginThrottleMessages
+{
+    public static string Describe(int lockoutSeconds)
+    {
+        // 只报到分钟：秒级精度对用户没意义，还会暴露计数窗口的准确边界
+        var minutes = Math.Max(1, (int)Math.Ceiling(lockoutSeconds / 60.0));
+        return $"登录失败次数过多，请在 {minutes} 分钟后重试";
+    }
 }
 
 /// <summary>

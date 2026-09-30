@@ -12,7 +12,12 @@ public sealed class AdminAuthController : ApiControllerBase
     /// <summary>管理员登录</summary>
     [HttpPost("login")]
     public Task<IActionResult> Login([FromBody] AdminLoginCommand command, CancellationToken ct)
-        => Send(command, ct);
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        command.Ip = CurrentUser.ClientIp; // 限流按来源 IP 计数
+        return Send(command, ct);
+    }
 
     /// <summary>当前管理员信息</summary>
     [HttpGet("me")]

@@ -6,15 +6,15 @@ namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 /// <summary>好友关系仓储（FreeSql）</summary>
 internal sealed class FriendshipRepository : IFriendshipRepository
 {
-    private readonly IFreeSql _fsql;
+    private readonly DbSession _db;
 
-    public FriendshipRepository(IFreeSql fsql) => _fsql = fsql;
+    public FriendshipRepository(DbSession db) => _db = db;
 
     public Task<Friendship?> FindByIdAsync(long id, CancellationToken ct = default)
-        => _fsql.Select<Friendship>().Where(f => f.Id == id).FirstAsync(ct)!;
+        => _db.Select<Friendship>().Where(f => f.Id == id).FirstAsync(ct)!;
 
     public Task<Friendship?> FindBetweenAsync(int userId, int otherUserId, CancellationToken ct = default)
-        => _fsql.Select<Friendship>()
+        => _db.Select<Friendship>()
             .Where(f => (f.UserId == userId && f.FriendId == otherUserId)
                         || (f.UserId == otherUserId && f.FriendId == userId))
             .FirstAsync(ct)!;
@@ -22,7 +22,7 @@ internal sealed class FriendshipRepository : IFriendshipRepository
     public Task<bool> AreFriendsAsync(int userId, int otherUserId, CancellationToken ct = default)
     {
         if (userId == otherUserId) return Task.FromResult(false);
-        return _fsql.Select<Friendship>()
+        return _db.Select<Friendship>()
             .Where(f => f.Status == FriendshipStatus.Accepted
                         && ((f.UserId == userId && f.FriendId == otherUserId)
                             || (f.UserId == otherUserId && f.FriendId == userId)))
@@ -30,7 +30,7 @@ internal sealed class FriendshipRepository : IFriendshipRepository
     }
 
     public async Task<IReadOnlyList<Friendship>> ListAcceptedOfAsync(int userId, CancellationToken ct = default)
-        => await _fsql.Select<Friendship>()
+        => await _db.Select<Friendship>()
             .Where(f => (f.UserId == userId || f.FriendId == userId) && f.Status == FriendshipStatus.Accepted)
             .ToListAsync(ct);
 
@@ -44,7 +44,7 @@ internal sealed class FriendshipRepository : IFriendshipRepository
     }
 
     public async Task<IReadOnlyList<Friendship>> ListPendingForAsync(int userId, CancellationToken ct = default)
-        => await _fsql.Select<Friendship>()
+        => await _db.Select<Friendship>()
             .Where(f => f.FriendId == userId && f.Status == FriendshipStatus.Pending)
             .ToListAsync(ct);
 
@@ -54,7 +54,7 @@ internal sealed class FriendshipRepository : IFriendshipRepository
         var ids = userIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<int, int>();
 
-        var rows = await _fsql.Select<Friendship>()
+        var rows = await _db.Select<Friendship>()
             .Where(f => ids.Contains(f.UserId) && f.Status == FriendshipStatus.Accepted)
             .GroupBy(f => f.UserId)
             .ToListAsync(g => new { UserId = g.Key, Count = g.Count() }, ct);
@@ -63,23 +63,23 @@ internal sealed class FriendshipRepository : IFriendshipRepository
     }
 
     public Task AddAsync(Friendship friendship, CancellationToken ct = default)
-        => _fsql.InsertWithLongIdentityAsync(friendship, ct);
+        => _db.InsertWithLongIdentityAsync(friendship, ct);
 
     public Task UpdateAsync(Friendship friendship, CancellationToken ct = default)
-        => _fsql.Update<Friendship>().SetSource(friendship).ExecuteAffrowsAsync(ct);
+        => _db.Update<Friendship>().SetSource(friendship).ExecuteAffrowsAsync(ct);
 
     public Task DeleteAsync(long id, CancellationToken ct = default)
-        => _fsql.Delete<Friendship>().Where(f => f.Id == id).ExecuteAffrowsAsync(ct);
+        => _db.Delete<Friendship>().Where(f => f.Id == id).ExecuteAffrowsAsync(ct);
 
     public Task<int> DeleteAcceptedBetweenAsync(int userId, int otherUserId, CancellationToken ct = default)
-        => _fsql.Delete<Friendship>()
+        => _db.Delete<Friendship>()
             .Where(f => f.Status == FriendshipStatus.Accepted
                         && ((f.UserId == userId && f.FriendId == otherUserId)
                             || (f.UserId == otherUserId && f.FriendId == userId)))
             .ExecuteAffrowsAsync(ct);
 
     public Task DeleteAllOfAsync(int userId, CancellationToken ct = default)
-        => _fsql.Delete<Friendship>()
+        => _db.Delete<Friendship>()
             .Where(f => f.UserId == userId || f.FriendId == userId)
             .ExecuteAffrowsAsync(ct);
 }
@@ -87,12 +87,12 @@ internal sealed class FriendshipRepository : IFriendshipRepository
 /// <summary>好友设置（备注/分类）仓储</summary>
 internal sealed class FriendSettingRepository : IFriendSettingRepository
 {
-    private readonly IFreeSql _fsql;
+    private readonly DbSession _db;
 
-    public FriendSettingRepository(IFreeSql fsql) => _fsql = fsql;
+    public FriendSettingRepository(DbSession db) => _db = db;
 
     public Task<FriendSetting?> FindAsync(int userId, int friendId, CancellationToken ct = default)
-        => _fsql.Select<FriendSetting>()
+        => _db.Select<FriendSetting>()
             .Where(t => t.UserId == userId && t.FriendId == friendId)
             .FirstAsync(ct)!;
 
@@ -102,7 +102,7 @@ internal sealed class FriendSettingRepository : IFriendSettingRepository
         var ids = friendIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<int, FriendSetting>();
 
-        var settings = await _fsql.Select<FriendSetting>()
+        var settings = await _db.Select<FriendSetting>()
             .Where(t => t.UserId == userId && ids.Contains(t.FriendId))
             .ToListAsync(ct);
 
@@ -110,46 +110,46 @@ internal sealed class FriendSettingRepository : IFriendSettingRepository
     }
 
     public Task AddAsync(FriendSetting setting, CancellationToken ct = default)
-        => _fsql.InsertWithLongIdentityAsync(setting, ct);
+        => _db.InsertWithLongIdentityAsync(setting, ct);
 
     public Task UpdateAsync(FriendSetting setting, CancellationToken ct = default)
-        => _fsql.Update<FriendSetting>().SetSource(setting).ExecuteAffrowsAsync(ct);
+        => _db.Update<FriendSetting>().SetSource(setting).ExecuteAffrowsAsync(ct);
 }
 
 /// <summary>黑名单仓储</summary>
 internal sealed class BlacklistRepository : IBlacklistRepository
 {
-    private readonly IFreeSql _fsql;
+    private readonly DbSession _db;
 
-    public BlacklistRepository(IFreeSql fsql) => _fsql = fsql;
+    public BlacklistRepository(DbSession db) => _db = db;
 
     public Task<bool> ExistsAsync(int userId, int blockedUserId, CancellationToken ct = default)
-        => _fsql.Select<BlacklistEntry>()
+        => _db.Select<BlacklistEntry>()
             .Where(b => b.UserId == userId && b.BlockedUserId == blockedUserId)
             .AnyAsync(ct);
 
     public Task<bool> IsBlockedByAsync(int receiverId, int senderId, CancellationToken ct = default)
-        => _fsql.Select<BlacklistEntry>()
+        => _db.Select<BlacklistEntry>()
             .Where(b => b.UserId == receiverId && b.BlockedUserId == senderId)
             .AnyAsync(ct);
 
     public Task<bool> ExistsEitherDirectionAsync(int userId, int otherUserId, CancellationToken ct = default)
-        => _fsql.Select<BlacklistEntry>()
+        => _db.Select<BlacklistEntry>()
             .Where(b => (b.UserId == userId && b.BlockedUserId == otherUserId)
                         || (b.UserId == otherUserId && b.BlockedUserId == userId))
             .AnyAsync(ct);
 
     public async Task<IReadOnlyList<BlacklistEntry>> ListOfAsync(int userId, CancellationToken ct = default)
-        => await _fsql.Select<BlacklistEntry>()
+        => await _db.Select<BlacklistEntry>()
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.CreatedAt)
             .ToListAsync(ct);
 
     public Task AddAsync(BlacklistEntry entry, CancellationToken ct = default)
-        => _fsql.InsertWithLongIdentityAsync(entry, ct);
+        => _db.InsertWithLongIdentityAsync(entry, ct);
 
     public Task<int> RemoveAsync(int userId, int blockedUserId, CancellationToken ct = default)
-        => _fsql.Delete<BlacklistEntry>()
+        => _db.Delete<BlacklistEntry>()
             .Where(b => b.UserId == userId && b.BlockedUserId == blockedUserId)
             .ExecuteAffrowsAsync(ct);
 }

@@ -72,6 +72,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(options.AdminBootstrap);
         services.AddScoped<DatabaseInitializer>();
 
+        // 每请求一个会话：持有环境事务，仓储全部经它发起查询
+        services.AddScoped<DbSession>();
+        services.AddScoped<IUnitOfWork, FreeSqlUnitOfWork>();
+
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IFriendshipRepository, FriendshipRepository>();
         services.AddScoped<IFriendSettingRepository, FriendSettingRepository>();
@@ -94,6 +98,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IRecentMessageCache, RecentMessageCache>();
         services.AddSingleton<ISessionStore, SessionStore>();
         services.AddSingleton<ISessionTerminator, SessionTerminator>();
+        services.AddSingleton<IAdminSessionStore, AdminSessionStore>();
+        services.AddSingleton<ILoginThrottle, LoginThrottle>();
     }
 
     private static void AddRealtime(IServiceCollection services)

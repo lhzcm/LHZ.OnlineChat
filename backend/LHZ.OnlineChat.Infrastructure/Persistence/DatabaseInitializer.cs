@@ -74,6 +74,8 @@ public sealed class DatabaseInitializer
         SyncStructure();
         EnsureAccountIdSchema();
         EnsureSearchIndexes();
+        EnsureUniqueConstraints();
+        EnsurePerformanceIndexes();
         await EnsureInitialAdminAsync(ct).ConfigureAwait(false);
     }
 
@@ -143,6 +145,146 @@ public sealed class DatabaseInitializer
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "pg_trgm 索引创建失败，消息搜索将退化为全表扫描");
+        }
+    }
+
+    /// <summary>
+    /// 唯一约束（幂等）。
+    ///
+    /// 所有这些位置应用层都已经「先查重再写入」，但那在并发下必然有窗口期：
+    /// 两个注册请求可以同时通过邮箱查重，产出两个同邮箱账号 —— 之后按邮箱登录
+    /// 只会命中其中一个，另一个账号永久无法登录也无法重置密码。
+    /// 唯一索引是这类竞态的唯一可靠兜底，冲突由 FreeSqlUnitOfWork 翻译成友好提示。
+    ///
+    /// 存量库若已有重复数据，建索引会失败 —— 此时只告警不阻塞启动（否则整个服务起不来），
+    /// 由运维按日志提示清理后重启。
+    /// </summary>
+    private void EnsureUniqueConstraints()
+    {
+        // 机器人账号没有邮箱，用部分索引把 NULL 排除在唯一性之外
+        Execute(
+            "邮箱唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_user_email" ON "User_" ("Email") WHERE "Email" IS NOT NULL;""",
+            duplicatesPossible: true);
+
+        Execute(
+            "群成员不重复",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_groupmember_group_user" ON "GroupMember" ("GroupId", "UserId");""",
+            duplicatesPossible: true);
+
+        Execute(
+            "好友关系不重复",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_friend_user_friend" ON "Friend" ("UserId", "FriendId");""",
+            duplicatesPossible: true);
+
+        Execute(
+            "好友设置不重复",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_friendtag_user_friend" ON "FriendTag" ("UserId", "FriendId");""",
+            duplicatesPossible: true);
+
+        Execute(
+            "黑名单不重复",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_blacklist_user_blocked" ON "Blacklist" ("UserId", "BlockedUserId");""",
+            duplicatesPossible: true);
+
+        Execute(
+            "会话设置不重复",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_sessionsetting_user_session" ON "SessionSetting" ("UserId", "SessionType", "SessionId");""",
+            duplicatesPossible: true);
+
+        Execute(
+            "机器人账号一对一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_robotprofile_user" ON "RobotProfile" ("UserId");""",
+            duplicatesPossible: true);
+
+        Execute(
+            "管理员用户名唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_admin_username" ON "Admin" ("Username");""",
+            duplicatesPossible: true);
+    }
+
+    /// <summary>
+    /// 热点查询的二级索引（幂等）。
+    ///
+    /// 改造前除主键和两个 trgm GIN 索引外没有任何二级索引，
+    /// 而「每发一条群消息都要按 (GroupId, UserId) 查一次成员」这类调用在每条消息上都会发生，
+    /// 数据量涨起来后全是顺序扫描。列顺序按实际谓词的最左前缀排。
+    /// </summary>
+    private void EnsurePerformanceIndexes()
+    {
+        var statements = new (string Purpose, string Sql)[]
+        {
+            // 私聊：会话历史双向查（两个 OR 分支各走一条索引）、时间倒序分页
+            ("私聊按发送方",
+                """CREATE INDEX IF NOT EXISTS "ix_privmsg_sender_receiver_sent" ON "PrivateMessage" ("SenderId", "ReceiverId", "SentAt" DESC);"""),
+            ("私聊按接收方",
+                """CREATE INDEX IF NOT EXISTS "ix_privmsg_receiver_sender_sent" ON "PrivateMessage" ("ReceiverId", "SenderId", "SentAt" DESC);"""),
+            // 未读统计只关心未读行，部分索引比全量索引小得多
+            ("私聊未读统计",
+                """CREATE INDEX IF NOT EXISTS "ix_privmsg_unread" ON "PrivateMessage" ("ReceiverId", "SenderId") WHERE NOT "IsRead";"""),
+            ("私聊按客户端消息号（撤回/去重）",
+                """CREATE INDEX IF NOT EXISTS "ix_privmsg_clientid" ON "PrivateMessage" ("ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;"""),
+            ("私聊按时间（仪表盘统计）",
+                """CREATE INDEX IF NOT EXISTS "ix_privmsg_sent" ON "PrivateMessage" ("SentAt");"""),
+
+            // 群聊：历史分页与「已读游标之后」计数都是 (GroupId, Id) 最左前缀
+            ("群聊按群+自增号",
+                """CREATE INDEX IF NOT EXISTS "ix_grpmsg_group_id" ON "GroupMessage" ("GroupId", "Id" DESC);"""),
+            ("群聊按发送者",
+                """CREATE INDEX IF NOT EXISTS "ix_grpmsg_sender" ON "GroupMessage" ("SenderId");"""),
+            ("群聊按客户端消息号（撤回/去重）",
+                """CREATE INDEX IF NOT EXISTS "ix_grpmsg_clientid" ON "GroupMessage" ("ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;"""),
+            ("群聊按时间（仪表盘统计）",
+                """CREATE INDEX IF NOT EXISTS "ix_grpmsg_sent" ON "GroupMessage" ("SentAt");"""),
+
+            // 「我加入的群」；(GroupId, UserId) 方向已由唯一索引覆盖
+            ("群成员按用户",
+                """CREATE INDEX IF NOT EXISTS "ix_groupmember_user" ON "GroupMember" ("UserId");"""),
+
+            // 好友：待确认申请查 FriendId，(UserId, FriendId) 方向已由唯一索引覆盖
+            ("好友按被申请方",
+                """CREATE INDEX IF NOT EXISTS "ix_friend_friend_status" ON "Friend" ("FriendId", "Status");"""),
+
+            ("黑名单反查",
+                """CREATE INDEX IF NOT EXISTS "ix_blacklist_blocked" ON "Blacklist" ("BlockedUserId");"""),
+            ("我的机器人列表",
+                """CREATE INDEX IF NOT EXISTS "ix_robotprofile_owner" ON "RobotProfile" ("OwnerId");"""),
+            ("群按群主",
+                """CREATE INDEX IF NOT EXISTS "ix_group_owner" ON "Group_" ("OwnerId");"""),
+            ("审计日志按时间倒序",
+                """CREATE INDEX IF NOT EXISTS "ix_adminlog_created" ON "AdminLog" ("CreatedAt" DESC);"""),
+            ("审计日志按管理员",
+                """CREATE INDEX IF NOT EXISTS "ix_adminlog_admin" ON "AdminLog" ("AdminId");"""),
+        };
+
+        foreach (var (purpose, sql) in statements) Execute(purpose, sql, duplicatesPossible: false);
+
+        _logger.LogInformation("二级索引就绪（{Count} 条）", statements.Length);
+    }
+
+    /// <summary>
+    /// 执行单条 DDL，失败只告警不抛 —— 一条索引建不出来不该让整个服务起不来。
+    /// </summary>
+    private void Execute(string purpose, string sql, bool duplicatesPossible)
+    {
+        try
+        {
+            _fsql.Ado.ExecuteNonQuery(sql);
+        }
+        catch (Exception ex)
+        {
+            if (duplicatesPossible)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "唯一索引「{Purpose}」创建失败，很可能是存量数据已有重复。"
+                    + "清理重复行后重启即可生效；在此之前该约束不起作用（并发下仍可能产生重复数据）",
+                    purpose);
+            }
+            else
+            {
+                _logger.LogWarning(ex, "索引「{Purpose}」创建失败，相关查询将退化为顺序扫描", purpose);
+            }
         }
     }
 

@@ -28,6 +28,13 @@ internal static class RedisKeys
     /// <summary>邮箱验证码</summary>
     internal static string EmailCode(string email) => $"email:code:{email}";
 
+    /// <summary>该邮箱当前验证码的累计错误次数（超限即作废验证码，防爆破）</summary>
+    internal static string EmailCodeAttempts(string email) => $"email:code:attempts:{email}";
+
+    /// <summary>登录失败计数（按账号标识 + 来源 IP 两个维度分别限流）</summary>
+    internal static string LoginFailures(string scope, string identifier)
+        => $"login:fail:{scope}:{identifier}";
+
     /// <summary>某会话当前的刷新令牌</summary>
     internal static string RefreshToken(string sessionId) => $"token:refresh:{sessionId}";
 

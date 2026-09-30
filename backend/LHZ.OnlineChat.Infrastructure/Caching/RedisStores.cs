@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using LHZ.FastJson;
 using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Domain.Common;
@@ -10,6 +12,16 @@ namespace LHZ.OnlineChat.Infrastructure.Caching;
 /// <summary>邮箱验证码存储（Redis）</summary>
 internal sealed class VerificationCodeStore : IVerificationCodeStore
 {
+    /// <summary>
+    /// 同一个验证码允许的错误次数上限。
+    ///
+    /// 没有这个上限时，6 位数字码只有 10⁶ 种可能、有效期 5 分钟、猜错又零成本，
+    /// 「忘记密码」就成了一条可爆破的账号接管路径。
+    /// 超限后直接作废验证码（而不是锁定邮箱）—— 这样既挡住爆破，
+    /// 又不给攻击者提供「锁死他人账号」的手段：真实用户重新发一次码就能继续。
+    /// </summary>
+    private const int MaxFailedAttempts = 5;
+
     private readonly IDatabase _db;
 
     public VerificationCodeStore(RedisConnection redis) => _db = redis.Database;
@@ -17,22 +29,54 @@ internal sealed class VerificationCodeStore : IVerificationCodeStore
     public Task<bool> HasPendingCodeAsync(Email email, CancellationToken ct = default)
         => _db.KeyExistsAsync(RedisKeys.EmailCode(email.Value));
 
-    public Task SaveAsync(Email email, string code, TimeSpan ttl, CancellationToken ct = default)
-        => _db.StringSetAsync(RedisKeys.EmailCode(email.Value), code, ttl);
+    public async Task SaveAsync(Email email, string code, TimeSpan ttl, CancellationToken ct = default)
+    {
+        // 新码必须配新的计数器，否则上一轮的失败次数会算到这一轮头上
+        await _db.KeyDeleteAsync(RedisKeys.EmailCodeAttempts(email.Value)).ConfigureAwait(false);
+        await _db.StringSetAsync(RedisKeys.EmailCode(email.Value), code, ttl).ConfigureAwait(false);
+    }
 
-    /// <summary>校验通过即删除（一次性使用）</summary>
+    /// <summary>
+    /// 校验验证码：正确则消费掉（一次性使用）；
+    /// 连续错满 <see cref="MaxFailedAttempts"/> 次即作废该码，后续一律返回 false。
+    /// </summary>
     public async Task<bool> ValidateAndConsumeAsync(
         Email email, string? code, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(code)) return false;
+        var codeKey = RedisKeys.EmailCode(email.Value);
+        var attemptsKey = RedisKeys.EmailCodeAttempts(email.Value);
 
-        var key = RedisKeys.EmailCode(email.Value);
-        var stored = await _db.StringGetAsync(key).ConfigureAwait(false);
-        if (stored.IsNullOrEmpty || stored.ToString() != code) return false;
+        var stored = await _db.StringGetAsync(codeKey).ConfigureAwait(false);
+        if (stored.IsNullOrEmpty) return false;
 
-        await _db.KeyDeleteAsync(key).ConfigureAwait(false);
-        return true;
+        // 恒定时间比较：验证码同样是短期凭据，不该因比较耗时泄露前缀是否命中
+        if (!string.IsNullOrWhiteSpace(code) && FixedTimeEquals(stored.ToString(), code))
+        {
+            await _db.KeyDeleteAsync(codeKey).ConfigureAwait(false);
+            await _db.KeyDeleteAsync(attemptsKey).ConfigureAwait(false);
+            return true;
+        }
+
+        var failures = await _db.StringIncrementAsync(attemptsKey).ConfigureAwait(false);
+        if (failures == 1)
+        {
+            // 计数器与验证码同生共死：让它随验证码一起过期，不必单独清理
+            var ttl = await _db.KeyTimeToLiveAsync(codeKey).ConfigureAwait(false);
+            if (ttl.HasValue) await _db.KeyExpireAsync(attemptsKey, ttl.Value).ConfigureAwait(false);
+        }
+
+        if (failures >= MaxFailedAttempts)
+        {
+            await _db.KeyDeleteAsync(codeKey).ConfigureAwait(false);
+            await _db.KeyDeleteAsync(attemptsKey).ConfigureAwait(false);
+        }
+
+        return false;
     }
+
+    private static bool FixedTimeEquals(string stored, string provided)
+        => CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(stored), Encoding.UTF8.GetBytes(provided));
 }
 
 /// <summary>在线状态存储（Redis）</summary>

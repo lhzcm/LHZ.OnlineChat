@@ -43,9 +43,9 @@ internal sealed class FakeTokenIssuer : ITokenIssuer
 
     public string IssueUserToken(User user, string sessionId) => $"user-token:{user.Id}:{sessionId}";
 
-    public string IssueAdminToken(Admin admin) => $"admin-token:{admin.Id}:{(int)admin.Role}";
-
     public string GenerateRefreshToken() => $"refresh-{++_refreshCounter}";
+
+    public string IssueAdminToken(Admin admin, string sessionId) =>  $"admin-token:{admin.Id}:{(int)admin.Role}";
 }
 
 /// <summary>

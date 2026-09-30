@@ -6,23 +6,23 @@ namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 /// <summary>用户仓储（FreeSql）</summary>
 internal sealed class UserRepository : IUserRepository
 {
-    private readonly IFreeSql _fsql;
+    private readonly DbSession _db;
 
-    public UserRepository(IFreeSql fsql) => _fsql = fsql;
+    public UserRepository(DbSession db) => _db = db;
 
     public Task<User?> FindByIdAsync(int userId, CancellationToken ct = default)
-        => _fsql.Select<User>().Where(u => u.Id == userId).FirstAsync(ct)!;
+        => _db.Select<User>().Where(u => u.Id == userId).FirstAsync(ct)!;
 
     /// <summary>
     /// 注意：条件用「整体比较值对象」而非 u.Email.Value ——
     /// FreeSql 无法解析值对象列上的成员访问（见 ValueObjectTypeHandlers 的说明）。
     /// </summary>
     public Task<User?> FindByEmailAsync(Email email, CancellationToken ct = default)
-        => _fsql.Select<User>().Where(u => u.Email == email).FirstAsync(ct)!;
+        => _db.Select<User>().Where(u => u.Email == email).FirstAsync(ct)!;
 
     public Task<bool> EmailExistsAsync(Email email, int? excludeUserId = null, CancellationToken ct = default)
     {
-        var query = _fsql.Select<User>().Where(u => u.Email == email);
+        var query = _db.Select<User>().Where(u => u.Email == email);
         if (excludeUserId.HasValue) query = query.Where(u => u.Id != excludeUserId.Value);
         return query.AnyAsync(ct);
     }
@@ -33,14 +33,14 @@ internal sealed class UserRepository : IUserRepository
         var ids = userIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<int, User>();
 
-        var users = await _fsql.Select<User>().Where(u => ids.Contains(u.Id)).ToListAsync(ct);
+        var users = await _db.Select<User>().Where(u => ids.Contains(u.Id)).ToListAsync(ct);
         return users.ToDictionary(u => u.Id);
     }
 
     public async Task<(IReadOnlyList<User> Items, int Total)> SearchAsync(
         string? keyword, PageRequest page, bool? isBot, bool? banned, CancellationToken ct = default)
     {
-        var query = _fsql.Select<User>();
+        var query = _db.Select<User>();
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -77,26 +77,26 @@ internal sealed class UserRepository : IUserRepository
     }
 
     public Task AddAsync(User user, CancellationToken ct = default)
-        => _fsql.InsertWithIdentityAsync(user, ct);
+        => _db.InsertWithIdentityAsync(user, ct);
 
     public Task UpdateAsync(User user, CancellationToken ct = default)
-        => _fsql.Update<User>().SetSource(user).ExecuteAffrowsAsync(ct);
+        => _db.Update<User>().SetSource(user).ExecuteAffrowsAsync(ct);
 
     public Task DeleteAsync(int userId, CancellationToken ct = default)
-        => _fsql.Delete<User>().Where(u => u.Id == userId).ExecuteAffrowsAsync(ct);
+        => _db.Delete<User>().Where(u => u.Id == userId).ExecuteAffrowsAsync(ct);
 
     public async Task<int> CountAsync(CancellationToken ct = default)
-        => (int)await _fsql.Select<User>().CountAsync(ct);
+        => (int)await _db.Select<User>().CountAsync(ct);
 
     public async Task<int> CountBannedAsync(CancellationToken ct = default)
-        => (int)await _fsql.Select<User>().Where(u => u.IsBanned).CountAsync(ct);
+        => (int)await _db.Select<User>().Where(u => u.IsBanned).CountAsync(ct);
 
     public async Task<int> CountRegisteredSinceAsync(DateTime since, CancellationToken ct = default)
-        => (int)await _fsql.Select<User>().Where(u => u.CreatedAt >= since).CountAsync(ct);
+        => (int)await _db.Select<User>().Where(u => u.CreatedAt >= since).CountAsync(ct);
 
     public async Task<int> CountRegisteredBetweenAsync(
         DateTime fromInclusive, DateTime toExclusive, CancellationToken ct = default)
-        => (int)await _fsql.Select<User>()
+        => (int)await _db.Select<User>()
             .Where(u => u.CreatedAt >= fromInclusive && u.CreatedAt < toExclusive)
             .CountAsync(ct);
 }

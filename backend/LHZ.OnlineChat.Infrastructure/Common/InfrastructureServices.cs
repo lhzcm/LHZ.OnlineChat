@@ -23,17 +23,28 @@ internal sealed class SystemClock : IClock
 internal sealed class DomainEventDispatcher : IDomainEventDispatcher
 {
     private readonly IPublisher _publisher;
+    private readonly DomainEventOutbox _outbox;
     private readonly ILogger<DomainEventDispatcher> _logger;
 
-    public DomainEventDispatcher(IPublisher publisher, ILogger<DomainEventDispatcher> logger)
+    public DomainEventDispatcher(
+        IPublisher publisher, DomainEventOutbox outbox, ILogger<DomainEventDispatcher> logger)
     {
         _publisher = publisher;
+        _outbox = outbox;
         _logger = logger;
     }
 
     public async Task DispatchAsync(
         IEnumerable<IDomainEvent> domainEvents, CancellationToken ct = default)
     {
+        // 事务进行中：只入队，等 TransactionBehavior 提交后再放行 ——
+        // 否则推了 WS 通知而事务随后回滚，通知就发错了
+        if (_outbox.IsDeferring)
+        {
+            _outbox.Enqueue(domainEvents);
+            return;
+        }
+
         foreach (var domainEvent in domainEvents)
         {
             var notificationType = typeof(DomainEventNotification<>).MakeGenericType(domainEvent.GetType());

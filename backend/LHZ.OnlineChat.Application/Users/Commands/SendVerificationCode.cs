@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Cryptography;
 using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Common;
 using LHZ.OnlineChat.Domain.Common;
@@ -59,7 +61,7 @@ internal sealed class SendVerificationCodeHandler
         var pending = await _codes.HasPendingCodeAsync(email, ct).ConfigureAwait(false);
         DomainException.Ensure(!pending, "验证码已发送，请稍后再试");
 
-        var code = Random.Shared.Next(100000, 1000000).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var code = GenerateCode();
         await _codes.SaveAsync(email, code, CodeTtl, ct).ConfigureAwait(false);
 
         var sent = await _email.SendVerificationCodeAsync(email, code, ct).ConfigureAwait(false);
@@ -71,4 +73,16 @@ internal sealed class SendVerificationCodeHandler
             CooldownSeconds = CooldownSeconds
         }, "验证码已发送");
     }
+
+    /// <summary>
+    /// 6 位数字验证码，用密码学安全随机源。
+    ///
+    /// 不能用 Random.Shared：它是 xoshiro256**，攻击者只要向自己的邮箱多要几次码
+    /// 就能观测到足够输出来还原内部状态，进而预测别人的验证码 ——
+    /// 而验证码是「忘记密码」链路上唯一的凭据。
+    /// </summary>
+    private static string GenerateCode()
+        => RandomNumberGenerator
+            .GetInt32(100000, 1000000)
+            .ToString(CultureInfo.InvariantCulture);
 }

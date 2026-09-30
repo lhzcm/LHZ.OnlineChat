@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using LHZ.OnlineChat.Application;
 using LHZ.OnlineChat.Application.Abstractions;
@@ -66,12 +67,28 @@ builder.Services
             // 必须用异步 API —— 同步查询在高并发下会因 Redis 命令堆积超时，表现为空 500。
             OnTokenValidated = async context =>
             {
-                var sessionId = context.Principal?.FindFirst("sid")?.Value;
-                if (string.IsNullOrEmpty(sessionId)) return; // 管理员令牌无 sid，跳过
+                var principal = context.Principal;
+                var sessionId = principal?.FindFirst("sid")?.Value;
 
-                var sessions = context.HttpContext.RequestServices.GetRequiredService<ISessionStore>();
-                if (!await sessions.IsSessionValidAsync(sessionId))
+                // 无 sid 的令牌只可能是本次改造之前签发的旧管理员令牌，
+                // 那批令牌无法吊销，一律拒绝，让持有者重新登录换成带 sid 的
+                if (string.IsNullOrEmpty(sessionId))
+                {
                     context.Fail("会话已失效，请重新登录");
+                    return;
+                }
+
+                var services = context.HttpContext.RequestServices;
+
+                // 管理员会话与用户会话键位独立，按 role 分流校验
+                var isAdmin = principal!.FindFirst("role")?.Value == "admin"
+                              || principal.FindFirst(ClaimTypes.Role)?.Value == "admin";
+
+                var valid = isAdmin
+                    ? await services.GetRequiredService<IAdminSessionStore>().IsValidAsync(sessionId)
+                    : await services.GetRequiredService<ISessionStore>().IsSessionValidAsync(sessionId);
+
+                if (!valid) context.Fail("会话已失效，请重新登录");
             }
         };
     });

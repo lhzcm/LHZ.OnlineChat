@@ -48,11 +48,13 @@ internal sealed class RegisterUserHandler : IRequestHandler<RegisterUserCommand,
         var nickname = NicknameRules.Normalize(command.Nickname);
         PasswordHash.EnsureRawPasswordValid(command.Password);
 
-        var codeOk = await _codes.ValidateAndConsumeAsync(email, command.Code, ct).ConfigureAwait(false);
-        DomainException.Ensure(codeOk, "验证码错误或已过期");
-
+        // 先查重再消费验证码：反过来的话，撞上已注册邮箱的用户会白丢一个码，
+        // 还要等满冷却时间才能重发（验证码只能用一次，消费掉就没了）
         var taken = await _users.EmailExistsAsync(email, ct: ct).ConfigureAwait(false);
         DomainException.Ensure(!taken, "该邮箱已注册");
+
+        var codeOk = await _codes.ValidateAndConsumeAsync(email, command.Code, ct).ConfigureAwait(false);
+        DomainException.Ensure(codeOk, "验证码错误或已过期");
 
         var now = _clock.UtcNow;
         var user = User.Register(nickname, email, _hasher.Hash(command.Password), now);

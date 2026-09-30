@@ -55,16 +55,20 @@ internal sealed class JwtTokenIssuer : ITokenIssuer
         });
 
     /// <summary>
-    /// 管理员令牌带 role=admin + arole（角色等级），不带 sid ——
-    /// 因此不走用户会话有效性校验。
+    /// 管理员令牌带 role=admin + arole（角色等级）+ sid（会话标识）。
+    ///
+    /// sid 是「停用管理员后立刻失效」的前提：没有它，令牌在有效期内无法吊销，
+    /// 停用操作要等最长 ExpireMinutes 才真正生效。
+    /// 校验走 IAdminSessionStore（键位与用户会话独立）。
     /// </summary>
-    public string IssueAdminToken(Admin admin)
+    public string IssueAdminToken(Admin admin, string sessionId)
         => Write(new[]
         {
             new Claim(ClaimTypes.NameIdentifier, admin.Id.ToString(CultureInfo.InvariantCulture)),
             new Claim(ClaimTypes.Name, admin.Username),
             new Claim("role", "admin"),
-            new Claim("arole", ((int)admin.Role).ToString(CultureInfo.InvariantCulture))
+            new Claim("arole", ((int)admin.Role).ToString(CultureInfo.InvariantCulture)),
+            new Claim("sid", sessionId)
         });
 
     public string GenerateRefreshToken()
