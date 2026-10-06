@@ -47,6 +47,14 @@ internal sealed class RealtimeNotifier : IRealtimeNotifier
         return Task.CompletedTask;
     }
 
+    public Task NotifyFriendRemovedAsync(int removerId, int removedId, CancellationToken ct = default)
+    {
+        // 双向通知：主动删除方可能有其他在线设备，被删除方则必须立刻刷新
+        SendSignal(removedId, WsMessageType.FriendRemoved, removerId);
+        SendSignal(removerId, WsMessageType.FriendRemoved, removedId);
+        return Task.CompletedTask;
+    }
+
     public Task NotifyPresenceAsync(
         int userId, IReadOnlyList<int> friendIds, bool online, CancellationToken ct = default)
     {
@@ -114,6 +122,21 @@ internal sealed class RealtimeNotifier : IRealtimeNotifier
             _connections.Broadcast(memberId, payload);
         }
 
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyRemovedFromGroupAsync(int toUserId, long groupId, CancellationToken ct = default)
+    {
+        var payload = JsonConvert.Serialize(new WsMessage
+        {
+            Type = WsMessageType.GroupMemberRemoved,
+            From = Text(groupId),
+            To = Text(groupId),
+            Content = "你已被移出该群",
+            Timestamp = NowUnixMilliseconds()
+        });
+
+        _connections.Broadcast(toUserId, payload);
         return Task.CompletedTask;
     }
 

@@ -35,6 +35,26 @@ internal sealed class WsConnectionManager : IConnectionRegistry
     /// <summary>登记新连接（sessionId 来自 JWT 的 sid claim）</summary>
     public async Task AddConnectionAsync(int userId, string sessionId, IWebSocketClient client)
     {
+        // 同一会话重复建连（客户端重连时旧 socket 尚未被服务端察觉）：
+        // 必须把旧连接关掉再登记新的。只覆盖字典项的话，旧 socket 会变成
+        // 「没人引用但依然打开、依然在分发入站命令」的僵尸连接 ——
+        // RemoveConnectionAsync 有 ReferenceEquals 校验，所以它断开时也不会误删新连接，
+        // 但在此之前它的报文照样被执行。
+        if (_connections.TryGetValue(sessionId, out var previous) && !ReferenceEquals(previous, client))
+        {
+            _logger.LogWarning(
+                "会话 {Session} 重复建连，关闭旧连接（用户 {UserId}）", Abbreviate(sessionId), userId);
+
+            try
+            {
+                previous.Close();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "关闭会话 {Session} 的旧连接时出错", Abbreviate(sessionId));
+            }
+        }
+
         _connections[sessionId] = client;
         _userSessions.AddOrUpdate(
             userId,

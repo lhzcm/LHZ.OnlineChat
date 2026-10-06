@@ -57,7 +57,10 @@ public sealed class PrivateMessage : AggregateRoot<long>
         string? clientMessageId,
         MessageReply? reply,
         DateTime now)
-        => new()
+    {
+        MessageContentRules.EnsureValid(content, kind);
+
+        return new PrivateMessage
         {
             SenderId = senderId,
             ReceiverId = receiverId,
@@ -71,6 +74,7 @@ public sealed class PrivateMessage : AggregateRoot<long>
             ReplySenderName = reply?.SenderName,
             SentAt = now
         };
+    }
 
     /// <summary>标记已读：只有接收方能标记</summary>
     public void MarkAsRead(int operatorId)

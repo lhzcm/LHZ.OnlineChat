@@ -11,6 +11,32 @@ public enum MessageKind
 }
 
 /// <summary>
+/// 消息内容与类型的校验规则（私聊 / 群聊共用一份，避免两处各写一套后漂移）。
+///
+/// 之前两者都不校验，代价是：
+///   - 空串能入库，前端渲染出空气泡；
+///   - 超长内容能撑爆数据库列与推送报文（WS 帧大小不是业务约束）；
+///   - MessageKind 在 WS 入口是 (MessageKind)整数 的未检查转换，
+///     攻击者可以写入协议未定义的类型，前端渲染行为未定义。
+/// </summary>
+public static class MessageContentRules
+{
+    /// <summary>单条消息内容上限（与机器人推送接口的公开文档一致）</summary>
+    public const int MaxLength = 5000;
+
+    public static void EnsureValid(string? content, MessageKind kind)
+    {
+        DomainException.Ensure(Enum.IsDefined(kind), "不支持的消息类型");
+
+        var normalized = (content ?? string.Empty).Trim();
+        DomainException.Ensure(normalized.Length > 0, "消息内容不能为空");
+        DomainException.Ensure(
+            normalized.Length <= MaxLength,
+            $"消息内容不能超过 {MaxLength} 字");
+    }
+}
+
+/// <summary>
 /// @ 提及列表值对象。
 /// 库里存逗号分隔字符串（如 "10000,10002"），原先 ParseMentions 在
 /// MessageService 和 WsMessageHandler 各写了一份一模一样的实现。

@@ -1,6 +1,7 @@
 using LHZ.OnlineChat.Application.Groups.Commands;
 using LHZ.OnlineChat.Application.Groups.EventHandlers;
 using LHZ.OnlineChat.Application.Groups.Queries;
+using LHZ.OnlineChat.Application.Robots.Commands;
 using LHZ.OnlineChat.Application.Tests.TestDoubles;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Friends;
@@ -79,7 +80,7 @@ public class JoinLeaveGroupTests
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var joiner = _ctx.GivenUser("新人", "j@test.local");
-        var group = _ctx.GivenGroup(owner.Id);
+        var group = _ctx.GivenOpenGroup(owner.Id);
 
         var result = await JoinHandler().Handle(
             new JoinGroupCommand { GroupId = group.Id, UserId = joiner.Id }, default);
@@ -89,11 +90,42 @@ public class JoinLeaveGroupTests
     }
 
     [Fact]
+    public async Task 默认仅限邀请_不能自行加入()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var outsider = _ctx.GivenUser("路人", "x@test.local");
+
+        // 默认建群即 InviteOnly：群 ID 是连续自增的，若默认可加入，
+        // 任何人都能枚举 ID 进群，再顺着历史接口读走全部消息
+        var group = _ctx.GivenGroup(owner.Id);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => JoinHandler().Handle(
+            new JoinGroupCommand { GroupId = group.Id, UserId = outsider.Id }, default));
+
+        Assert.Contains("仅限邀请", ex.Message);
+        Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, outsider.Id));
+    }
+
+    [Fact]
+    public async Task 从开放改回仅限邀请后不能再自行加入()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var outsider = _ctx.GivenUser("路人", "x@test.local");
+        var group = _ctx.GivenOpenGroup(owner.Id);
+
+        group.SetJoinPolicy(Domain.Groups.GroupJoinPolicy.InviteOnly, owner.Id, _ctx.Now);
+        await _ctx.Groups.UpdateAsync(group);
+
+        await Assert.ThrowsAsync<DomainException>(() => JoinHandler().Handle(
+            new JoinGroupCommand { GroupId = group.Id, UserId = outsider.Id }, default));
+    }
+
+    [Fact]
     public async Task 加入时已读游标设为当前最新消息_避免历史被当离线消息补发()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var joiner = _ctx.GivenUser("新人", "j@test.local");
-        var group = _ctx.GivenGroup(owner.Id);
+        var group = _ctx.GivenOpenGroup(owner.Id);
         _ctx.GivenGroupMessage(group.Id, owner.Id, "历史1");
         var latest = _ctx.GivenGroupMessage(group.Id, owner.Id, "历史2");
 
@@ -109,7 +141,7 @@ public class JoinLeaveGroupTests
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var joiner = _ctx.GivenUser("新人", "j@test.local");
-        var group = _ctx.GivenGroup(owner.Id);
+        var group = _ctx.GivenOpenGroup(owner.Id);
 
         await JoinHandler().Handle(
             new JoinGroupCommand { GroupId = group.Id, UserId = joiner.Id }, default);
@@ -414,7 +446,7 @@ public class GroupMemberManagementTests
         var member = _ctx.GivenUser("成员", "m@test.local");
         var group = _ctx.GivenGroup(owner.Id, member.Id);
 
-        var result = await new KickGroupMemberHandler(_ctx.GroupMembers).Handle(
+        var result = await new KickGroupMemberHandler(_ctx.GroupMembers, _ctx.Events, _ctx.Clock).Handle(
             new KickGroupMemberCommand
             {
                 GroupId = group.Id, OperatorId = owner.Id, TargetUserId = member.Id
@@ -422,6 +454,49 @@ public class GroupMemberManagementTests
 
         Assert.Equal("已踢出成员", result.Message);
         Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, member.Id));
+    }
+
+    [Fact]
+    public async Task 被踢出群后收到通知_客户端据此退出会话()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var member = _ctx.GivenUser("成员", "m@test.local");
+        var group = _ctx.GivenGroup(owner.Id, member.Id);
+
+        // GroupMemberRemoved 此前从未被 Raise：被踢的人客户端里那个群会一直留着
+        _ctx.Events.Subscribe(new NotifyOnGroupMemberRemoved(_ctx.Notifier));
+
+        await new KickGroupMemberHandler(_ctx.GroupMembers, _ctx.Events, _ctx.Clock).Handle(
+            new KickGroupMemberCommand
+            {
+                GroupId = group.Id, OperatorId = owner.Id, TargetUserId = member.Id
+            }, default);
+
+        var push = Assert.Single(_ctx.Notifier.OfKind(PushKind.GroupMemberRemoved));
+        Assert.Equal(member.Id, push.ToUserId);
+        Assert.Equal(group.Id, push.ContextId);
+    }
+
+    [Fact]
+    public async Task 踢人被拒时不发通知()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var admin = _ctx.GivenUser("管理员", "a@test.local");
+        var group = _ctx.GivenGroup(owner.Id, admin.Id);
+        var adminMember = await _ctx.GroupMembers.FindAsync(group.Id, admin.Id);
+        adminMember!.ChangeAdminRole(true);
+        await _ctx.GroupMembers.UpdateAsync(adminMember);
+
+        _ctx.Events.Subscribe(new NotifyOnGroupMemberRemoved(_ctx.Notifier));
+
+        await Assert.ThrowsAsync<DomainException>(
+            () => new KickGroupMemberHandler(_ctx.GroupMembers, _ctx.Events, _ctx.Clock).Handle(
+                new KickGroupMemberCommand
+                {
+                    GroupId = group.Id, OperatorId = admin.Id, TargetUserId = owner.Id
+                }, default));
+
+        Assert.Empty(_ctx.Notifier.OfKind(PushKind.GroupMemberRemoved));
     }
 
     [Fact]
@@ -435,7 +510,7 @@ public class GroupMemberManagementTests
         await _ctx.GroupMembers.UpdateAsync(adminMember);
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new KickGroupMemberHandler(_ctx.GroupMembers).Handle(
+            () => new KickGroupMemberHandler(_ctx.GroupMembers, _ctx.Events, _ctx.Clock).Handle(
                 new KickGroupMemberCommand
                 {
                     GroupId = group.Id, OperatorId = admin.Id, TargetUserId = owner.Id
@@ -460,7 +535,7 @@ public class GroupMemberManagementTests
         }
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new KickGroupMemberHandler(_ctx.GroupMembers).Handle(
+            () => new KickGroupMemberHandler(_ctx.GroupMembers, _ctx.Events, _ctx.Clock).Handle(
                 new KickGroupMemberCommand
                 {
                     GroupId = group.Id, OperatorId = admin1.Id, TargetUserId = admin2.Id
@@ -476,7 +551,7 @@ public class GroupMemberManagementTests
         var group = _ctx.GivenGroup(owner.Id);
 
         var ex = await Assert.ThrowsAsync<EntityNotFoundException>(
-            () => new KickGroupMemberHandler(_ctx.GroupMembers).Handle(
+            () => new KickGroupMemberHandler(_ctx.GroupMembers, _ctx.Events, _ctx.Clock).Handle(
                 new KickGroupMemberCommand
                 {
                     GroupId = group.Id, OperatorId = owner.Id, TargetUserId = 99999
@@ -691,11 +766,55 @@ public class GroupQueryTests
         var group = _ctx.GivenGroup(owner.Id, member.Id);
 
         var result = await new GetGroupMembersHandler(_ctx.GroupMembers, _ctx.Users, _ctx.Presence)
-            .Handle(new GetGroupMembersQuery { GroupId = group.Id }, default);
+            .Handle(new GetGroupMembersQuery { GroupId = group.Id, RequesterId = owner.Id }, default);
 
         Assert.Equal(2, result.Data!.Count);
         Assert.Equal(0, result.Data[0].Role);
         Assert.Equal(owner.Id, result.Data[0].UserId);
+    }
+
+    [Fact]
+    public async Task 非成员不能查看群成员名单()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var outsider = _ctx.GivenUser("路人", "x@test.local");
+        var group = _ctx.GivenGroup(owner.Id);
+
+        // 名单含昵称/头像/角色/在线状态，属于群内可见信息
+        var ex = await Assert.ThrowsAsync<DomainException>(
+            () => new GetGroupMembersHandler(_ctx.GroupMembers, _ctx.Users, _ctx.Presence)
+                .Handle(new GetGroupMembersQuery { GroupId = group.Id, RequesterId = outsider.Id }, default));
+
+        Assert.Equal("你不是该群成员", ex.Message);
+    }
+
+    [Fact]
+    public async Task 非成员不能查看群内机器人()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var outsider = _ctx.GivenUser("路人", "x@test.local");
+        var (robot, _) = _ctx.GivenRobot(owner.Id);
+        var group = _ctx.GivenGroup(owner.Id, robot.UserId);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(
+            () => new GetGroupRobotsHandler(_ctx.GroupMembers, _ctx.Robots)
+                .Handle(new GetGroupRobotsQuery { GroupId = group.Id, RequesterId = outsider.Id }, default));
+
+        Assert.Equal("你不是该群成员", ex.Message);
+    }
+
+    [Fact]
+    public async Task 群成员可以查看群内机器人()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var (robot, _) = _ctx.GivenRobot(owner.Id);
+        var group = _ctx.GivenGroup(owner.Id, robot.UserId);
+
+        var result = await new GetGroupRobotsHandler(_ctx.GroupMembers, _ctx.Robots)
+            .Handle(new GetGroupRobotsQuery { GroupId = group.Id, RequesterId = owner.Id }, default);
+
+        Assert.True(result.Success);
+        Assert.Contains(result.Data!, r => r.UserId == robot.UserId);
     }
 
     [Fact]
@@ -707,20 +826,97 @@ public class GroupQueryTests
         _ctx.Presence.SetOnline(owner.Id);
 
         var result = await new GetGroupMembersHandler(_ctx.GroupMembers, _ctx.Users, _ctx.Presence)
-            .Handle(new GetGroupMembersQuery { GroupId = group.Id }, default);
+            .Handle(new GetGroupMembersQuery { GroupId = group.Id, RequesterId = owner.Id }, default);
 
         var members = result.Data!;
         Assert.True(members.Single(m => m.UserId == owner.Id).IsOnline);
         Assert.True(members.Single(m => m.UserId == botUser.Id).IsBot);
     }
+}
+
+public class SetGroupJoinPolicyTests
+{
+    private readonly ApplicationTestContext _ctx = new();
+
+    private SetGroupJoinPolicyHandler Handler()
+        => new(_ctx.Groups, _ctx.GroupMembers, _ctx.Events, _ctx.Clock);
 
     [Fact]
-    public async Task 空群返回空成员列表()
+    public async Task 群主可开放加入()
     {
-        var result = await new GetGroupMembersHandler(_ctx.GroupMembers, _ctx.Users, _ctx.Presence)
-            .Handle(new GetGroupMembersQuery { GroupId = 99999 }, default);
+        var owner = _ctx.GivenUser();
+        var group = _ctx.GivenGroup(owner.Id);
 
-        Assert.True(result.Success);
-        Assert.Empty(result.Data!);
+        var result = await Handler().Handle(new SetGroupJoinPolicyCommand
+        {
+            GroupId = group.Id, OperatorId = owner.Id, OpenToJoin = true
+        }, default);
+
+        Assert.Equal("已允许任何人加入", result.Message);
+        Assert.True((await _ctx.Groups.GetRequiredAsync(group.Id))!.IsOpenToJoin);
+    }
+
+    [Fact]
+    public async Task 管理员可开放加入()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var admin = _ctx.GivenUser("管理员", "a@test.local");
+        var group = _ctx.GivenGroup(owner.Id, admin.Id);
+
+        var adminMember = await _ctx.GroupMembers.GetRequiredAsync(group.Id, admin.Id);
+        adminMember.ChangeAdminRole(true);
+        await _ctx.GroupMembers.UpdateAsync(adminMember);
+
+        var result = await Handler().Handle(new SetGroupJoinPolicyCommand
+        {
+            GroupId = group.Id, OperatorId = admin.Id, OpenToJoin = true
+        }, default);
+
+        Assert.Equal("已允许任何人加入", result.Message);
+    }
+
+    [Fact]
+    public async Task 普通成员不能修改入群方式()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var member = _ctx.GivenUser("成员", "m@test.local");
+        var group = _ctx.GivenGroup(owner.Id, member.Id);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
+            new SetGroupJoinPolicyCommand
+            {
+                GroupId = group.Id, OperatorId = member.Id, OpenToJoin = true
+            }, default));
+
+        Assert.Equal("只有群主或管理员可以修改入群方式", ex.Message);
+    }
+
+    [Fact]
+    public async Task 非成员不能修改入群方式()
+    {
+        var owner = _ctx.GivenUser("群主", "o@test.local");
+        var outsider = _ctx.GivenUser("路人", "x@test.local");
+        var group = _ctx.GivenGroup(owner.Id);
+
+        await Assert.ThrowsAsync<EntityNotFoundException>(() => Handler().Handle(
+            new SetGroupJoinPolicyCommand
+            {
+                GroupId = group.Id, OperatorId = outsider.Id, OpenToJoin = true
+            }, default));
+    }
+
+    [Fact]
+    public async Task 开放后回收仅限邀请()
+    {
+        var owner = _ctx.GivenUser();
+        var group = _ctx.GivenOpenGroup(owner.Id);
+
+        var result = await Handler().Handle(new SetGroupJoinPolicyCommand
+        {
+            GroupId = group.Id, OperatorId = owner.Id, OpenToJoin = false
+        }, default);
+
+        Assert.Equal("已改为仅限邀请加入", result.Message);
+        Assert.False((await _ctx.Groups.GetRequiredAsync(group.Id))!.IsOpenToJoin);
     }
 }

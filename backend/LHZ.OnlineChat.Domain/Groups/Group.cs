@@ -46,6 +46,23 @@ public sealed class GroupAnnouncement : ValueObject
 }
 
 /// <summary>
+/// 入群方式。
+///
+/// 默认 InviteOnly 而不是 Open：群 ID 是自增主键、连续且可枚举，
+/// 若默认可自行加入，任何人都能 join 任意群 —— 而消息历史与搜索的权限判断
+/// 只校验「是不是成员」，于是加入就等于拿到该群全部历史消息和成员名单。
+/// 需要公开招募的群，由群主/管理员显式改成 Open。
+/// </summary>
+public enum GroupJoinPolicy
+{
+    /// <summary>仅限邀请（默认）：只能由群主/管理员拉入，不能自行加入</summary>
+    InviteOnly = 0,
+
+    /// <summary>开放加入：知道群 ID 即可自行加入</summary>
+    Open = 1
+}
+
+/// <summary>
 /// 群组聚合根。
 /// 成员是独立聚合（GroupMember）—— 大集合不塞进聚合根，按「小聚合 + 按标识引用」建模，
 /// 否则每次发言都得把整群成员载入内存。跨两者的不变量由 GroupMember 的守卫方法表达。
@@ -61,6 +78,12 @@ public sealed class Group : AggregateRoot<long>
     public string? Avatar { get; private set; }
 
     public int OwnerId { get; private set; }
+
+    /// <summary>入群方式；存量数据经 CodeFirst 补列后取默认值 0，即收紧为仅限邀请</summary>
+    public GroupJoinPolicy JoinPolicy { get; private set; } = GroupJoinPolicy.InviteOnly;
+
+    /// <summary>是否允许自行加入</summary>
+    public bool IsOpenToJoin => JoinPolicy == GroupJoinPolicy.Open;
 
     // ===== 公告的三个持久化列（映射到既有表结构 Announcement / AnnouncementAt / AnnouncementBy）=====
     // 对外只暴露聚合后的值对象，三列永远同进同退。
@@ -87,8 +110,28 @@ public sealed class Group : AggregateRoot<long>
             Name = normalized,
             Avatar = avatar,
             OwnerId = ownerId,
+            JoinPolicy = GroupJoinPolicy.InviteOnly,
             CreatedAt = now
         };
+    }
+
+    /// <summary>
+    /// 自行加入前的准入校验。调用方需已确认「该用户还不是成员」。
+    /// </summary>
+    public void EnsureJoinable()
+    {
+        DomainException.Ensure(
+            IsOpenToJoin,
+            "该群仅限邀请加入，请联系群主或管理员邀请你");
+    }
+
+    /// <summary>设置入群方式（调用前须由 GroupMember.EnsureCanManageGroup 校验权限）</summary>
+    public void SetJoinPolicy(GroupJoinPolicy policy, int operatedBy, DateTime now)
+    {
+        if (JoinPolicy == policy) return;
+
+        JoinPolicy = policy;
+        Raise(new GroupJoinPolicyChanged(Id, policy, operatedBy, now));
     }
 
     /// <summary>设置/清除公告（调用前须由 GroupMember.EnsureCanManageGroup 校验权限）</summary>

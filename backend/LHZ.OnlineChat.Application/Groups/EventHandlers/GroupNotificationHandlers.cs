@@ -49,3 +49,18 @@ internal sealed class HandleGroupDissolved : DomainEventHandler<GroupDissolved>
             .ConfigureAwait(false);
     }
 }
+
+/// <summary>
+/// 被移出群 → 通知本人退出会话。
+/// 与「解散群」同语义（客户端移除该会话），此前 GroupMemberRemoved 从未被 Raise，
+/// 被踢的人客户端里那个群会一直留着，点进去才发现自己已不是成员。
+/// </summary>
+internal sealed class NotifyOnGroupMemberRemoved : DomainEventHandler<GroupMemberRemoved>
+{
+    private readonly IRealtimeNotifier _notifier;
+
+    public NotifyOnGroupMemberRemoved(IRealtimeNotifier notifier) => _notifier = notifier;
+
+    protected override Task HandleAsync(GroupMemberRemoved e, CancellationToken ct)
+        => _notifier.NotifyRemovedFromGroupAsync(e.UserId, e.GroupId, ct);
+}

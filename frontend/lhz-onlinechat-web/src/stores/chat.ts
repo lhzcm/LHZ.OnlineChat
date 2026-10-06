@@ -3,9 +3,21 @@ import { ref, computed, watch, reactive } from 'vue'
 import type { SessionInfo, ChatType, WsMessage, MessageDto } from '@/types'
 import { messageApi } from '@/api/message'
 
+/** 乐观发送状态：sending=已上屏待服务端确认，sent=服务端已回显，failed=未写入连接（可重试） */
+export type MessageStatus = 'sending' | 'sent' | 'failed'
+
+/** 聊天消息：WS 协议消息 + 本地发送状态（status 只用于本地渲染，不上行） */
+export type ChatMessage = WsMessage & { status?: MessageStatus }
+
+// 常驻标签页 / 大量会话场景下的内存上限，避免下列集合无界增长
+const MAX_SESSIONS = 200         // 会话列表最多保留条数（按最近活跃时间取前 N）
+const MAX_MESSAGE_SESSIONS = 30  // 本地消息缓存保留的会话数（超出按 LRU 淘汰）
+const MAX_HISTORY_META = 60      // 历史分页元数据条目上限
+const MAX_READ_BY_PEER = 5000    // 对方已读回执 ID 上限（超出淘汰最早的记录）
+
 export const useChatStore = defineStore('chat', () => {
   const sessions = ref<SessionInfo[]>([])
-  const messages = ref<Map<string, WsMessage[]>>(new Map())
+  const messages = ref<Map<string, ChatMessage[]>>(new Map())
   // 未读数，key 与 messages 一致：`private_${id}` / `group_${id}`
   const unreadCounts = ref<Map<string, number>>(new Map())
   // 对方已读回执的私聊消息 ID 集合（自己发出的消息被对方已读）
@@ -24,6 +36,65 @@ export const useChatStore = defineStore('chat', () => {
     return `${type}_${id}`
   }
 
+  /** 已读标记写入队列：会话 key → 该会话最后一次已读请求的 Promise */
+  const readQueues = new Map<string, Promise<void>>()
+
+  /** 当前会话 key（缓存淘汰时永不淘汰它） */
+  function currentKey(): string {
+    return currentSession.value ? sessionKey(currentSession.value.type, currentSession.value.id) : ''
+  }
+
+  /** 标记会话为最近使用（Map 迭代顺序即插入顺序，删后重插即移到末尾） */
+  function touchSession(key: string) {
+    const list = messages.value.get(key)
+    if (!list) return
+    messages.value.delete(key)
+    messages.value.set(key, list)
+  }
+
+  /** 按 LRU 淘汰超出上限的会话消息缓存与历史分页元数据 */
+  function evictStaleEntries() {
+    const keep = currentKey()
+    if (messages.value.size > MAX_MESSAGE_SESSIONS) {
+      // 快照 key 再删除：迭代中删除虽然安全，但快照更直观
+      for (const key of [...messages.value.keys()]) {
+        if (messages.value.size <= MAX_MESSAGE_SESSIONS) break
+        if (key === keep) continue
+        messages.value.delete(key)
+      }
+    }
+    if (historyMeta.value.size > MAX_HISTORY_META) {
+      for (const key of [...historyMeta.value.keys()]) {
+        if (historyMeta.value.size <= MAX_HISTORY_META) break
+        if (key === keep) continue
+        historyMeta.value.delete(key)
+      }
+    }
+  }
+
+  /** 已读回执按加入顺序淘汰最早的记录（只影响很久以前的消息是否显示"已读"） */
+  function trimReadByPeer() {
+    if (readByPeer.value.size <= MAX_READ_BY_PEER) return
+    const overflow = readByPeer.value.size - MAX_READ_BY_PEER
+    let i = 0
+    for (const id of readByPeer.value) {
+      if (i++ >= overflow) break
+      readByPeer.value.delete(id)
+    }
+  }
+
+  /** 会话列表上限：超出时保留最近活跃的 N 个，并维持服务端返回的展示顺序 */
+  function boundSessions(list: SessionInfo[]): SessionInfo[] {
+    if (list.length <= MAX_SESSIONS) return list
+    const keep = new Set(
+      [...list]
+        .sort((a, b) => (new Date(b.lastTime).getTime() || 0) - (new Date(a.lastTime).getTime() || 0))
+        .slice(0, MAX_SESSIONS)
+        .map(s => sessionKey(s.type, s.id))
+    )
+    return list.filter(s => keep.has(sessionKey(s.type, s.id)))
+  }
+
   // 标签页标题未读角标：(N) OnlineChat
   watch(unreadCounts, (map) => {
     let total = 0
@@ -31,7 +102,7 @@ export const useChatStore = defineStore('chat', () => {
     document.title = total > 0 ? `(${total}) OnlineChat` : 'OnlineChat'
   }, { immediate: true })
 
-  function mergeList(list: WsMessage[], incoming: WsMessage[]) {
+  function mergeList(list: ChatMessage[], incoming: ChatMessage[]) {
     const seen = new Set(list.map(m => m.messageId).filter(Boolean))
     const merged = [...list]
     for (const m of incoming) {
@@ -47,7 +118,7 @@ export const useChatStore = defineStore('chat', () => {
    * myUserId 用于私聊会话归属：发送者视角（自己的消息/回显）归到 to，接收者视角归到 from。
    * 返回 { key, isNew }，isNew=false 表示与已有消息重复（如服务端回显）。
    */
-  function addMessage(msg: WsMessage, myUserId?: number): { key: string; isNew: boolean } {
+  function addMessage(msg: ChatMessage, myUserId?: number): { key: string; isNew: boolean } {
     let sessionType: ChatType
     let sessionId: number
     if (msg.type === 'group_message') {
@@ -62,7 +133,8 @@ export const useChatStore = defineStore('chat', () => {
     const key = sessionKey(sessionType, sessionId)
 
     const list = messages.value.get(key) || []
-    const isNew = !(msg.messageId && list.some(m => m.messageId === msg.messageId))
+    const dup = msg.messageId ? list.find(m => m.messageId === msg.messageId) : undefined
+    const isNew = !dup
     if (isNew) {
       messages.value.set(key, mergeList(list, [msg]))
       // 同步会话列表的最后消息预览
@@ -74,7 +146,12 @@ export const useChatStore = defineStore('chat', () => {
           lastTime: new Date(msg.timestamp).toISOString()
         }
       }
+    } else if (dup && dup.status !== 'sent') {
+      // 服务端回显（同 messageId）：把乐观发送中的消息确认为已发送
+      dup.status = 'sent'
     }
+    touchSession(key)
+    evictStaleEntries()
     return { key, isNew }
   }
 
@@ -98,6 +175,7 @@ export const useChatStore = defineStore('chat', () => {
     for (const m of list) {
       if (m.messageId) readByPeer.value.add(m.messageId)
     }
+    trimReadByPeer()
   }
 
   /** 标记消息为已撤回（本地即时生效） */
@@ -121,18 +199,36 @@ export const useChatStore = defineStore('chat', () => {
     return !!msgId && readByPeer.value.has(msgId)
   }
 
+  /** 更新某条消息的本地发送状态（乐观发送 → 已发送 / 发送失败） */
+  function setMessageStatus(key: string, messageId: string, status: MessageStatus) {
+    if (!messageId) return
+    const msg = messages.value.get(key)?.find(m => m.messageId === messageId)
+    if (msg) msg.status = status
+  }
+
   /**
    * 打开会话：清空未读；私聊同步服务端已读标记，群聊推进已读游标。
+   * 按会话串行执行：新消息会连续触发标记，串行可避免多个 mark-all-read 请求乱序到达
+   * （后发先至会让服务端把已读游标回退，未读数再次出现）。
    */
   async function markSessionRead(type: ChatType, id: number) {
-    unreadCounts.value.set(sessionKey(type, id), 0)
-    try {
-      if (type === 'private') {
-        await messageApi.markAllAsRead(id)
-      } else {
-        await messageApi.markGroupRead(id)
-      }
-    } catch { /* 忽略失败，下次打开再试 */ }
+    const key = sessionKey(type, id)
+    unreadCounts.value.set(key, 0)
+    const prev = readQueues.get(key) || Promise.resolve()
+    const task = prev.catch(() => {}).then(async () => {
+      try {
+        if (type === 'private') {
+          await messageApi.markAllAsRead(id)
+        } else {
+          await messageApi.markGroupRead(id)
+        }
+      } catch { /* 忽略失败，下次打开再试 */ }
+    }).finally(() => {
+      // 队尾任务完成后回收，避免队列 Map 随会话数无限增长
+      if (readQueues.get(key) === task) readQueues.delete(key)
+    })
+    readQueues.set(key, task)
+    return task
   }
 
   /**
@@ -141,8 +237,9 @@ export const useChatStore = defineStore('chat', () => {
   async function fetchSessions() {
     const res = await messageApi.getSessions()
     if (res.success && res.data) {
-      sessions.value = res.data
-      for (const s of res.data) {
+      // 会话列表本身也可能很长（大量群/机器人）：超出上限时只保留最近活跃的部分
+      sessions.value = boundSessions(res.data)
+      for (const s of sessions.value) {
         if (s.unreadCount > 0) setUnreadCount(sessionKey(s.type, s.id), s.unreadCount)
       }
     }
@@ -188,6 +285,9 @@ export const useChatStore = defineStore('chat', () => {
   async function loadHistory(type: ChatType, id: number, page = 1, myUserId?: number): Promise<boolean> {
     const key = sessionKey(type, id)
     const meta = historyMetaOf(key)
+    // 入口即做在途判断（loadMoreHistory 也走这里）：
+    // 否则并发调用会重复拉取同一页并在 mergeList 里交错写入
+    if (meta.loading) return meta.hasMore
     meta.loading = true
     let hasMore = false
     try {
@@ -211,6 +311,7 @@ export const useChatStore = defineStore('chat', () => {
           } as WsMessage))
           const existing = messages.value.get(key) || []
           messages.value.set(key, mergeList(existing, newMsgs))
+          touchSession(key)
           // 历史中"我发出且已被对方已读"的消息标记已读状态
           if (myUserId !== undefined) {
             for (const m of res.data.items) {
@@ -218,6 +319,7 @@ export const useChatStore = defineStore('chat', () => {
                 readByPeer.value.add(m.messageId || String(m.id))
               }
             }
+            trimReadByPeer()
           }
           hasMore = res.data.page * res.data.pageSize < res.data.total
         }
@@ -242,6 +344,7 @@ export const useChatStore = defineStore('chat', () => {
           } as WsMessage))
           const existing = messages.value.get(key) || []
           messages.value.set(key, mergeList(existing, newMsgs))
+          touchSession(key)
           hasMore = res.data.page * res.data.pageSize < res.data.total
         }
       }
@@ -249,6 +352,7 @@ export const useChatStore = defineStore('chat', () => {
       meta.page = page
       meta.hasMore = hasMore
       meta.loading = false
+      evictStaleEntries()
     }
     return hasMore
   }
@@ -295,13 +399,25 @@ export const useChatStore = defineStore('chat', () => {
       messages.value.set(key, mergeList(existing, list))
       counts.set(key, list.length)
     }
+    evictStaleEntries()
     return counts
+  }
+
+  /** 清空全部本地聊天缓存（登出 / 切换账号时调用，避免内存残留与串号） */
+  function clearAll() {
+    sessions.value = []
+    messages.value = new Map()
+    unreadCounts.value = new Map()
+    readByPeer.value = new Set()
+    historyMeta.value = new Map()
+    readQueues.clear()
+    currentSession.value = null
   }
 
   return {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages, historyMeta,
     sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled, removeMessage,
-    markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
-    setCurrentSession, loadHistory, loadMoreHistory, loadOfflineMessages
+    setMessageStatus, markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
+    setCurrentSession, loadHistory, loadMoreHistory, loadOfflineMessages, clearAll
   }
 })

@@ -82,6 +82,18 @@ internal sealed class SendPrivateMessageHandler : IRequestHandler<SendPrivateMes
 
     public async Task<SendMessageResult> Handle(SendPrivateMessageCommand command, CancellationToken ct)
     {
+        // 幂等：客户端重试同一条消息（网络抖动、乐观发送超时重发）时，
+        // ClientMessageId 相同就直接当成功返回，不再插一条。
+        // 之前只在前端按 messageId 去重，服务端照样插入重复行 —— 刷新一次就现形。
+        if (!string.IsNullOrWhiteSpace(command.ClientMessageId))
+        {
+            var existing = await _messages
+                .FindByClientMessageIdAsync(command.SenderId, command.ClientMessageId, ct)
+                .ConfigureAwait(false);
+
+            if (existing is not null) return SendMessageResult.Ok();
+        }
+
         // 黑名单拦截：接收者拉黑了发送者
         var blocked = await _blacklist
             .IsBlockedByAsync(command.ReceiverId, command.SenderId, ct)

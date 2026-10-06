@@ -152,6 +152,13 @@ public sealed class GetOfflineMessagesQuery : IQuery<ApiResponse<List<MessageDto
 internal sealed class GetOfflineMessagesHandler
     : IRequestHandler<GetOfflineMessagesQuery, ApiResponse<List<MessageDto>>>
 {
+    /// <summary>
+    /// 离线私聊补发上限（取最近这么多条）。
+    /// 群消息补发一直有 100 条/群的上限，私聊此前是全量返回 ——
+    /// 长期未登录的账号可能有上万条未读，一次响应就能拖垮前端。
+    /// </summary>
+    private const int MaxOfflineMessages = 500;
+
     private readonly IPrivateMessageRepository _messages;
     private readonly IUserRepository _users;
 
@@ -164,12 +171,18 @@ internal sealed class GetOfflineMessagesHandler
     public async Task<ApiResponse<List<MessageDto>>> Handle(
         GetOfflineMessagesQuery query, CancellationToken ct)
     {
-        var messages = await _messages.ListUnreadForAsync(query.UserId, ct).ConfigureAwait(false);
+        var messages = await _messages
+            .ListUnreadForAsync(query.UserId, MaxOfflineMessages, ct)
+            .ConfigureAwait(false);
+
         var senders = await _users
             .GetManyAsync(messages.Select(m => m.SenderId).Distinct(), ct)
             .ConfigureAwait(false);
 
+        // 仓储按时间倒序取「最近 N 条」，展示仍需正序（旧的在前）
         var items = messages
+            .OrderBy(m => m.SentAt)
+            .ThenBy(m => m.Id)
             .Select(m => m.ToDto(senders.GetValueOrDefault(m.SenderId)))
             .ToList();
 

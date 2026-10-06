@@ -14,7 +14,7 @@ public class AdminAuthTests
     private readonly ApplicationTestContext _ctx = new();
 
     private AdminLoginHandler Handler()
-        => new(_ctx.Admins, _ctx.Hasher, _ctx.Tokens, _ctx.Clock);
+        => new(_ctx.Admins, _ctx.Hasher, _ctx.Tokens, _ctx.AdminSessions, _ctx.Throttle, _ctx.Clock);
 
     [Fact]
     public async Task 登录成功并返回角色()
@@ -28,6 +28,10 @@ public class AdminAuthTests
         Assert.Equal("登录成功", result.Message);
         Assert.Equal(0, result.Data!.Admin.Role);
         Assert.NotEmpty(result.Data.Token);
+
+        // 登录必须登记会话，否则令牌无法吊销（停用/删除要等过期才生效）
+        var sessionId = Assert.Single(_ctx.AdminSessions.Created);
+        Assert.True(await _ctx.AdminSessions.IsValidAsync(sessionId));
     }
 
     [Fact]
@@ -100,19 +104,26 @@ public class AdminAuthTests
     }
 
     [Fact]
-    public async Task 管理员改密成功()
+    public async Task 管理员改密成功_并吊销全部会话迫使用新口令重新登录()
     {
         var admin = _ctx.GivenAdmin();
+        await _ctx.AdminSessions.CreateAsync(admin.Id, "sess-a");
+        await _ctx.AdminSessions.CreateAsync(admin.Id, "sess-b");
 
-        var result = await new ChangeAdminPasswordHandler(_ctx.Admins, _ctx.Hasher).Handle(
+        var result = await new ChangeAdminPasswordHandler(_ctx.Admins, _ctx.Hasher, _ctx.AdminSessions).Handle(
             new ChangeAdminPasswordCommand
             {
                 AdminId = admin.Id, OldPassword = "admin123456", NewPassword = "newadmin123"
             }, default);
 
-        Assert.Equal("密码修改成功", result.Message);
+        Assert.Equal("密码修改成功，请重新登录", result.Message);
         Assert.True(_ctx.Hasher.Verify(
             "newadmin123", (await _ctx.Admins.FindByIdAsync(admin.Id))!.PasswordHash));
+
+        // 改密的动机通常就是「怀疑口令泄露」，旧令牌必须立刻不能再用
+        Assert.Contains(admin.Id, _ctx.AdminSessions.RevokedAdmins);
+        Assert.False(await _ctx.AdminSessions.IsValidAsync("sess-a"));
+        Assert.False(await _ctx.AdminSessions.IsValidAsync("sess-b"));
     }
 
     [Fact]
@@ -121,7 +132,7 @@ public class AdminAuthTests
         var admin = _ctx.GivenAdmin();
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new ChangeAdminPasswordHandler(_ctx.Admins, _ctx.Hasher).Handle(
+            () => new ChangeAdminPasswordHandler(_ctx.Admins, _ctx.Hasher, _ctx.AdminSessions).Handle(
                 new ChangeAdminPasswordCommand
                 {
                     AdminId = admin.Id, OldPassword = "wrong", NewPassword = "newadmin123"
@@ -218,7 +229,7 @@ public class ManageAdminsTests
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
 
-        var result = await new UpdateAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+        var result = await new UpdateAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
             new UpdateAdminCommand
             {
                 OperatorId = superAdmin.Id, TargetId = ops.Id, Role = 0, Status = 0
@@ -232,12 +243,48 @@ public class ManageAdminsTests
     }
 
     [Fact]
+    public async Task 停用管理员后其令牌立即失效()
+    {
+        var superAdmin = _ctx.GivenAdmin("admin");
+        var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
+        await _ctx.AdminSessions.CreateAsync(ops.Id, "ops-session");
+
+        await new UpdateAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
+            new UpdateAdminCommand
+            {
+                OperatorId = superAdmin.Id, TargetId = ops.Id, Status = 0
+            }, default);
+
+        // 停用必须立刻踢掉他的手机会话，否则最长要等 Jwt:ExpireMinutes 才真正生效
+        Assert.Contains(ops.Id, _ctx.AdminSessions.RevokedAdmins);
+        Assert.False(await _ctx.AdminSessions.IsValidAsync("ops-session"));
+    }
+
+    [Fact]
+    public async Task 仅改状态为启用时不吊销会话()
+    {
+        var superAdmin = _ctx.GivenAdmin("admin");
+        var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
+        await _ctx.AdminSessions.CreateAsync(ops.Id, "ops-session");
+
+        await new UpdateAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
+            new UpdateAdminCommand
+            {
+                OperatorId = superAdmin.Id, TargetId = ops.Id, Status = 1
+            }, default);
+
+        // 启用一个账号不该顺手把别人的会话踢掉（与被停用时的处理刻意不同）
+        Assert.DoesNotContain(ops.Id, _ctx.AdminSessions.RevokedAdmins);
+        Assert.True(await _ctx.AdminSessions.IsValidAsync("ops-session"));
+    }
+
+    [Fact]
     public async Task 不能停用自己()
     {
         var superAdmin = _ctx.GivenAdmin();
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new UpdateAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+            () => new UpdateAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
                 new UpdateAdminCommand
                 {
                     OperatorId = superAdmin.Id, TargetId = superAdmin.Id, Status = 0
@@ -252,7 +299,7 @@ public class ManageAdminsTests
         var superAdmin = _ctx.GivenAdmin();
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new UpdateAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+            () => new UpdateAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
                 new UpdateAdminCommand
                 {
                     OperatorId = superAdmin.Id, TargetId = superAdmin.Id, Role = 1
@@ -268,7 +315,7 @@ public class ManageAdminsTests
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new UpdateAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+            () => new UpdateAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
                 new UpdateAdminCommand
                 {
                     OperatorId = superAdmin.Id, TargetId = ops.Id, Status = 9
@@ -283,7 +330,7 @@ public class ManageAdminsTests
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
 
-        var result = await new DeleteAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+        var result = await new DeleteAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
             new DeleteAdminCommand { OperatorId = superAdmin.Id, TargetId = ops.Id }, default);
 
         Assert.Equal("已删除", result.Message);
@@ -292,12 +339,27 @@ public class ManageAdminsTests
     }
 
     [Fact]
+    public async Task 删除管理员后其令牌立即失效()
+    {
+        var superAdmin = _ctx.GivenAdmin("admin");
+        var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
+        await _ctx.AdminSessions.CreateAsync(ops.Id, "ops-session");
+
+        await new DeleteAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
+            new DeleteAdminCommand { OperatorId = superAdmin.Id, TargetId = ops.Id }, default);
+
+        // 账号行删了但令牌还在有效期内 —— 必须同时吊销会话，否则等于没删
+        Assert.Contains(ops.Id, _ctx.AdminSessions.RevokedAdmins);
+        Assert.False(await _ctx.AdminSessions.IsValidAsync("ops-session"));
+    }
+
+    [Fact]
     public async Task 不能删除自己()
     {
         var superAdmin = _ctx.GivenAdmin();
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new DeleteAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+            () => new DeleteAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
                 new DeleteAdminCommand
                 {
                     OperatorId = superAdmin.Id, TargetId = superAdmin.Id
@@ -313,7 +375,7 @@ public class ManageAdminsTests
         var superAdmin = _ctx.GivenAdmin("root", AdminRole.Super);
 
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new DeleteAdminHandler(_ctx.Admins, _ctx.Audit).Handle(
+            () => new DeleteAdminHandler(_ctx.Admins, _ctx.AdminSessions, _ctx.Audit).Handle(
                 new DeleteAdminCommand
                 {
                     OperatorId = operatorAdmin.Id, TargetId = superAdmin.Id

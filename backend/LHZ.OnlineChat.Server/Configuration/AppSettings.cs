@@ -58,6 +58,64 @@ public sealed class AppSettings
                 InitialPassword = Admin.InitialPassword
             }
         };
+
+    /// <summary>JWT 密钥最小长度（HS256 的密钥短于哈希输出长度会削弱安全性）</summary>
+    private const int MinSecretLength = 32;
+
+    /// <summary>
+    /// 仓库里出现过的默认密钥。生产环境若仍是这些值，等同没有密钥 ——
+    /// 任何拿到源码的人都能伪造令牌。
+    /// </summary>
+    private static readonly HashSet<string> KnownDevelopmentSecrets = new(StringComparer.Ordinal)
+    {
+        "dev-only-insecure-signing-key-change-me-in-production",
+        "OnlineChat-SuperSecret-Key-AtLeast32Characters!",
+        "change-me-to-a-random-secret-at-least-32-chars"
+    };
+
+    /// <summary>CORS 是否允许所有来源（生产环境会据此告警）</summary>
+    public bool AllowsAnyOrigin
+        => string.IsNullOrWhiteSpace(Cors.AllowedOrigins) || Cors.AllowedOrigins == "*";
+
+    /// <summary>
+    /// 生产环境配置自检：不合格就拒绝启动。
+    ///
+    /// 做成「启动即失败」而不是打条警告，是因为这几项都写在仓库里：
+    /// JWT 密钥泄露可以伪造任意用户/管理员令牌，Robot:TokenKey 为空会退回内置开发密钥
+    /// （那个密钥同样在源码里，等于机器人令牌可被任意伪造）。
+    /// 静默降级等于没有防护，而「部署时立刻报错」是最便宜的发现方式。
+    /// </summary>
+    public void EnsureProductionReady()
+    {
+        var problems = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(Jwt.Secret) || Jwt.Secret.Length < MinSecretLength)
+        {
+            problems.Add($"Jwt:Secret 未配置或短于 {MinSecretLength} 个字符");
+        }
+        else if (KnownDevelopmentSecrets.Contains(Jwt.Secret))
+        {
+            problems.Add("Jwt:Secret 仍是仓库默认值，必须换成随机串（可用 openssl rand -base64 48）");
+        }
+
+        if (string.IsNullOrWhiteSpace(ConnectionStrings.Default))
+            problems.Add("ConnectionStrings:Default 未配置");
+
+        if (string.IsNullOrWhiteSpace(Robot.TokenKey))
+        {
+            problems.Add(
+                "Robot:TokenKey 未配置（未配置会退回内置开发密钥，机器人令牌可被伪造）");
+        }
+
+        if (problems.Count == 0) return;
+
+        throw new InvalidOperationException(
+            "生产环境配置未通过自检，已拒绝启动："
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, problems.Select(p => "  - " + p))
+            + Environment.NewLine
+            + "请通过环境变量（Jwt__Secret / ConnectionStrings__Default / Robot__TokenKey）配置。");
+    }
 }
 
 public sealed class ConnectionStringsSection

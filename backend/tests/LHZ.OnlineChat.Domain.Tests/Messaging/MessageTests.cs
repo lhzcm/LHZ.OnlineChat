@@ -34,12 +34,51 @@ public class PrivateMessageTests
         Assert.Null(message.ClientMessageId);
     }
 
-    [Fact]
-    public void Send_内容为null时归为空串_不抛异常()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Send_内容为空时被拒(string? content)
     {
-        var message = PrivateMessage.Send(10001, 10002, null!, MessageKind.Text, null, null, T.Now);
+        // 空内容曾经被静默归为空串入库,前端会渲染出没有内容的空气泡
+        var ex = Assert.Throws<DomainException>(() => PrivateMessage.Send(
+            10001, 10002, content!, MessageKind.Text, null, null, T.Now));
 
-        Assert.Equal(string.Empty, message.Content);
+        Assert.Equal("消息内容不能为空", ex.Message);
+    }
+
+    [Fact]
+    public void Send_内容超长时被拒()
+    {
+        var tooLong = new string('x', MessageContentRules.MaxLength + 1);
+
+        var ex = Assert.Throws<DomainException>(() => GroupMessage.Send(
+            1, 10001, tooLong, MessageKind.Text, null, MentionList.Empty, null, T.Now));
+
+        Assert.Contains("不能超过", ex.Message);
+    }
+
+    [Fact]
+    public void Send_恰好达到长度上限时通过()
+    {
+        var atLimit = new string('x', MessageContentRules.MaxLength);
+
+        var message = PrivateMessage.Send(
+            10001, 10002, atLimit, MessageKind.Text, null, null, T.Now);
+
+        Assert.Equal(MessageContentRules.MaxLength, message.Content.Length);
+    }
+
+    [Fact]
+    public void Send_未定义的消息类型被拒()
+    {
+        // WS 入口是 (MessageKind)整数 的未检查转换,枚举校验是最后一道闸
+        var undefined = (MessageKind)99;
+
+        var ex = Assert.Throws<DomainException>(() => PrivateMessage.Send(
+            10001, 10002, "内容", undefined, null, null, T.Now));
+
+        Assert.Equal("不支持的消息类型", ex.Message);
     }
 
     [Fact]

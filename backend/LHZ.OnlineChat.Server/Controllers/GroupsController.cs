@@ -26,10 +26,21 @@ public sealed class GroupsController : ApiControllerBase
     public Task<IActionResult> GetMyGroups(CancellationToken ct)
         => Send(new GetMyGroupsQuery { UserId = UserId }, ct);
 
-    /// <summary>群成员列表</summary>
+    /// <summary>群成员列表（仅群成员可见）</summary>
     [HttpGet("{groupId:long}/members")]
     public Task<IActionResult> GetGroupMembers(long groupId, CancellationToken ct)
-        => Send(new GetGroupMembersQuery { GroupId = groupId }, ct);
+        => Send(new GetGroupMembersQuery { GroupId = groupId, RequesterId = UserId }, ct);
+
+    /// <summary>设置入群方式（仅群主/管理员）：开放加入 或 仅限邀请</summary>
+    [HttpPut("{groupId:long}/join-policy")]
+    public Task<IActionResult> SetJoinPolicy(
+        long groupId, [FromBody] SetJoinPolicyRequest body, CancellationToken ct)
+        => Send(new SetGroupJoinPolicyCommand
+        {
+            GroupId = groupId,
+            OperatorId = UserId,
+            OpenToJoin = body.OpenToJoin
+        }, ct);
 
     /// <summary>邀请好友入群（仅群主/管理员）</summary>
     [HttpPost("{groupId:long}/invite")]
@@ -92,10 +103,10 @@ public sealed class GroupsController : ApiControllerBase
 
     // ==================== 群机器人 ====================
 
-    /// <summary>群内机器人列表</summary>
+    /// <summary>群内机器人列表（仅群成员可见）</summary>
     [HttpGet("{groupId:long}/robots")]
     public Task<IActionResult> GetGroupRobots(long groupId, CancellationToken ct)
-        => Send(new GetGroupRobotsQuery { GroupId = groupId }, ct);
+        => Send(new GetGroupRobotsQuery { GroupId = groupId, RequesterId = UserId }, ct);
 
     /// <summary>添加机器人到群（仅限自己创建的机器人）</summary>
     [HttpPost("{groupId:long}/robots")]
@@ -146,6 +157,12 @@ public sealed class SetAdminRequest
 
     /// <summary>true=设为管理员，false=取消</summary>
     public bool IsAdmin { get; set; }
+}
+
+public sealed class SetJoinPolicyRequest
+{
+    /// <summary>true=开放加入（知道群 ID 即可加入），false=仅限邀请（默认）</summary>
+    public bool OpenToJoin { get; set; }
 }
 
 public sealed class AddGroupRobotRequest

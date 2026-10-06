@@ -63,7 +63,20 @@ internal sealed class TransactionBehavior<TRequest, TResponse> : IPipelineBehavi
             _logger.LogDebug(
                 "{Request} 事务已提交，派发 {Count} 个领域事件", typeof(TRequest).Name, pending.Count);
 
-            await _events.DispatchAsync(pending, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _events.DispatchAsync(pending, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // 事务已经提交，写操作是成功的 —— 此时把异常抛出去，用户会看到「失败」
+                // 但数据其实已改（比如「改密失败」却已经踢掉了全部会话）。
+                // 订阅方做的是推 WS、发邮件这类不可回滚的副作用，失败只能记日志，
+                // 由监控暴露；绝不能反过来否定一次已经落库的成功写入。
+                _logger.LogError(
+                    ex, "{Request} 已提交，但 {Count} 个领域事件的订阅方执行失败",
+                    typeof(TRequest).Name, pending.Count);
+            }
         }
 
         return response;

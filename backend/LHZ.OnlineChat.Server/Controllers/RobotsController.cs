@@ -2,8 +2,10 @@ using System.Text;
 using LHZ.FastJson;
 using LHZ.OnlineChat.Application.Robots;
 using LHZ.OnlineChat.Application.Robots.Commands;
+using LHZ.OnlineChat.Server.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LHZ.OnlineChat.Server.Controllers;
 
@@ -61,6 +63,7 @@ public sealed class RobotsController : ApiControllerBase
     /// </summary>
     [HttpPost("{robotToken}/reply")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.RobotReply)]
     public async Task<IActionResult> AsyncReply(string robotToken, CancellationToken ct)
     {
         string rawBody;

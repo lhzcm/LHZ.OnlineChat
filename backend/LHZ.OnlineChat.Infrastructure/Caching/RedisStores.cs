@@ -74,6 +74,16 @@ internal sealed class VerificationCodeStore : IVerificationCodeStore
         return false;
     }
 
+    /// <summary>
+    /// 作废验证码及其错误计数。用于邮件发送失败后释放冷却窗口 ——
+    /// 否则那次「没发出去的发码」会占满 5 分钟冷却，用户白白等一轮才能重试。
+    /// </summary>
+    public async Task RemoveAsync(Email email, CancellationToken ct = default)
+    {
+        await _db.KeyDeleteAsync(RedisKeys.EmailCode(email.Value)).ConfigureAwait(false);
+        await _db.KeyDeleteAsync(RedisKeys.EmailCodeAttempts(email.Value)).ConfigureAwait(false);
+    }
+
     private static bool FixedTimeEquals(string stored, string provided)
         => CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(stored), Encoding.UTF8.GetBytes(provided));
@@ -82,6 +92,13 @@ internal sealed class VerificationCodeStore : IVerificationCodeStore
 /// <summary>在线状态存储（Redis）</summary>
 internal sealed class PresenceStore : IPresenceStore
 {
+    /// <summary>
+    /// 在线标记的存活时间。客户端心跳间隔 30 秒，这里给 3 分钟 ——
+    /// 容忍几次心跳丢失，同时保证进程被 kill 后最多 3 分钟就自动摘除标记
+    /// （没有 TTL 的话，那条记录会永远留着，好友列表里一直是「在线」）。
+    /// </summary>
+    private static readonly TimeSpan OnlineTtl = TimeSpan.FromMinutes(3);
+
     private readonly IDatabase _db;
 
     public PresenceStore(RedisConnection redis) => _db = redis.Database;
@@ -93,7 +110,11 @@ internal sealed class PresenceStore : IPresenceStore
             {
                 UserId = userId,
                 ConnectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            }));
+            }),
+            OnlineTtl);
+
+    public Task RefreshAsync(int userId, CancellationToken ct = default)
+        => _db.KeyExpireAsync(RedisKeys.Online(userId), OnlineTtl);
 
     public Task MarkOfflineAsync(int userId, CancellationToken ct = default)
         => _db.KeyDeleteAsync(RedisKeys.Online(userId));

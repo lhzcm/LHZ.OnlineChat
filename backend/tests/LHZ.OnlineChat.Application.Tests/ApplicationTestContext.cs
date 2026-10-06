@@ -43,9 +43,15 @@ internal sealed class ApplicationTestContext
 
     internal FakeSessionTerminator Terminator { get; }
 
+    internal FakeAdminSessionStore AdminSessions { get; } = new();
+
+    internal FakeLoginThrottle Throttle { get; } = new();
+
     internal FakeVerificationCodeStore Codes { get; } = new();
 
     internal FakeEmailSender Email { get; } = new();
+
+    internal FakeHostEnvironment Env { get; } = new();
 
     internal FakePresenceStore Presence { get; } = new();
 
@@ -144,6 +150,19 @@ internal sealed class ApplicationTestContext
                 .GetAwaiter().GetResult();
         }
 
+        return group;
+    }
+
+    /// <summary>
+    /// 预置一个「开放加入」的群。默认建群是仅限邀请，
+    /// 需要覆盖自行加入路径的用例显式走这里，避免把默认值改回去。
+    /// </summary>
+    internal Domain.Groups.Group GivenOpenGroup(int ownerId, params int[] memberIds)
+    {
+        var group = GivenGroup(ownerId, memberIds);
+        group.SetJoinPolicy(Domain.Groups.GroupJoinPolicy.Open, ownerId, Now);
+        Groups.UpdateAsync(group).GetAwaiter().GetResult();
+        group.DequeueDomainEvents();
         return group;
     }
 

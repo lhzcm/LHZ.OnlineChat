@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { adminApi } from '@/api/admin'
+import { adminApi, type AdminInfo } from '@/api/admin'
 import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
@@ -21,8 +21,12 @@ async function handleLogin() {
   try {
     const res = await adminApi.login(username.value.trim(), password.value)
     if (res.success && res.data) {
-      localStorage.setItem('adminToken', res.data.token)
-      localStorage.setItem('adminInfo', JSON.stringify(res.data.admin))
+      // refreshToken 目前后端未下发（AdminLoginResponse 只有 token），
+      // 一旦下发则一并保存，供 request.ts 在 401 时静默刷新
+      const data = res.data as { token: string; admin: AdminInfo; refreshToken?: string }
+      localStorage.setItem('adminToken', data.token)
+      if (data.refreshToken) localStorage.setItem('adminRefreshToken', data.refreshToken)
+      localStorage.setItem('adminInfo', JSON.stringify(data.admin))
       toast('登录成功')
       router.push('/dashboard')
     } else {

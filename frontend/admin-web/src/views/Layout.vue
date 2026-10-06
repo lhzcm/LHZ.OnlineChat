@@ -17,7 +17,10 @@ onMounted(() => {
 })
 
 function logout() {
+  // 刷新令牌也要清：只删访问令牌的话，留着的那串刷新令牌仍能换出新令牌 ——
+  // 「退出登录」在服务端看等于没退出
   localStorage.removeItem('adminToken')
+  localStorage.removeItem('adminRefreshToken')
   localStorage.removeItem('adminInfo')
   router.push('/login')
 }

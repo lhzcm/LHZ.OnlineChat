@@ -114,6 +114,8 @@ internal static class EntityConfiguration
             e.Property(x => x.Name).IsNullable(false).StringLength(100);
             e.Property(x => x.Avatar).StringLength(500);
             e.Property(x => x.OwnerId).IsNullable(false);
+            // 入群方式按 int 落库；存量行补列后取默认值 0（仅限邀请），即收紧而非放开
+            e.Property(x => x.JoinPolicy).MapType(typeof(int)).IsNullable(false);
             // 公告三列：属性名 AnnouncementText 对应既有列名 Announcement
             e.Property(x => x.AnnouncementText).Name("Announcement").StringLength(2000);
             e.Property(x => x.AnnouncementAt).IsNullable(true);

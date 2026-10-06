@@ -1,8 +1,10 @@
 using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Users.Commands;
 using LHZ.OnlineChat.Application.Users.Queries;
+using LHZ.OnlineChat.Server.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LHZ.OnlineChat.Server.Controllers;
 
@@ -10,8 +12,15 @@ namespace LHZ.OnlineChat.Server.Controllers;
 [Route("api/[controller]")]
 public sealed class AuthController : ApiControllerBase
 {
+    /// <summary>
+    /// 头像上传体积上限。前端裁剪后导出 512×512 方图，2MB 足够宽裕；
+    /// 聊天图片接口一早已有 RequestSizeLimit，头像此前没有 —— 未认证前的
+    /// 请求体大小不受控，等于给了一个廉价的资源消耗入口。
+    /// </summary>
+    private const long MaxAvatarBytes = 2 * 1024 * 1024;
     /// <summary>发送邮箱验证码（6 位数字）</summary>
     [HttpPost("send-code")]
+    [EnableRateLimiting(RateLimitPolicies.SendCode)]
     public Task<IActionResult> SendCode([FromBody] SendVerificationCodeCommand command, CancellationToken ct)
         => Send(command, ct);
 
@@ -93,6 +102,7 @@ public sealed class AuthController : ApiControllerBase
     /// <summary>上传头像</summary>
     [HttpPost("avatar")]
     [Authorize]
+    [RequestSizeLimit(MaxAvatarBytes)]
     public async Task<IActionResult> UploadAvatar(IFormFile? file, CancellationToken ct)
     {
         await using var upload = file.ToFileUpload();

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '@/api/auth'
 import { getDeviceName } from '@/utils/device'
+import { useChatStore } from './chat'
 import type { UserInfo, LoginRequest, RegisterRequest } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -74,7 +75,21 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('refreshToken')
+    // 同时清空聊天缓存：否则换账号登录后仍能看到上一个账号的会话/消息（内存残留）
+    try {
+      useChatStore().clearAll()
+    } catch {
+      // Pinia 未初始化（如启动早期）：此时也不存在残留的聊天数据
+    }
   }
 
-  return { user, token, refreshToken, isLoggedIn, register, login, fetchUser, updateProfile, uploadAvatar, updateEmail, logout }
+  /** 刷新令牌后同步新的访问/刷新令牌（内存态 + localStorage） */
+  function setTokens(newToken: string, newRefreshToken: string) {
+    token.value = newToken
+    refreshToken.value = newRefreshToken
+    localStorage.setItem('token', newToken)
+    localStorage.setItem('refreshToken', newRefreshToken)
+  }
+
+  return { user, token, refreshToken, isLoggedIn, register, login, fetchUser, updateProfile, uploadAvatar, updateEmail, logout, setTokens }
 })

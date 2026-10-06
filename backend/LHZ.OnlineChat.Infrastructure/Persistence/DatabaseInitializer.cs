@@ -71,12 +71,38 @@ public sealed class DatabaseInitializer
     /// <summary>建表 + 迁移 + 索引 + 初始超管</summary>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
+        // 必须早于 SyncStructure：Group_.JoinPolicy 是 NOT NULL 新列，
+        // 让 CodeFirst 自己去加列，在已有数据的库上会因「NOT NULL 无默认值」失败；
+        // 这里先带上 DEFAULT 0 补列，SyncStructure 随后看到的就是已存在的列。
+        EnsureGroupJoinPolicyColumn();
         SyncStructure();
         EnsureAccountIdSchema();
         EnsureSearchIndexes();
         EnsureUniqueConstraints();
         EnsurePerformanceIndexes();
         await EnsureInitialAdminAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 补 Group_.JoinPolicy 列（幂等）。
+    /// 默认值 0 = 仅限邀请：存量群一并收紧，不会因为升级而把老群留在「谁都能进」的状态。
+    /// </summary>
+    private void EnsureGroupJoinPolicyColumn()
+    {
+        const string sql = """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables
+                         WHERE table_schema='public' AND table_name='Group_')
+                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                 WHERE table_schema='public' AND table_name='Group_'
+                                   AND column_name='JoinPolicy') THEN
+                ALTER TABLE "Group_" ADD COLUMN "JoinPolicy" integer NOT NULL DEFAULT 0;
+              END IF;
+            END $$;
+            """;
+
+        _fsql.Ado.ExecuteNonQuery(sql);
     }
 
     /// <summary>CodeFirst 同步表结构</summary>
@@ -201,6 +227,20 @@ public sealed class DatabaseInitializer
             "管理员用户名唯一",
             """CREATE UNIQUE INDEX IF NOT EXISTS "ux_admin_username" ON "Admin" ("Username");""",
             duplicatesPossible: true);
+
+        // 客户端消息号是乐观发送的去重键：同一发送者重复提交同一条消息
+        // （网络抖动重发、用户点重试）必须只落一行。部分索引排除 NULL，
+        // 因为大多数消息不带客户端 ID。应用层会先查一次做幂等返回，
+        // 这个索引是并发下的最终兜底。
+        Execute(
+            "私聊客户端消息号唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_privmsg_sender_client" ON "PrivateMessage" ("SenderId", "ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;""",
+            duplicatesPossible: true);
+
+        Execute(
+            "群聊客户端消息号唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_grpmsg_sender_client" ON "GroupMessage" ("SenderId", "ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;""",
+            duplicatesPossible: true);
     }
 
     /// <summary>
@@ -222,8 +262,6 @@ public sealed class DatabaseInitializer
             // 未读统计只关心未读行，部分索引比全量索引小得多
             ("私聊未读统计",
                 """CREATE INDEX IF NOT EXISTS "ix_privmsg_unread" ON "PrivateMessage" ("ReceiverId", "SenderId") WHERE NOT "IsRead";"""),
-            ("私聊按客户端消息号（撤回/去重）",
-                """CREATE INDEX IF NOT EXISTS "ix_privmsg_clientid" ON "PrivateMessage" ("ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;"""),
             ("私聊按时间（仪表盘统计）",
                 """CREATE INDEX IF NOT EXISTS "ix_privmsg_sent" ON "PrivateMessage" ("SentAt");"""),
 
@@ -232,8 +270,6 @@ public sealed class DatabaseInitializer
                 """CREATE INDEX IF NOT EXISTS "ix_grpmsg_group_id" ON "GroupMessage" ("GroupId", "Id" DESC);"""),
             ("群聊按发送者",
                 """CREATE INDEX IF NOT EXISTS "ix_grpmsg_sender" ON "GroupMessage" ("SenderId");"""),
-            ("群聊按客户端消息号（撤回/去重）",
-                """CREATE INDEX IF NOT EXISTS "ix_grpmsg_clientid" ON "GroupMessage" ("ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;"""),
             ("群聊按时间（仪表盘统计）",
                 """CREATE INDEX IF NOT EXISTS "ix_grpmsg_sent" ON "GroupMessage" ("SentAt");"""),
 

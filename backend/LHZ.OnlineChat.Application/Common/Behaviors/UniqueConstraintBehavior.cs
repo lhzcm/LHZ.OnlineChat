@@ -28,6 +28,10 @@ internal sealed class UniqueConstraintBehavior<TRequest, TResponse> : IPipelineB
         ["ux_blacklist_user_blocked"] = "该用户已在黑名单中",
         ["ux_admin_username"] = "该管理员账号已存在",
         ["ux_robotprofile_user"] = "该账号已绑定机器人配置",
+        // 客户端消息号撞唯一索引 = 同一条消息被提交了两次（重试先于幂等查重到达）。
+        // 这不是用户错误，提示语按「已忽略」措辞，与幂等分支的表现保持一致。
+        ["ux_privmsg_sender_client"] = "消息重复提交，已忽略",
+        ["ux_grpmsg_sender_client"] = "消息重复提交，已忽略",
     };
 
     /// <summary>未登记的约束（如好友设置/会话设置这类幂等写入）统一提示重试</summary>

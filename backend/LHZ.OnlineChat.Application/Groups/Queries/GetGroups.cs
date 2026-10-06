@@ -52,7 +52,9 @@ internal sealed class GetMyGroupsHandler : IRequestHandler<GetMyGroupsQuery, Api
                     CreatedAt = UtcTime.Normalize(group.CreatedAt),
                     Announcement = group.Announcement?.Text,
                     AnnouncementAt = UtcTime.Normalize(group.AnnouncementAt),
-                    MyRole = (int)myRoles.GetValueOrDefault(id, GroupRole.Member)
+                    MyRole = (int)myRoles.GetValueOrDefault(id, GroupRole.Member),
+                    JoinPolicy = (int)group.JoinPolicy,
+                    IsOpenToJoin = group.IsOpenToJoin
                 };
             })
             .ToList();
@@ -65,6 +67,13 @@ internal sealed class GetMyGroupsHandler : IRequestHandler<GetMyGroupsQuery, Api
 public sealed class GetGroupMembersQuery : IQuery<ApiResponse<List<GroupMemberInfo>>>
 {
     public long GroupId { get; set; }
+
+    /// <summary>
+    /// 发起查询的用户。必须显式携带：成员名单含昵称、头像、角色与在线状态，
+    /// 早先这个查询没有调用者身份、也不校验成员关系，等于任意登录用户都能拉走
+    /// 任意群的完整名单（同一个控制器里邀请/踢人/改公告都传了 OperatorId，只有它漏了）。
+    /// </summary>
+    public int RequesterId { get; set; }
 }
 
 internal sealed class GetGroupMembersHandler
@@ -85,6 +94,12 @@ internal sealed class GetGroupMembersHandler
     public async Task<ApiResponse<List<GroupMemberInfo>>> Handle(
         GetGroupMembersQuery query, CancellationToken ct)
     {
+        // 先确认调用者本人是群成员，再返回名单（与历史消息/搜索同一套判断）
+        var isMember = await _members
+            .ExistsAsync(query.GroupId, query.RequesterId, ct)
+            .ConfigureAwait(false);
+        DomainException.Ensure(isMember, "你不是该群成员");
+
         var members = await _members.ListOfGroupAsync(query.GroupId, ct).ConfigureAwait(false);
         if (members.Count == 0)
             return ApiResponse<List<GroupMemberInfo>>.Ok(new List<GroupMemberInfo>());

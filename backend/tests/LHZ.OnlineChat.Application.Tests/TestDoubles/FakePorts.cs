@@ -192,6 +192,108 @@ internal sealed class FakeSessionTerminator : ISessionTerminator
     }
 }
 
+/// <summary>
+/// 登录限流替身：真实维护「账号 / IP」两个维度的失败计数。
+///
+/// 之所以不写成「永远返回 0」的空壳：锁定分支（累计失败后拒绝登录、
+/// 登录成功后账号维度清零而 IP 维度保留）是安全逻辑的一部分，
+/// 空壳会让这些分支永远不被执行到。
+/// </summary>
+internal sealed class FakeLoginThrottle : ILoginThrottle
+{
+    /// <summary>窗口内允许的失败次数；调小可快速进入锁定分支</summary>
+    internal int Threshold { get; set; } = 10;
+
+    /// <summary>剩下的锁定秒数；非 0 时所有登录都被拒</summary>
+    internal int LockoutSeconds { get; set; }
+
+    internal List<string> RecordedFailures { get; } = new();
+
+    internal List<string> Resets { get; } = new();
+
+    private readonly Dictionary<string, int> _failures = new(StringComparer.Ordinal);
+
+    public Task<int> GetLockoutSecondsAsync(
+        string accountKey, string? ip, CancellationToken ct = default)
+    {
+        if (LockoutSeconds > 0) return Task.FromResult(LockoutSeconds);
+
+        // 与真实实现一致：账号维度优先，其次 IP 维度
+        if (Count(Account(accountKey)) >= Threshold) return Task.FromResult(900);
+        if (!string.IsNullOrWhiteSpace(ip) && Count(Ip(ip)) >= Threshold) return Task.FromResult(900);
+
+        return Task.FromResult(0);
+    }
+
+    public Task RecordFailureAsync(string accountKey, string? ip, CancellationToken ct = default)
+    {
+        RecordedFailures.Add(accountKey);
+        Bump(Account(accountKey));
+        if (!string.IsNullOrWhiteSpace(ip)) Bump(Ip(ip));
+        return Task.CompletedTask;
+    }
+
+    public Task ResetAsync(string accountKey, string? ip, CancellationToken ct = default)
+    {
+        // 与真实实现一致：只清账号维度，IP 计数保留（否则猜中一个弱密码就能刷新 IP 额度）
+        Resets.Add(accountKey);
+        _failures.Remove(Account(accountKey));
+        return Task.CompletedTask;
+    }
+
+    private static string Account(string key) => $"account:{key}";
+
+    private static string Ip(string ip) => $"ip:{ip}";
+
+    private int Count(string key) => _failures.GetValueOrDefault(key);
+
+    private void Bump(string key) => _failures[key] = Count(key) + 1;
+}
+
+/// <summary>
+/// 管理员会话替身：真实维护「会话 → 管理员」与「管理员 → 会话集合」两侧索引。
+///
+/// 「停用 / 删除 / 改密后令牌立刻失效」靠的就是 RevokeAll 把会话删干净，
+/// 用空壳替身测不出这条链路。
+/// </summary>
+internal sealed class FakeAdminSessionStore : IAdminSessionStore
+{
+    private readonly Dictionary<string, int> _bySession = new(StringComparer.Ordinal);
+    private readonly Dictionary<int, HashSet<string>> _byAdmin = new();
+
+    internal List<string> Created { get; } = new();
+
+    internal List<int> RevokedAdmins { get; } = new();
+
+    public Task CreateAsync(int adminId, string sessionId, CancellationToken ct = default)
+    {
+        _bySession[sessionId] = adminId;
+
+        if (!_byAdmin.TryGetValue(adminId, out var set))
+        {
+            set = new HashSet<string>();
+            _byAdmin[adminId] = set;
+        }
+
+        set.Add(sessionId);
+        Created.Add(sessionId);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> IsValidAsync(string sessionId, CancellationToken ct = default)
+        => Task.FromResult(!string.IsNullOrEmpty(sessionId) && _bySession.ContainsKey(sessionId));
+
+    public Task RevokeAllAsync(int adminId, CancellationToken ct = default)
+    {
+        RevokedAdmins.Add(adminId);
+        if (!_byAdmin.TryGetValue(adminId, out var set)) return Task.CompletedTask;
+
+        foreach (var sessionId in set) _bySession.Remove(sessionId);
+        set.Clear();
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>验证码存储替身：可控制「当前有效码」，并记录消费情况</summary>
 internal sealed class FakeVerificationCodeStore : IVerificationCodeStore
 {
@@ -221,12 +323,32 @@ internal sealed class FakeVerificationCodeStore : IVerificationCodeStore
     }
 
     internal void Seed(string email, string code) => _codes[email] = code;
+
+    /// <summary>作废当前验证码（与真实实现一致：连错误计数一起清）</summary>
+    public Task RemoveAsync(Email email, CancellationToken ct = default)
+    {
+        _codes.Remove(email.Value);
+        Removed.Add(email.Value);
+        return Task.CompletedTask;
+    }
+
+    internal List<string> Removed { get; } = new();
 }
 
-/// <summary>邮件发送替身；SmtpConfigured=false 模拟未配置 SMTP 的开发模式</summary>
+/// <summary>
+/// 邮件发送替身。
+///
+/// 刻意把「是否配置」与「发送是否成功」拆成两个开关：这两条分支的处理完全不同
+/// （未配置时验证码必须保留，发送失败时要作废并让用户重试），
+/// 合成一个 bool 就永远测不出它们的区别 —— 之前的真实 bug 正是把两者混为一谈。
+/// </summary>
 internal sealed class FakeEmailSender : IEmailSender
 {
-    internal bool SmtpConfigured { get; set; } = true;
+    /// <summary>是否配置了 SMTP（实现接口成员，故为 public；类本身 internal）</summary>
+    public bool IsConfigured { get; set; } = true;
+
+    /// <summary>发送是否成功（仅在 IsConfigured 为真时有意义）</summary>
+    internal bool SendSucceeds { get; set; } = true;
 
     internal List<(string Email, string Code)> Sent { get; } = new();
 
@@ -234,8 +356,17 @@ internal sealed class FakeEmailSender : IEmailSender
         Email to, string code, CancellationToken ct = default)
     {
         Sent.Add((to.Value, code));
-        return Task.FromResult(SmtpConfigured);
+        return Task.FromResult(IsConfigured && SendSucceeds);
     }
+}
+
+/// <summary>
+/// 宿主环境替身。默认按生产环境（IsDevelopment=false）——
+/// 测试应当默认跑在与线上一致的那条路径上，要验开发模式的行为再显式打开。
+/// </summary>
+internal sealed class FakeHostEnvironment : IHostEnvironmentInfo
+{
+    public bool IsDevelopment { get; set; }
 }
 
 /// <summary>在线状态替身</summary>
@@ -248,6 +379,15 @@ internal sealed class FakePresenceStore : IPresenceStore
         _online.Add(userId);
         return Task.CompletedTask;
     }
+
+    /// <summary>续期；替身里标记不过期，只记录被续期过，供断言心跳确实在续期</summary>
+    public Task RefreshAsync(int userId, CancellationToken ct = default)
+    {
+        Refreshed.Add(userId);
+        return Task.CompletedTask;
+    }
+
+    internal List<int> Refreshed { get; } = new();
 
     public Task MarkOfflineAsync(int userId, CancellationToken ct = default)
     {

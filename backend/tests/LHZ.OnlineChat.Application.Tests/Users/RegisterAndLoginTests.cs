@@ -10,7 +10,7 @@ public class SendVerificationCodeTests
     private readonly ApplicationTestContext _ctx = new();
 
     private SendVerificationCodeHandler Handler()
-        => new(_ctx.Users, _ctx.Codes, _ctx.Email);
+        => new(_ctx.Users, _ctx.Codes, _ctx.Email, _ctx.Env);
 
     [Fact]
     public async Task 发送成功并返回冷却秒数()
@@ -35,9 +35,10 @@ public class SendVerificationCodeTests
     }
 
     [Fact]
-    public async Task 未配置SMTP时回传devCode_保留本地调试体验()
+    public async Task 开发环境未配置SMTP时回传devCode_保留本地调试体验()
     {
-        _ctx.Email.SmtpConfigured = false;
+        _ctx.Env.IsDevelopment = true;
+        _ctx.Email.IsConfigured = false;
 
         var result = await Handler().Handle(
             new SendVerificationCodeCommand { Email = "a@test.local" }, default);
@@ -47,9 +48,75 @@ public class SendVerificationCodeTests
     }
 
     [Fact]
+    public async Task 生产环境未配置SMTP时不回传devCode()
+    {
+        _ctx.Env.IsDevelopment = false;
+        _ctx.Email.IsConfigured = false;
+
+        // 这是账号接管路径的闸门：/send-code 与 /forgot-password 都是匿名接口，
+        // 一旦把验证码放进响应体，攻击者用受害者邮箱请求一次即可重置其密码
+        var result = await Handler().Handle(
+            new SendVerificationCodeCommand { Email = "a@test.local" }, default);
+
+        Assert.True(result.Success);
+        Assert.Null(result.Data!.DevCode);
+    }
+
+    [Fact]
+    public async Task 生产环境未配置SMTP时验证码仍然有效()
+    {
+        // 回归测试：曾经把「未配置 SMTP」与「发送失败」当成同一件事，
+        // 结果刚存下的验证码被立刻删除 —— 运维按服务器日志里的码去校验，
+        // 永远得到「验证码错误或已过期」。
+        _ctx.Env.IsDevelopment = false;
+        _ctx.Email.IsConfigured = false;
+
+        var result = await Handler().Handle(
+            new SendVerificationCodeCommand { Email = "a@test.local" }, default);
+
+        var printed = Assert.Single(_ctx.Codes.Saved).Code;
+        Assert.True(await _ctx.Codes.HasPendingCodeAsync(Email.Parse("a@test.local")));
+        Assert.True(await _ctx.Codes.ValidateAndConsumeAsync(Email.Parse("a@test.local"), printed));
+
+        Assert.Contains("未配置邮件服务", result.Message);
+    }
+
+    [Fact]
+    public async Task 已配置但发送失败时抛错_并作废验证码释放冷却()
+    {
+        _ctx.Env.IsDevelopment = false;
+        _ctx.Email.IsConfigured = true;
+        _ctx.Email.SendSucceeds = false;
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
+            new SendVerificationCodeCommand { Email = "a@test.local" }, default));
+
+        Assert.Equal("验证码发送失败，请稍后重试", ex.Message);
+
+        // 这一次确实没有送达渠道：作废验证码，用户才能立刻重试而不是白等 60 秒
+        Assert.Contains("a@test.local", _ctx.Codes.Removed);
+        Assert.False(await _ctx.Codes.HasPendingCodeAsync(Email.Parse("a@test.local")));
+    }
+
+    [Fact]
+    public async Task 生产环境SMTP正常时正常返回()
+    {
+        _ctx.Env.IsDevelopment = false;
+        _ctx.Email.IsConfigured = true;
+
+        var result = await Handler().Handle(
+            new SendVerificationCodeCommand { Email = "a@test.local" }, default);
+
+        Assert.True(result.Success);
+        Assert.Null(result.Data!.DevCode);
+        Assert.Single(_ctx.Email.Sent);
+        Assert.Equal("验证码已发送", result.Message);
+    }
+
+    [Fact]
     public async Task 已配置SMTP时不回传devCode()
     {
-        _ctx.Email.SmtpConfigured = true;
+        _ctx.Email.IsConfigured = true;
 
         var result = await Handler().Handle(
             new SendVerificationCodeCommand { Email = "a@test.local" }, default);
@@ -277,7 +344,7 @@ public class LoginTests
     private readonly ApplicationTestContext _ctx = new();
 
     private LoginHandler Handler()
-        => new(_ctx.Users, _ctx.Hasher, _ctx.Tokens, _ctx.Sessions);
+        => new(_ctx.Users, _ctx.Hasher, _ctx.Tokens, _ctx.Sessions, _ctx.Throttle);
 
     [Fact]
     public async Task 按账号ID登录成功()
@@ -419,17 +486,20 @@ public class LoginTests
     }
 
     [Fact]
-    public async Task 机器人账号不能登录()
+    public async Task 机器人账号无法登录_且提示与口令错误一致不泄露账号类型()
     {
         var (_, botUser) = _ctx.GivenRobot(ownerId: 10001);
 
+        // 机器人账号没有口令哈希，Verify 必然失败，因此走不到「机器人账号不能登录」那条
+        // 领域规则 —— 对外表现必须与「账号不存在」「口令错误」完全一致，
+        // 否则拿账号 ID 逐个试就能区分出哪些是机器人账号。
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(new LoginCommand
         {
             Account = botUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Password = "anything"
         }, default));
 
-        Assert.Equal("机器人账号不能登录", ex.Message);
+        Assert.Equal("账号或密码错误", ex.Message);
     }
 
     [Fact]
@@ -449,19 +519,60 @@ public class LoginTests
     }
 
     [Fact]
-    public async Task 封禁校验先于口令校验_不给出口令是否正确的线索()
+    public async Task 口令错误时不泄露账号是否被封禁()
     {
         var user = _ctx.GivenUser();
         user.Ban("封禁中", _ctx.Now);
         await _ctx.Users.UpdateAsync(user);
 
+        // 口令校验先于账号状态校验：口令不对时连「被封禁」都不该透露，
+        // 否则任何人都能用错误口令探测账号状态，统一 BadCredentials 的设计就被抵消了。
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(new LoginCommand
         {
             Account = user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Password = "wrong-password"
         }, default));
 
-        Assert.Equal("封禁中", ex.Message);
+        Assert.Equal("账号或密码错误", ex.Message);
+    }
+
+    [Fact]
+    public async Task 口令错误时记一次限流失败_登录成功后账号维度清零()
+    {
+        var user = _ctx.GivenUser();
+
+        await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(new LoginCommand
+        {
+            Account = user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Password = "wrong"
+        }, default));
+
+        Assert.Single(_ctx.Throttle.RecordedFailures);
+        Assert.Empty(_ctx.Throttle.Resets);
+
+        await Handler().Handle(new LoginCommand
+        {
+            Account = user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Password = "pass123456"
+        }, default);
+
+        Assert.Single(_ctx.Throttle.Resets);
+    }
+
+    [Fact]
+    public async Task 限流锁定期内正确口令也被拒绝()
+    {
+        var user = _ctx.GivenUser();
+        _ctx.Throttle.LockoutSeconds = 600;
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(new LoginCommand
+        {
+            Account = user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Password = "pass123456"
+        }, default));
+
+        Assert.Contains("登录失败次数过多", ex.Message);
+        Assert.Empty(await _ctx.Sessions.ListSessionIdsAsync(user.Id));
     }
 
     [Fact]
@@ -488,7 +599,7 @@ public class RefreshTokenTests
     private async Task<(Domain.Users.User User, string RefreshToken)> GivenLoggedInAsync()
     {
         var user = _ctx.GivenUser();
-        var login = await new LoginHandler(_ctx.Users, _ctx.Hasher, _ctx.Tokens, _ctx.Sessions)
+        var login = await new LoginHandler(_ctx.Users, _ctx.Hasher, _ctx.Tokens, _ctx.Sessions, _ctx.Throttle)
             .Handle(new LoginCommand
             {
                 Account = user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),

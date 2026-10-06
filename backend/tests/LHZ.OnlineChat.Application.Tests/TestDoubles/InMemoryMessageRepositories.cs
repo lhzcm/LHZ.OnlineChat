@@ -51,11 +51,15 @@ internal sealed class InMemoryPrivateMessageRepository
         return Task.FromResult((items, all.Count));
     }
 
+    /// <summary>与真实实现一致：按时间倒序取最近 limit 条（不是最早 limit 条）</summary>
     public Task<IReadOnlyList<PrivateMessage>> ListUnreadForAsync(
-        int userId, CancellationToken ct = default)
+        int userId, int limit, CancellationToken ct = default)
     {
         IReadOnlyList<PrivateMessage> items = Where(m => m.ReceiverId == userId && !m.IsRead)
-            .OrderBy(m => m.SentAt).ToList();
+            .OrderByDescending(m => m.SentAt)
+            .ThenByDescending(m => m.Id)
+            .Take(limit)
+            .ToList();
         return Task.FromResult(items);
     }
 
@@ -90,8 +94,13 @@ internal sealed class InMemoryPrivateMessageRepository
             && m.SentAt >= earliestSentAt
             && m.HasPublicId(messageId)).FirstOrDefault());
 
-    public Task<int> MarkAllReadAsync(int senderId, int receiverId, CancellationToken ct = default)
-    {
+    /// <summary>幂等发送查重：同一发送者的客户端消息号（替身里不分接收者，与唯一索引口径一致）</summary>
+    public Task<PrivateMessage?> FindByClientMessageIdAsync(
+        int senderId, string clientMessageId, CancellationToken ct = default)
+        => Task.FromResult(Where(m =>
+            m.SenderId == senderId && m.ClientMessageId == clientMessageId).FirstOrDefault());
+
+    public Task<int> MarkAllReadAsync(int senderId, int receiverId, CancellationToken ct = default)    {
         var matched = Where(m => m.SenderId == senderId && m.ReceiverId == receiverId && !m.IsRead)
             .ToList();
         foreach (var m in matched) m.MarkAsRead(receiverId);
@@ -255,6 +264,12 @@ internal sealed class InMemoryGroupMessageRepository
             && !m.IsDeleted
             && m.SentAt >= earliestSentAt
             && m.HasPublicId(messageId)).FirstOrDefault());
+
+    /// <summary>幂等发送查重（口径与唯一索引 ux_grpmsg_sender_client 一致）</summary>
+    public Task<GroupMessage?> FindByClientMessageIdAsync(
+        int senderId, string clientMessageId, CancellationToken ct = default)
+        => Task.FromResult(Where(m =>
+            m.SenderId == senderId && m.ClientMessageId == clientMessageId).FirstOrDefault());
 
     public Task AddAsync(GroupMessage message, CancellationToken ct = default)
     {

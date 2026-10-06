@@ -135,7 +135,7 @@ public class JwtTokenIssuerTests
     [Fact]
     public void 管理员令牌携带role与arole()
     {
-        var token = Parse(_issuer.IssueAdminToken(AnyAdmin(role: AdminRole.Super)));
+        var token = Parse(_issuer.IssueAdminToken(AnyAdmin(role: AdminRole.Super), "sess-1"));
 
         Assert.Equal("admin", token.Claims.First(c => c.Type == "role").Value);
         Assert.Equal("0", token.Claims.First(c => c.Type == "arole").Value);
@@ -144,17 +144,19 @@ public class JwtTokenIssuerTests
     [Fact]
     public void 运营管理员的arole为1()
     {
-        var token = Parse(_issuer.IssueAdminToken(AnyAdmin(role: AdminRole.Operator)));
+        var token = Parse(_issuer.IssueAdminToken(AnyAdmin(role: AdminRole.Operator), "sess-2"));
 
         Assert.Equal("1", token.Claims.First(c => c.Type == "arole").Value);
     }
 
     [Fact]
-    public void 管理员令牌不带sid_不走用户会话有效性校验()
+    public void 管理员令牌带sid_以便停用或删除后立即失效()
     {
-        var token = Parse(_issuer.IssueAdminToken(AnyAdmin()));
+        var token = Parse(_issuer.IssueAdminToken(AnyAdmin(), "sess-admin"));
 
-        Assert.DoesNotContain(token.Claims, c => c.Type == "sid");
+        // sid 是管理员会话可吊销的前提：鉴权管道会拿它去 IAdminSessionStore 校验。
+        // 没有 sid 的旧令牌在新管道里一律被拒（无法吊销的令牌不能放行）。
+        Assert.Equal("sess-admin", token.Claims.First(c => c.Type == "sid").Value);
     }
 
     [Fact]

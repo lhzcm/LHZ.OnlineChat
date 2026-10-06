@@ -21,6 +21,12 @@ public sealed class GroupInfo
 
     /// <summary>当前用户在该群的角色：0=群主 1=管理员 2=成员</summary>
     public int MyRole { get; set; } = 2;
+
+    /// <summary>入群方式：0=仅限邀请（默认）1=开放加入</summary>
+    public int JoinPolicy { get; set; }
+
+    /// <summary>是否允许自行加入 —— 前端据此决定是否显示「加入群组」入口</summary>
+    public bool IsOpenToJoin { get; set; }
 }
 
 /// <summary>群成员信息</summary>

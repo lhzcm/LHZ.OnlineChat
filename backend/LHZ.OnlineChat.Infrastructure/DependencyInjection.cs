@@ -47,6 +47,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IMuteMessageFormatter, MuteMessageFormatter>();
         services.AddScoped<IAuditLogger, AuditLogger>();
 
+        // 环境信息是单例：它由启动时的配置决定，与请求无关
+        services.AddSingleton<IHostEnvironmentInfo>(
+            new HostEnvironmentInfo(options.IsDevelopment));
+
         return services;
     }
 

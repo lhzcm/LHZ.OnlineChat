@@ -33,6 +33,14 @@ internal sealed class RecordingRealtimeNotifier : IRealtimeNotifier
     public Task NotifyFriendRejectedAsync(int requesterId, int rejecterId, CancellationToken ct = default)
         => Record(PushKind.FriendRejected, requesterId, contextId: rejecterId);
 
+    public Task NotifyFriendRemovedAsync(int removerId, int removedId, CancellationToken ct = default)
+    {
+        // 与真实实现一致：双向通知
+        Record(PushKind.FriendRemoved, removedId, contextId: removerId);
+        Record(PushKind.FriendRemoved, removerId, contextId: removedId);
+        return Task.CompletedTask;
+    }
+
     public Task NotifyPresenceAsync(
         int userId, IReadOnlyList<int> friendIds, bool online, CancellationToken ct = default)
     {
@@ -62,6 +70,9 @@ internal sealed class RecordingRealtimeNotifier : IRealtimeNotifier
         }
         return Task.CompletedTask;
     }
+
+    public Task NotifyRemovedFromGroupAsync(int toUserId, long groupId, CancellationToken ct = default)
+        => Record(PushKind.GroupMemberRemoved, toUserId, contextId: groupId);
 
     // ===== 消息 =====
 
@@ -136,10 +147,12 @@ internal enum PushKind
     FriendRequest,
     FriendAccepted,
     FriendRejected,
+    FriendRemoved,
     Presence,
     Blocked,
     GroupInvited,
     GroupDissolved,
+    GroupMemberRemoved,
     PrivateMessage,
     PrivateMessageEcho,
     GroupMessage,

@@ -16,6 +16,18 @@ internal sealed class SystemClock : IClock
 }
 
 /// <summary>
+/// 宿主环境信息：把启动时的 IsDevelopment 暴露给应用层。
+/// 唯一用途是决定「SMTP 发不出去时是否回传验证码」——
+/// 该行为在生产环境等于把「忘记密码」变成任意账号接管入口。
+/// </summary>
+internal sealed class HostEnvironmentInfo : IHostEnvironmentInfo
+{
+    public HostEnvironmentInfo(bool isDevelopment) => IsDevelopment = isDevelopment;
+
+    public bool IsDevelopment { get; }
+}
+
+/// <summary>
 /// 领域事件派发器。
 /// 领域事件是普通 POCO（领域层不认识 MediatR），这里用反射把它包进
 /// DomainEventNotification&lt;T&gt; 后交给 MediatR 发布。

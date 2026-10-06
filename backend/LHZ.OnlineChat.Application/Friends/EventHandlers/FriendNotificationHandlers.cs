@@ -40,3 +40,18 @@ internal sealed class NotifyOnFriendRequestRejected : DomainEventHandler<FriendR
     protected override Task HandleAsync(FriendRequestRejected e, CancellationToken ct)
         => _notifier.NotifyFriendRejectedAsync(e.RequesterId, e.RejecterId, ct);
 }
+
+/// <summary>
+/// 删除好友 → 双向通知。
+/// 这个订阅方此前缺失，FriendRemoved 事件定义了却从未被 Raise，
+/// 被删的一方只能靠自己刷新页面才发现好友没了。
+/// </summary>
+internal sealed class NotifyOnFriendRemoved : DomainEventHandler<FriendRemoved>
+{
+    private readonly IRealtimeNotifier _notifier;
+
+    public NotifyOnFriendRemoved(IRealtimeNotifier notifier) => _notifier = notifier;
+
+    protected override Task HandleAsync(FriendRemoved e, CancellationToken ct)
+        => _notifier.NotifyFriendRemovedAsync(e.UserId, e.FriendId, ct);
+}

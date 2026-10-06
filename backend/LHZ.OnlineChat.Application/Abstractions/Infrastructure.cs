@@ -7,8 +7,32 @@ namespace LHZ.OnlineChat.Application.Abstractions;
 /// <summary>邮件发送端口</summary>
 public interface IEmailSender
 {
-    /// <summary>发送验证码邮件。返回 false 表示未配置 SMTP（开发模式，验证码打印到控制台）</summary>
+    /// <summary>
+    /// SMTP 是否已配置。
+    ///
+    /// 必须区分「未配置」与「配置了但发送失败」—— 两者要采取完全不同的处理：
+    ///   未配置：受支持的运行模式，验证码打印到服务器日志，**仍然有效**（只是不回传给调用者）；
+    ///   发送失败：本次没有送达渠道，应作废验证码并让用户立刻重试。
+    /// 把两者混为一谈会有一个隐蔽后果：未配置 SMTP 时刚存下的验证码被立刻删除，
+    /// 运维按服务器日志里的码去校验，永远得到「验证码错误或已过期」。
+    /// </summary>
+    bool IsConfigured { get; }
+
+    /// <summary>发送验证码邮件。返回 false 表示未发出（未配置 SMTP，或发送过程出错）</summary>
     Task<bool> SendVerificationCodeAsync(Email to, string code, CancellationToken ct = default);
+}
+
+/// <summary>
+/// 宿主环境信息。
+///
+/// 用例层需要「是否开发环境」这一个判断来决定：SMTP 没配好时到底是
+/// 回传验证码方便本地调试，还是直接失败 —— 后者是生产环境唯一安全的选择。
+/// 应用层不引用 ASP.NET，因此需要一个中性端口。默认实现按生产环境处理：
+/// 拿不到环境信息时宁可失败，也不能把验证码发回给调用者。
+/// </summary>
+public interface IHostEnvironmentInfo
+{
+    bool IsDevelopment { get; }
 }
 
 /// <summary>
@@ -24,6 +48,12 @@ public interface IVerificationCodeStore
 
     /// <summary>校验验证码；正确则消费掉（一次性使用）</summary>
     Task<bool> ValidateAndConsumeAsync(Email email, string? code, CancellationToken ct = default);
+
+    /// <summary>
+    /// 作废当前验证码及其错误计数（连计数一起删，换新码时不该继承上一轮的失败次数）。
+    /// 用于「邮件发送失败」后释放冷却窗口，让用户能立刻重试。
+    /// </summary>
+    Task RemoveAsync(Email email, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -63,10 +93,17 @@ public sealed class CachedMessage
     public required DateTime SentAt { get; init; }
 }
 
-/// <summary>在线状态存储（Redis ws:online:{userId}，供跨进程/重启后查询）</summary>
+/// <summary>
+/// 在线状态存储（Redis ws:online:{userId}，供跨进程/重启后查询）。
+/// 标记带 TTL，由心跳续期：进程被 kill 时来不及写下线，TTL 到期即自动摘除标记，
+/// 否则那位用户会永远显示在线。
+/// </summary>
 public interface IPresenceStore
 {
     Task MarkOnlineAsync(int userId, CancellationToken ct = default);
+
+    /// <summary>续期在线标记（收到心跳时调用），不改变标记内容</summary>
+    Task RefreshAsync(int userId, CancellationToken ct = default);
 
     Task MarkOfflineAsync(int userId, CancellationToken ct = default);
 

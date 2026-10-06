@@ -1,5 +1,6 @@
 using System.Globalization;
 using LHZ.FastJson;
+using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Messaging.Commands;
 using LHZ.OnlineChat.Domain.Messaging;
 using LHZ.WebSocket.Enums;
@@ -23,11 +24,16 @@ namespace LHZ.OnlineChat.Infrastructure.Realtime;
 internal sealed class WsInboundDispatcher
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IPresenceStore _presence;
     private readonly ILogger<WsInboundDispatcher> _logger;
 
-    public WsInboundDispatcher(IServiceScopeFactory scopeFactory, ILogger<WsInboundDispatcher> logger)
+    public WsInboundDispatcher(
+        IServiceScopeFactory scopeFactory,
+        IPresenceStore presence,
+        ILogger<WsInboundDispatcher> logger)
     {
         _scopeFactory = scopeFactory;
+        _presence = presence;
         _logger = logger;
     }
 
@@ -46,10 +52,11 @@ internal sealed class WsInboundDispatcher
 
         if (message is null) return;
 
-        // 心跳不需要开作用域
+        // 心跳不需要开作用域（IPresenceStore 是单例，可直接用）
         if (message.Type == WsMessageType.Heartbeat)
         {
             Pong(sender);
+            await RefreshPresenceAsync(userId).ConfigureAwait(false);
             return;
         }
 
@@ -173,6 +180,25 @@ internal sealed class WsInboundDispatcher
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "心跳回复失败");
+        }
+    }
+
+    /// <summary>
+    /// 用心跳续期在线状态标记。
+    ///
+    /// 在线键带 TTL 是为了兜住「进程被 kill、来不及跑下线逻辑」的情况 ——
+    /// 否则那个用户会永远显示在线。续期失败不影响心跳回复本身，
+    /// 所以这里只记 Debug：Redis 抖动不该让客户端反复重连。
+    /// </summary>
+    private async Task RefreshPresenceAsync(int userId)
+    {
+        try
+        {
+            await _presence.RefreshAsync(userId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "在线状态续期失败（用户 {UserId}）", userId);
         }
     }
 

@@ -390,7 +390,7 @@ public class GroupRobotTests
         var group = _ctx.GivenGroup(owner.Id, botUser.Id);
 
         var result = await new GetGroupRobotsHandler(_ctx.GroupMembers, _ctx.Robots).Handle(
-            new GetGroupRobotsQuery { GroupId = group.Id }, default);
+            new GetGroupRobotsQuery { GroupId = group.Id, RequesterId = owner.Id }, default);
 
         Assert.Equal(botUser.Id, Assert.Single(result.Data!).UserId);
     }

@@ -92,8 +92,16 @@ public sealed class KickGroupMemberCommand : ICommand<ApiResponse>
 internal sealed class KickGroupMemberHandler : IRequestHandler<KickGroupMemberCommand, ApiResponse>
 {
     private readonly IGroupMemberRepository _members;
+    private readonly IDomainEventDispatcher _events;
+    private readonly IClock _clock;
 
-    public KickGroupMemberHandler(IGroupMemberRepository members) => _members = members;
+    public KickGroupMemberHandler(
+        IGroupMemberRepository members, IDomainEventDispatcher events, IClock clock)
+    {
+        _members = members;
+        _events = events;
+        _clock = clock;
+    }
 
     public async Task<ApiResponse> Handle(KickGroupMemberCommand command, CancellationToken ct)
     {
@@ -106,6 +114,13 @@ internal sealed class KickGroupMemberHandler : IRequestHandler<KickGroupMemberCo
         op.EnsureCanRemove(target);
 
         await _members.RemoveAsync(command.GroupId, command.TargetUserId, ct).ConfigureAwait(false);
+
+        // 通知被踢的人主动退出会话：否则他的客户端会一直留着这个群，
+        // 直到自己刷新（解散群走的是同一套「客户端自动退出会话」语义）
+        await _events
+            .DispatchAsync(new GroupMemberRemoved(command.GroupId, command.TargetUserId, _clock.UtcNow), ct)
+            .ConfigureAwait(false);
+
         return ApiResponse.Ok("已踢出成员");
     }
 }
@@ -192,5 +207,59 @@ internal sealed class SetGroupAnnouncementHandler : IRequestHandler<SetGroupAnno
         await _events.DispatchEventsOfAsync(group, ct).ConfigureAwait(false);
 
         return ApiResponse.Ok(group.Announcement is null ? "公告已清除" : "公告已更新");
+    }
+}
+
+/// <summary>
+/// 设置入群方式（仅群主/管理员）。
+/// 默认「仅限邀请」，需要公开招募时由群内管理者显式开放 —— 这是把
+/// 「谁能进群」的决定权交回群主，而不是让群 ID 的可枚举性替所有人做决定。
+/// </summary>
+public sealed class SetGroupJoinPolicyCommand : ICommand<ApiResponse>
+{
+    public long GroupId { get; set; }
+
+    public int OperatorId { get; set; }
+
+    /// <summary>true=开放加入（知道群 ID 即可加入），false=仅限邀请</summary>
+    public bool OpenToJoin { get; set; }
+}
+
+internal sealed class SetGroupJoinPolicyHandler : IRequestHandler<SetGroupJoinPolicyCommand, ApiResponse>
+{
+    private readonly IGroupRepository _groups;
+    private readonly IGroupMemberRepository _members;
+    private readonly IDomainEventDispatcher _events;
+    private readonly IClock _clock;
+
+    public SetGroupJoinPolicyHandler(
+        IGroupRepository groups,
+        IGroupMemberRepository members,
+        IDomainEventDispatcher events,
+        IClock clock)
+    {
+        _groups = groups;
+        _members = members;
+        _events = events;
+        _clock = clock;
+    }
+
+    public async Task<ApiResponse> Handle(SetGroupJoinPolicyCommand command, CancellationToken ct)
+    {
+        var op = await _members
+            .GetRequiredAsync(command.GroupId, command.OperatorId, ct: ct)
+            .ConfigureAwait(false);
+        op.EnsureCanManageGroup("修改入群方式");
+
+        var group = await _groups.GetRequiredAsync(command.GroupId, ct).ConfigureAwait(false);
+        group.SetJoinPolicy(
+            command.OpenToJoin ? GroupJoinPolicy.Open : GroupJoinPolicy.InviteOnly,
+            command.OperatorId,
+            _clock.UtcNow);
+
+        await _groups.UpdateAsync(group, ct).ConfigureAwait(false);
+        await _events.DispatchEventsOfAsync(group, ct).ConfigureAwait(false);
+
+        return ApiResponse.Ok(group.IsOpenToJoin ? "已允许任何人加入" : "已改为仅限邀请加入");
     }
 }

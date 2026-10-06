@@ -255,7 +255,7 @@ public class RemoveFriendTests
     {
         var (a, b) = _ctx.GivenFriends();
 
-        var result = await new RemoveFriendHandler(_ctx.Friendships).Handle(
+        var result = await new RemoveFriendHandler(_ctx.Friendships, _ctx.Events, _ctx.Clock).Handle(
             new RemoveFriendCommand { UserId = a.Id, FriendId = b.Id }, default);
 
         Assert.Equal("已删除好友", result.Message);
@@ -267,7 +267,7 @@ public class RemoveFriendTests
     {
         var (a, b) = _ctx.GivenFriends();
 
-        await new RemoveFriendHandler(_ctx.Friendships).Handle(
+        await new RemoveFriendHandler(_ctx.Friendships, _ctx.Events, _ctx.Clock).Handle(
             new RemoveFriendCommand { UserId = b.Id, FriendId = a.Id }, default);
 
         Assert.Empty(_ctx.Friendships.All);
@@ -277,7 +277,7 @@ public class RemoveFriendTests
     public async Task 非好友时抛出()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(
-            () => new RemoveFriendHandler(_ctx.Friendships).Handle(
+            () => new RemoveFriendHandler(_ctx.Friendships, _ctx.Events, _ctx.Clock).Handle(
                 new RemoveFriendCommand { UserId = 10001, FriendId = 10002 }, default));
 
         Assert.Equal("好友关系不存在", ex.Message);
@@ -291,10 +291,40 @@ public class RemoveFriendTests
         await _ctx.Friendships.AddAsync(Friendship.Request(a.Id, b.Id, _ctx.Now));
 
         await Assert.ThrowsAsync<DomainException>(
-            () => new RemoveFriendHandler(_ctx.Friendships).Handle(
+            () => new RemoveFriendHandler(_ctx.Friendships, _ctx.Events, _ctx.Clock).Handle(
                 new RemoveFriendCommand { UserId = a.Id, FriendId = b.Id }, default));
 
         Assert.Single(_ctx.Friendships.All);
+    }
+
+    [Fact]
+    public async Task 删除好友后双方都收到实时通知()
+    {
+        var (a, b) = _ctx.GivenFriends();
+
+        // FriendRemoved 此前定义了却从未被 Raise，于是被删的一方只能靠刷新页面才发现。
+        // 这里把真实订阅方挂上，验证「事件 → 通知」整条链路。
+        _ctx.Events.Subscribe(new NotifyOnFriendRemoved(_ctx.Notifier));
+
+        await new RemoveFriendHandler(_ctx.Friendships, _ctx.Events, _ctx.Clock).Handle(
+            new RemoveFriendCommand { UserId = a.Id, FriendId = b.Id }, default);
+
+        var pushes = _ctx.Notifier.OfKind(PushKind.FriendRemoved).ToList();
+        Assert.Equal(2, pushes.Count);
+        Assert.Contains(pushes, p => p.ToUserId == b.Id && p.ContextId == a.Id);
+        Assert.Contains(pushes, p => p.ToUserId == a.Id && p.ContextId == b.Id);
+    }
+
+    [Fact]
+    public async Task 删除好友失败时不发通知()
+    {
+        _ctx.Events.Subscribe(new NotifyOnFriendRemoved(_ctx.Notifier));
+
+        await Assert.ThrowsAsync<DomainException>(
+            () => new RemoveFriendHandler(_ctx.Friendships, _ctx.Events, _ctx.Clock).Handle(
+                new RemoveFriendCommand { UserId = 10001, FriendId = 10002 }, default));
+
+        Assert.Empty(_ctx.Notifier.OfKind(PushKind.FriendRemoved));
     }
 }
 

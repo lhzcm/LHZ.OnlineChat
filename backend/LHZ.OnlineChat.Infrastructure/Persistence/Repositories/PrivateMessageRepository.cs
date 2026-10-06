@@ -27,6 +27,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
             .Where(m => (m.SenderId == userId && m.ReceiverId == peerId)
                         || (m.SenderId == peerId && m.ReceiverId == userId))
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Skip(page.Skip)
             .Take(page.PageSize)
             .ToListAsync(ct);
@@ -40,6 +41,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
         var total = (int)await BetweenMatching(userId, peerId, keyword).CountAsync(ct);
         var items = await BetweenMatching(userId, peerId, keyword)
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Skip(page.Skip)
             .Take(page.PageSize)
             .ToListAsync(ct);
@@ -53,6 +55,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
         var total = (int)await OfUserMatching(userId, keyword).CountAsync(ct);
         var items = await OfUserMatching(userId, keyword)
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Take(take)
             .ToListAsync(ct);
 
@@ -74,6 +77,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
         var total = (int)await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Take(take)
             .ToListAsync(ct);
 
@@ -81,10 +85,12 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
     }
 
     public async Task<IReadOnlyList<PrivateMessage>> ListUnreadForAsync(
-        int userId, CancellationToken ct = default)
+        int userId, int limit, CancellationToken ct = default)
         => await _db.Select<PrivateMessage>()
             .Where(m => m.ReceiverId == userId && !m.IsRead)
-            .OrderBy(m => m.SentAt)
+            .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
+            .Take(limit)
             .ToListAsync(ct);
 
     public async Task<int> CountUnreadForAsync(int userId, CancellationToken ct = default)
@@ -112,6 +118,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
         => await _db.Select<PrivateMessage>()
             .Where(m => m.SenderId == userId || m.ReceiverId == userId)
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Take(take)
             .ToListAsync(ct);
 
@@ -134,6 +141,17 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
             .Set(m => m.IsRead, true)
             .Where(m => m.SenderId == senderId && m.ReceiverId == receiverId && !m.IsRead)
             .ExecuteAffrowsAsync(ct);
+
+    /// <summary>
+    /// 按客户端消息 ID 查重（幂等发送）。
+    /// 同一发送者的 ClientMessageId 由唯一索引 ux_privmsg_sender_client 兜底，
+    /// 这里先查一次是为了让重试直接返回成功，而不是撞索引报错。
+    /// </summary>
+    public Task<PrivateMessage?> FindByClientMessageIdAsync(
+        int senderId, string clientMessageId, CancellationToken ct = default)
+        => _db.Select<PrivateMessage>()
+            .Where(m => m.SenderId == senderId && m.ClientMessageId == clientMessageId)
+            .FirstAsync(ct)!;
 
     public Task AddAsync(PrivateMessage message, CancellationToken ct = default)
         => _db.InsertWithLongIdentityAsync(message, ct);

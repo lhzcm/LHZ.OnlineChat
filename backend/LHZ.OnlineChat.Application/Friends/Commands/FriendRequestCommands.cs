@@ -158,8 +158,16 @@ public sealed class RemoveFriendCommand : ICommand<ApiResponse>
 internal sealed class RemoveFriendHandler : IRequestHandler<RemoveFriendCommand, ApiResponse>
 {
     private readonly IFriendshipRepository _friendships;
+    private readonly IDomainEventDispatcher _events;
+    private readonly IClock _clock;
 
-    public RemoveFriendHandler(IFriendshipRepository friendships) => _friendships = friendships;
+    public RemoveFriendHandler(
+        IFriendshipRepository friendships, IDomainEventDispatcher events, IClock clock)
+    {
+        _friendships = friendships;
+        _events = events;
+        _clock = clock;
+    }
 
     public async Task<ApiResponse> Handle(RemoveFriendCommand command, CancellationToken ct)
     {
@@ -168,6 +176,13 @@ internal sealed class RemoveFriendHandler : IRequestHandler<RemoveFriendCommand,
             .ConfigureAwait(false);
 
         DomainException.Ensure(removed > 0, "好友关系不存在");
+
+        // 通知双方刷新列表：被删的一方原本只能靠自己刷新页面才发现，
+        // 而拉黑、解散群等相邻场景都是有通知的（FriendRemoved 此前从未被 Raise）
+        await _events
+            .DispatchAsync(new FriendRemoved(command.UserId, command.FriendId, _clock.UtcNow), ct)
+            .ConfigureAwait(false);
+
         return ApiResponse.Ok("已删除好友");
     }
 }

@@ -5,9 +5,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # 必填(:? 语法):缺失时 compose 直接报错退出,绝不会用默认弱口令把库跑起来
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未设置：请先 cp .env.example .env 并填写}"
     ports:
-      - "${PG_PORT:-55432}:5432"
+      # 只绑 127.0.0.1:数据库仅供宿主机本地管理(psql/客户端),不对外网/内网暴露
+      - "127.0.0.1:${PG_PORT:-55432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,11 +22,22 @@ services:
   redis:
     image: docker.m.daocloud.io/library/redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      # 供下面的健康检查在容器内读取,无需把密码硬编码进探针命令
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD 未设置：请先 cp .env.example .env 并填写}"
+    # --requirepass 必填:此前 Redis 无密码,任何能连上 6379 的人都能读写缓存/会话
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD 未设置：请先 cp .env.example .env 并填写}"]
     ports:
-      - "${REDIS_PORT:-56379}:6379"
+      # 同 PostgreSQL:只绑 127.0.0.1,避免未授权访问
+      - "127.0.0.1:${REDIS_PORT:-56379}:6379"
     volumes:
       - redisdata:/data
+    healthcheck:
+      # $$ 会被 compose 还原成容器内的 $,由 shell 展开容器自身的 REDIS_PASSWORD
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   # ==================== 后端 API + WebSocket ====================
   backend:
@@ -36,9 +49,10 @@ services:
       - uploaddata:/app/uploads
     environment:
       # 覆盖 appsettings.json 的本地开发配置
-      ConnectionStrings__Default: Host=postgres;Database=OnlineChat;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
-      Redis__Connection: redis:6379
-      Jwt__Secret: ${JWT_SECRET:-OnlineChat-SuperSecret-Key-AtLeast32Characters!}
+      ConnectionStrings__Default: "Host=postgres;Database=OnlineChat;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未设置：请先 cp .env.example .env 并填写}"
+      # StackExchange.Redis 连接串:密码须与 redis 服务的 --requirepass 一致
+      Redis__Connection: "redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD 未设置：请先 cp .env.example .env 并填写}"
+      Jwt__Secret: "${JWT_SECRET:?JWT_SECRET 未设置：请先 cp .env.example .env 并填写}"
       Jwt__Issuer: OnlineChat
       Jwt__Audience: OnlineChat
       Cors__AllowedOrigins: ${CORS_ORIGINS:-*}
@@ -48,16 +62,25 @@ services:
       Smtp__User: ${SMTP_USER:-}
       Smtp__Password: ${SMTP_PASSWORD:-}
       Smtp__From: ${SMTP_FROM:-no-reply@onlinechat.local}
-      Robot__TokenKey: ${ROBOT_TOKEN_KEY:-}
+      # 必填:留空会静默退回内置开发密钥,等于机器人令牌可被伪造
+      Robot__TokenKey: "${ROBOT_TOKEN_KEY:?ROBOT_TOKEN_KEY 未设置：请先 cp .env.example .env 并填写}"
       # 管理后台：Admin 表为空时创建初始超级管理员（密码至少 6 位）
       Admin__InitialUsername: ${ADMIN_INITIAL_USERNAME:-}
       Admin__InitialPassword: ${ADMIN_INITIAL_PASSWORD:-}
       ASPNETCORE_ENVIRONMENT: Production
+    healthcheck:
+      # /health 是匿名存活探针(不查库);curl 由后端镜像安装,见 backend Dockerfile
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
     depends_on:
+      # 就绪依赖:后端启动即连库/连 Redis,必须等它们 healthy 再起,否则首启必报错重试
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   # ==================== 前端(nginx:静态文件 + API/WS 反代) ====================
   frontend:
@@ -68,8 +91,17 @@ services:
         VITE_WS_URL: ${VITE_WS_URL:-}
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-8080}:80"
+      # 非特权 nginx 镜像的用户无法绑定 80,容器内统一监听 8080
+      - "${WEB_PORT:-8080}:8080"
+    healthcheck:
+      # alpine 自带 busybox wget,无需额外装 curl
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     depends_on:
+      # nginx 是反代,后端未就绪也能先起(返回 502 后自动恢复),无需等 healthy
       - backend
 
   # ==================== 管理后台前端（/admin 由主前端 nginx 反代） ====================
@@ -80,7 +112,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-      
+
 volumes:
   pgdata:
   redisdata:

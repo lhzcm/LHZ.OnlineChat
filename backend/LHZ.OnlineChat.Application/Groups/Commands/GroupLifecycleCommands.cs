@@ -57,7 +57,9 @@ internal sealed class CreateGroupHandler : IRequestHandler<CreateGroupCommand, A
             OwnerId = command.OwnerId,
             MemberCount = 1,
             CreatedAt = UtcTime.Normalize(group.CreatedAt),
-            MyRole = (int)GroupRole.Owner
+            MyRole = (int)GroupRole.Owner,
+            JoinPolicy = (int)group.JoinPolicy,
+            IsOpenToJoin = group.IsOpenToJoin
         }, "群组创建成功");
     }
 }
@@ -91,10 +93,15 @@ internal sealed class JoinGroupHandler : IRequestHandler<JoinGroupCommand, ApiRe
 
     public async Task<ApiResponse> Handle(JoinGroupCommand command, CancellationToken ct)
     {
-        _ = await _groups.GetRequiredAsync(command.GroupId, ct).ConfigureAwait(false);
+        var group = await _groups.GetRequiredAsync(command.GroupId, ct).ConfigureAwait(false);
 
         var already = await _members.ExistsAsync(command.GroupId, command.UserId, ct).ConfigureAwait(false);
         DomainException.Ensure(!already, "你已经是该群组成员");
+
+        // 准入校验：群 ID 是连续自增的，若默认可自行加入，任何人都能枚举 ID 进群，
+        // 再顺着历史/搜索接口读走该群全部消息。已是成员的情况上面已经返回，
+        // 所以这里只拦「想新加入的人」。校验在任何写入之前。
+        group.EnsureJoinable();
 
         // 已读游标 = 当前最新消息，避免入群前的历史被当成离线消息补发
         var latestId = await _messages.MaxIdOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);

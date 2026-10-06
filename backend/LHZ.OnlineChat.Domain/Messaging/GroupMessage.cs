@@ -56,7 +56,10 @@ public sealed class GroupMessage : AggregateRoot<long>
         MentionList mentions,
         MessageReply? reply,
         DateTime now)
-        => new()
+    {
+        MessageContentRules.EnsureValid(content, kind);
+
+        return new GroupMessage
         {
             GroupId = groupId,
             SenderId = senderId,
@@ -70,6 +73,7 @@ public sealed class GroupMessage : AggregateRoot<long>
             ReplySenderName = reply?.SenderName,
             SentAt = now
         };
+    }
 
     public bool HasPublicId(string messageId)
         => ClientMessageId == messageId

@@ -235,12 +235,17 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 **详细手册见 [docs/DEPLOY.md](docs/DEPLOY.md)**(服务器准备 / HTTPS / 备份 / 运维)。核心两步:
 
 ```bash
-cp .env.example .env        # 修改 POSTGRES_PASSWORD、JWT_SECRET、SMTP 等
+cp .env.example .env        # 必填:POSTGRES_PASSWORD、REDIS_PASSWORD、JWT_SECRET、ROBOT_TOKEN_KEY
 docker compose up -d --build
 ```
 
+> `.env` 必须创建:compose 里的敏感变量都是硬性要求,缺失时会直接报错退出,不会退回内置默认口令。
+> PostgreSQL / Redis 的宿主端口只绑定 `127.0.0.1`(默认 55432 / 56379),仅供本机管理;对外只有 `WEB_PORT`(8080)。
+> 容器均以非 root 运行:backend 使用 `appuser`(UID 10001),两个前端使用 `nginx-unprivileged` 镜像(UID 101)。
+
 - 前端入口:`http://服务器IP:8080`(配 HTTPS 后反代到 80/443,推荐 Caddy 自动证书)
 - 数据持久化:卷 `pgdata` / `redisdata` / `uploaddata`(头像)
+- 健康检查:`docker compose ps` 中 postgres / redis / backend / frontend 显示 `healthy`(backend 探针为 `GET /health`)
 - 更新:`git pull && docker compose up -d --build`
 
 ## 🤖 机器人接入(第三方)

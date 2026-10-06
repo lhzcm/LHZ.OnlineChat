@@ -48,13 +48,20 @@ internal sealed class MailKitEmailSender : IEmailSender
         _logger = logger;
     }
 
+    /// <summary>SMTP 是否已配置（未配置时验证码只落服务器日志）</summary>
+    public bool IsConfigured => _options.IsConfigured;
+
     public async Task<bool> SendVerificationCodeAsync(
         Email to, string code, CancellationToken ct = default)
     {
         if (!_options.IsConfigured)
         {
+            // 未配置 SMTP 是受支持的运行模式：验证码只落服务器日志，由运维取码完成注册/重置。
+            // 措辞刻意不写「开发模式」—— 生产环境同样会走这条路径（例如刚从 .env.example 起的环境），
+            // 写成开发模式会把排查方向带偏。
             _logger.LogWarning(
-                "SMTP 未配置，验证码仅输出到日志（开发模式）：{Email} -> {Code}", to.Value, code);
+                "SMTP 未配置，验证码仅输出到服务器日志（需要发邮件请配置 Smtp:Host）：{Email} -> {Code}",
+                to.Value, code);
             return false;
         }
 

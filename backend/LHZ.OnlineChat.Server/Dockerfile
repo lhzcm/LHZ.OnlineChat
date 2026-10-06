@@ -23,4 +23,23 @@ WORKDIR /app
 COPY --from=build /app/publish .
 ENV ASPNETCORE_URLS=http://+:5000
 EXPOSE 5000
+
+# 以非 root 运行：容器被攻破时无法直接改写镜像文件/安装后门。
+# 固定 UID/GID(10001)便于宿主侧挂载卷时对齐权限。
+# uploads 目录必须在这里创建并 chown：Docker 初始化具名卷时会继承镜像内该路径的属主，
+# 若属主是 root，卷挂载后非 root 进程写头像会直接 Permission denied。
+# curl 仅用于 HEALTHCHECK：aspnet 运行镜像(debian-slim)不含任何 HTTP 客户端。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 appuser \
+    && useradd --uid 10001 --gid 10001 --shell /usr/sbin/nologin --create-home appuser \
+    && mkdir -p /app/uploads \
+    && chown -R appuser:appuser /app
+
+# 存活探针：进程起来即 200(不查数据库)，避免依赖未就绪时被误判为不健康
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:5000/health || exit 1
+
+USER appuser
 ENTRYPOINT ["dotnet", "LHZ.OnlineChat.Server.dll"]

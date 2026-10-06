@@ -64,6 +64,16 @@ internal sealed class SendGroupMessageHandler : IRequestHandler<SendGroupMessage
 
     public async Task<SendMessageResult> Handle(SendGroupMessageCommand command, CancellationToken ct)
     {
+        // 幂等：重试同一条消息时按 ClientMessageId 直接当成功返回（理由同私聊）
+        if (!string.IsNullOrWhiteSpace(command.ClientMessageId))
+        {
+            var existing = await _messages
+                .FindByClientMessageIdAsync(command.SenderId, command.ClientMessageId, ct)
+                .ConfigureAwait(false);
+
+            if (existing is not null) return SendMessageResult.Ok();
+        }
+
         // 非群成员静默丢弃（与改造前一致：WS 路径不回错误，避免探测群成员关系）
         var sender = await _members.FindAsync(command.GroupId, command.SenderId, ct).ConfigureAwait(false);
         if (sender is null) return SendMessageResult.Rejected("你不是该群组成员");

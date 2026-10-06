@@ -81,4 +81,10 @@ internal static class WsMessageType
 
     /// <summary>所在群被解散，to 为群 ID</summary>
     public const string GroupDissolved = "group_dissolved";
+
+    /// <summary>好友关系被删除（from 为主动删除方）</summary>
+    public const string FriendRemoved = "friend_removed";
+
+    /// <summary>被移出群，to 为群 ID（客户端据此退出该会话）</summary>
+    public const string GroupMemberRemoved = "group_removed";
 }

@@ -12,6 +12,7 @@ import { messageApi } from '@/api/message'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime } from '@/utils/format'
 import type { WsMessage, ChatType, GroupMemberInfo, MessageSearchResult } from '@/types'
+import type { ChatMessage } from '@/stores/chat'
 
 const props = defineProps<{
   chat: { type: ChatType; id: number; name: string } | null
@@ -217,7 +218,10 @@ watch(() => props.chat, (chat) => {
   historyReady = (async () => {
     await chatStore.loadHistory(chat.type, chat.id, 1, auth.user?.id)
     scrollToBottom()
-  })()
+  })().catch(err => {
+    // 历史加载失败不能变成未处理的 Promise 拒绝：会话仍可用，用户上滑可重试
+    console.error('[ChatArea] 加载历史消息失败', err)
+  })
 }, { immediate: true })
 
 /** 新消息到达时：接近底部才滚动（用户正在上翻历史时不打扰） */
@@ -412,16 +416,30 @@ function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** 发送前剥离本地字段（status 只用于本地渲染，不进 WS 协议体） */
+function toPayload(msg: ChatMessage): WsMessage {
+  const { status: _status, ...payload } = msg
+  return payload
+}
+
+/**
+ * 写入 WS 连接，返回是否真的发出（true = 连接已打开并已写入）。
+ * websocket store 的 sendMessage 返回 boolean；这里用宽签名兼容返回 void 的实现，
+ * 避免两侧类型未同步时构建失败（void 视为"未报告失败"）。
+ */
+function sendWs(msg: ChatMessage): boolean {
+  const sender = ws.sendMessage as (m: WsMessage) => boolean | void
+  return sender(toPayload(msg)) !== false
+}
+
 function send() {
   if (!props.chat || !auth.user) return
   const text = inputText.value.trim()
   if (!text) return
-  if (!ws.connected) {
-    sendHint.value = '连接已断开，正在重连，请稍候…'
-    return
-  }
-  sendHint.value = ''
-  const msg: WsMessage = {
+  // 断线时不再直接丢弃消息：照常乐观上屏，由 sendMessage 的返回值决定是否标记"发送失败"（可重试）
+  sendHint.value = ws.connected ? '' : '连接已断开，正在重连，请稍候…'
+  const key = chatStore.sessionKey(props.chat.type, props.chat.id)
+  const msg: ChatMessage = {
     type: props.chat.type === 'private' ? 'private_message' : 'group_message',
     from: String(auth.user.id),
     to: String(props.chat.id),
@@ -434,13 +452,29 @@ function send() {
     mentions: parseMentions(text),
     replyTo: replyTarget.value?.messageId,
     replyContent: replyTarget.value?.content,
-    replySender: replyTarget.value?.senderName
+    replySender: replyTarget.value?.senderName,
+    status: 'sending'
   }
   chatStore.addMessage(msg, auth.user.id)
-  ws.sendMessage(msg)
+  if (!sendWs(msg)) chatStore.setMessageStatus(key, msg.messageId, 'failed')
   inputText.value = ''
   replyTarget.value = null
   scrollToBottom()
+}
+
+/**
+ * 重试发送失败的消息：沿用原 messageId（服务端按它幂等去重，不会产生重复消息），
+ * 只有真正写入连接才回到"发送中"，否则保持失败态并把提示留给用户。
+ */
+function retryMessage(msg: ChatMessage) {
+  if (!props.chat || !auth.user) return
+  const key = chatStore.sessionKey(props.chat.type, props.chat.id)
+  if (sendWs(msg)) {
+    chatStore.setMessageStatus(key, msg.messageId, 'sending')
+    sendHint.value = ''
+  } else {
+    sendHint.value = '发送失败，请检查网络后重试'
+  }
 }
 
 // ==================== 图片消息 ====================
@@ -477,7 +511,7 @@ async function onImageSelect(e: Event) {
         : `图片发送失败：${msg || '请重试'}`)
       return
     }
-    const msg: WsMessage = {
+    const msg: ChatMessage = {
       type: props.chat.type === 'private' ? 'private_message' : 'group_message',
       from: String(auth.user.id),
       to: String(props.chat.id),
@@ -486,10 +520,11 @@ async function onImageSelect(e: Event) {
       messageId: genId(),
       messageType: 1,
       senderName: auth.user.nickname,
-      senderAvatar: auth.user.avatar
+      senderAvatar: auth.user.avatar,
+      status: 'sending'
     }
     chatStore.addMessage(msg, auth.user.id)
-    ws.sendMessage(msg)
+    if (!sendWs(msg)) chatStore.setMessageStatus(chatStore.sessionKey(props.chat.type, props.chat.id), msg.messageId, 'failed')
     scrollToBottom()
   } catch (err: any) {
     toast('图片发送失败，请重试')
@@ -577,7 +612,7 @@ function openLightbox(url: string) {
         <MessageBubble v-for="msg in currentMessages" :key="msg.messageId" :msg="msg"
           :chat-type="chat.type" :chat-id="chat.id" :chat-name="chat.name"
           :highlight="highlightKeyword"
-          @reply="startReply" @image-click="openLightbox" />
+          @reply="startReply" @retry="retryMessage" @image-click="openLightbox" />
       </div>
 
       <!-- 引用回复横幅 -->

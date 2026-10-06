@@ -6,6 +6,13 @@ namespace LHZ.OnlineChat.Infrastructure.Caching;
 /// Redis 连接持有者（单例）。
 /// 全部 Redis 键位规则集中在 RedisKeys 里 —— 改造前这些键的拼法分散在
 /// AuthService / WsConnectionManager / MessageService / BotService 各处。
+///
+/// 连接参数刻意不采用「连不上就抛」的默认行为：
+///   AbortOnConnectFail=false —— Redis 暂时不可用时进程照常启动，
+///     后台自动重连；否则 Redis 抖一下，整个应用在启动阶段直接起不来。
+///   ConnectRetry / ConnectTimeout —— 首次连接失败的重试节奏，避免启动被拖住。
+/// 代价是「Redis 真的挂了」时相关调用会抛错（会话校验、限流、在线状态），
+/// 这属于依赖不可用，应由监控暴露，而不是让进程无法启动。
 /// </summary>
 internal sealed class RedisConnection : IDisposable
 {
@@ -13,7 +20,13 @@ internal sealed class RedisConnection : IDisposable
 
     public RedisConnection(string connectionString)
     {
-        _multiplexer = ConnectionMultiplexer.Connect(connectionString);
+        var options = ConfigurationOptions.Parse(connectionString);
+        options.AbortOnConnectFail = false;
+        options.ConnectRetry = 3;
+        options.ConnectTimeout = 5000;
+        options.KeepAlive = 60;
+
+        _multiplexer = ConnectionMultiplexer.Connect(options);
         Database = _multiplexer.GetDatabase();
     }
 

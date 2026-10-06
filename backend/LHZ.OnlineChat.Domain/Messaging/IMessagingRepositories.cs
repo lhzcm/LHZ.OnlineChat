@@ -23,8 +23,14 @@ public interface IPrivateMessageRepository
     Task<(IReadOnlyList<PrivateMessage> Items, int Total)> SearchForAdminAsync(
         string? keyword, int? userId, int take, CancellationToken ct = default);
 
-    /// <summary>未读消息（上线补发离线消息）</summary>
-    Task<IReadOnlyList<PrivateMessage>> ListUnreadForAsync(int userId, CancellationToken ct = default);
+    /// <summary>
+    /// 未读消息（上线补发离线消息），按时间倒序取最近 limit 条。
+    /// 必须带上限：长期未登录的账号可能有上万条未读，全量返回会把响应体撑爆
+    /// （群消息补发一直有 100 条/群的上限，私聊此前没有）。
+    /// 取最近而非最早 —— 补发时最重要的是最新的消息。
+    /// </summary>
+    Task<IReadOnlyList<PrivateMessage>> ListUnreadForAsync(
+        int userId, int limit, CancellationToken ct = default);
 
     /// <summary>未读总数</summary>
     Task<int> CountUnreadForAsync(int userId, CancellationToken ct = default);
@@ -38,6 +44,14 @@ public interface IPrivateMessageRepository
     /// <summary>找可撤回的消息：本人发出、未撤回、在时间窗内、messageId 匹配</summary>
     Task<PrivateMessage?> FindRecallableAsync(
         int senderId, int receiverId, string messageId, DateTime earliestSentAt, CancellationToken ct = default);
+
+    /// <summary>
+    /// 按客户端消息 ID 查已存在的消息（幂等发送）。
+    /// ClientMessageId 是乐观发送的去重键，但重试时服务端若无这张查询表，
+    /// 就会真的插入第二条 —— 前端按 messageId 去重只能掩盖表现层的重复。
+    /// </summary>
+    Task<PrivateMessage?> FindByClientMessageIdAsync(
+        int senderId, string clientMessageId, CancellationToken ct = default);
 
     /// <summary>把某人发给我的全部未读标记为已读</summary>
     Task<int> MarkAllReadAsync(int senderId, int receiverId, CancellationToken ct = default);
@@ -101,6 +115,10 @@ public interface IGroupMessageRepository
 
     Task<GroupMessage?> FindRecallableAsync(
         long groupId, int senderId, string messageId, DateTime earliestSentAt, CancellationToken ct = default);
+
+    /// <summary>按客户端消息 ID 查已存在的群消息（幂等发送，理由同私聊）</summary>
+    Task<GroupMessage?> FindByClientMessageIdAsync(
+        int senderId, string clientMessageId, CancellationToken ct = default);
 
     Task AddAsync(GroupMessage message, CancellationToken ct = default);
 

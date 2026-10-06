@@ -10,6 +10,13 @@
     <ChatArea ref="chatAreaRef" :chat="currentChat" :mobile-chat-open="mobileChatOpen"
       @back="backToList" @members="openMembersModal" @announcement="showAnnouncementModal = true" />
 
+    <!-- 初始化数据加载失败：非致命错误条（不阻塞聊天，可重试） -->
+    <div class="startup-error" v-if="startupError">
+      <span class="startup-error-text">{{ startupError }}</span>
+      <button class="startup-error-btn" @click="loadInitialData">重试</button>
+      <button class="startup-error-close" @click="startupError = ''" title="关闭">✕</button>
+    </div>
+
     <!-- 轻提示 Toast -->
     <transition name="toast-fade">
       <div class="app-toast" v-if="toastMsg">{{ toastMsg }}</div>
@@ -158,6 +165,38 @@ const sessionSettingTarget = ref<SessionInfo | null>(null)
 
 const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(null)
 
+// 初始化数据加载失败提示（非致命：聊天本身仍可用）
+const startupError = ref('')
+
+/**
+ * 后台静默刷新：这类刷新由 WS 事件触发、调用方不等待结果，
+ * 不 catch 会产生未处理的 Promise 拒绝（控制台报错且可能触发全局错误上报）。
+ */
+function refreshQuietly(promise: Promise<unknown>, label: string) {
+  promise.catch(err => console.error(`[ChatLayout] ${label} 失败`, err))
+}
+
+/** 首页数据加载（好友 / 申请 / 群组 / 会话），失败只提示不阻塞 */
+async function loadInitialData() {
+  try {
+    await Promise.all([
+      friendStore.fetchFriends(),
+      friendStore.fetchPendingRequests(),
+      groupStore.fetchGroups(),
+      chatStore.fetchSessions()
+    ])
+    startupError.value = ''
+  } catch (err) {
+    // Promise.all 会被任一失败中断，但成功的那些已写入 store，界面仍可正常使用
+    console.error('[ChatLayout] 初始化数据加载失败', err)
+    startupError.value = '部分数据加载失败，请检查网络后重试'
+  }
+  // 进入主页：有会话时默认显示会话列表，否则显示好友 Tab 引导添加
+  if (chatStore.sessions.length > 0) {
+    activeTab.value = 'sessions'
+  }
+}
+
 // 好友显示名：备注优先，其次昵称
 function friendDisplayName(f: FriendInfo): string {
   return f.remark || f.nickname
@@ -197,17 +236,7 @@ onMounted(async () => {
   })
 
   ws.connect(auth.token)
-  await Promise.all([
-    friendStore.fetchFriends(),
-    friendStore.fetchPendingRequests(),
-    groupStore.fetchGroups(),
-    chatStore.fetchSessions()
-  ])
-
-  // 进入主页：有会话时默认显示会话列表，否则显示好友 Tab 引导添加
-  if (chatStore.sessions.length > 0) {
-    activeTab.value = 'sessions'
-  }
+  await loadInitialData()
 
   // 拉取离线消息并计入未读角标
   try {
@@ -259,7 +288,7 @@ async function selectGroupChat(group: { id: number; name: string }) {
   chatStore.setCurrentSession('group', group.id, group.name)
   chatStore.markSessionRead('group', group.id)
   // 预加载群成员（@ 选择器与成员面板共用）
-  groupStore.fetchMembers(group.id)
+  refreshQuietly(groupStore.fetchMembers(group.id), '加载群成员')
   mobileChatOpen.value = true
 }
 
@@ -287,20 +316,33 @@ function handleWsMessage(msg: WsMessage) {
   }
   // 新好友申请：刷新申请列表
   if (msg.type === 'friend_request') {
-    friendStore.fetchPendingRequests()
+    refreshQuietly(friendStore.fetchPendingRequests(), '刷新好友申请')
     return
   }
   // 好友申请被接受/拒绝：双方刷新好友与申请列表
   if (msg.type === 'friend_accepted' || msg.type === 'friend_rejected') {
-    friendStore.fetchFriends()
-    friendStore.fetchPendingRequests()
-    chatStore.fetchSessions()
+    refreshQuietly(friendStore.fetchFriends(), '刷新好友列表')
+    refreshQuietly(friendStore.fetchPendingRequests(), '刷新好友申请')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
+    return
+  }
+  // 好友关系被删除（双向通知）：刷新好友列表；若正在与该用户私聊则关闭会话
+  if (msg.type === 'friend_removed') {
+    refreshQuietly(friendStore.fetchFriends(), '刷新好友列表')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
+    const peerId = Number(msg.from)
+    if (currentChat.value?.type === 'private' && currentChat.value.id === peerId) {
+      toast('好友关系已解除')
+      currentChat.value = null
+      chatStore.setCurrentSession('private', peerId, '')
+      mobileChatOpen.value = false
+    }
     return
   }
   // 被邀请加入群组：刷新群列表与会话
   if (msg.type === 'group_invited') {
-    groupStore.fetchGroups()
-    chatStore.fetchSessions()
+    refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     return
   }
   // 在线状态已由 onStatusChange 处理
@@ -336,8 +378,8 @@ function handleWsMessage(msg: WsMessage) {
     const me = auth.user?.id
     const peer = Number(msg.from)
     // 对方把我拉黑了（好友关系已被解除）：刷新好友/会话列表
-    friendStore.fetchFriends()
-    chatStore.fetchSessions()
+    refreshQuietly(friendStore.fetchFriends(), '刷新好友列表')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     if (me && peer && currentChat.value?.type === 'private' && currentChat.value.id === peer) {
       // 正在与该用户聊天：移除被拒的乐观消息并提示
       if (msg.messageId) {
@@ -360,8 +402,22 @@ function handleWsMessage(msg: WsMessage) {
   // 所在群被解散（管理后台操作）：刷新群/会话列表，若正在该群则退出
   if (msg.type === 'group_dissolved') {
     toast(msg.content || '群已被解散')
-    groupStore.fetchGroups()
-    chatStore.fetchSessions()
+    refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
+    const gid = Number(msg.to)
+    if (currentChat.value?.type === 'group' && currentChat.value.id === gid) {
+      currentChat.value = null
+      chatStore.setCurrentSession('group', gid, '')
+      mobileChatOpen.value = false
+    }
+    return
+  }
+
+  // 被移出群（群主/管理员踢人）：与解散同样处理 —— 客户端主动退出该会话
+  if (msg.type === 'group_removed') {
+    toast(msg.content || '你已被移出该群')
+    refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     const gid = Number(msg.to)
     if (currentChat.value?.type === 'group' && currentChat.value.id === gid) {
       currentChat.value = null
@@ -423,13 +479,13 @@ const showAnnouncementModal = ref(false)
 
 function openMembersModal() {
   if (!currentChat.value) return
-  groupStore.fetchMembers(currentChat.value.id)
+  refreshQuietly(groupStore.fetchMembers(currentChat.value.id), '加载群成员')
   showMembersModal.value = true
 }
 
 /** 公告保存后（组件内已刷新 store，此处兜底同步横幅） */
 function announcementSaved() {
-  groupStore.fetchGroups()
+  refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
 }
 
 // ==================== 好友设置（备注/分类） ====================
@@ -462,9 +518,9 @@ function handleLogout() {
 }
 
 watch(activeTab, () => {
-  if (activeTab.value === 'friends') friendStore.fetchFriends()
-  else if (activeTab.value === 'groups') groupStore.fetchGroups()
-  else chatStore.fetchSessions()
+  if (activeTab.value === 'friends') refreshQuietly(friendStore.fetchFriends(), '刷新好友列表')
+  else if (activeTab.value === 'groups') refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
+  else refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
 })
 </script>
 
@@ -473,5 +529,57 @@ watch(activeTab, () => {
   display: flex;
   height: 100vh;
   height: 100dvh;
+}
+
+/* 初始化数据加载失败：顶部悬浮的非致命错误条 */
+.startup-error {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 12px;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.startup-error-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.startup-error-btn {
+  border: none;
+  border-radius: 8px;
+  background: var(--active-bg);
+  color: var(--primary);
+  font-size: 12.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.startup-error-btn:hover {
+  background: var(--bg-hover);
+}
+
+.startup-error-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 0 2px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 </style>

@@ -29,6 +29,7 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
         var items = await _db.Select<GroupMessage>()
             .Where(m => m.GroupId == groupId)
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Skip(page.Skip)
             .Take(page.PageSize)
             .ToListAsync(ct);
@@ -42,6 +43,7 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
         var total = (int)await InGroupMatching(groupId, keyword).CountAsync(ct);
         var items = await InGroupMatching(groupId, keyword)
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Skip(page.Skip)
             .Take(page.PageSize)
             .ToListAsync(ct);
@@ -58,6 +60,7 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
         var total = (int)await InGroupsMatching(ids, keyword).CountAsync(ct);
         var items = await InGroupsMatching(ids, keyword)
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Take(take)
             .ToListAsync(ct);
 
@@ -79,6 +82,7 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
         var total = (int)await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(m => m.SentAt)
+            .OrderByDescending(m => m.Id)
             .Take(take)
             .ToListAsync(ct);
 
@@ -88,16 +92,29 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
     public async Task<IReadOnlyList<GroupMessage>> ListAfterCursorAsync(
         long groupId, long afterMessageId, int limit, CancellationToken ct = default)
         => await _db.Select<GroupMessage>()
-            .Where(m => m.GroupId == groupId && m.Id > afterMessageId && !m.IsDeleted)
+            .Where(AfterCursor(groupId, afterMessageId))
             .OrderBy(m => m.SentAt)
+            .OrderBy(m => m.Id)
             .Take(limit)
             .ToListAsync(ct);
 
+    /// <summary>游标之后的条数。与补发查询共用同一个过滤表达式，两者口径不会漂移。</summary>
     public async Task<int> CountAfterCursorAsync(
         long groupId, long afterMessageId, CancellationToken ct = default)
         => (int)await _db.Select<GroupMessage>()
-            .Where(m => m.GroupId == groupId && m.Id > afterMessageId)
+            .Where(AfterCursor(groupId, afterMessageId))
             .CountAsync(ct);
+
+    /// <summary>
+    /// 游标补发的过滤条件（单一来源）。
+    ///
+    /// 之前补发查询带 <c>!IsDeleted</c>、计数查询漏了它，于是「还有 N 条未同步」
+    /// 的提示与实际补发条数对不上（被撤回的消息被算进了 N）。
+    /// 抽成一个表达式后，两者不可能再各写一套。
+    /// </summary>
+    private static System.Linq.Expressions.Expression<Func<GroupMessage, bool>> AfterCursor(
+        long groupId, long afterMessageId)
+        => m => m.GroupId == groupId && m.Id > afterMessageId && !m.IsDeleted;
 
     /// <summary>
     /// 各群的最后一条消息。
@@ -135,6 +152,13 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
                         && !m.IsDeleted
                         && m.SentAt >= earliestSentAt)
             .Where("(\"ClientMessageId\" = @mid OR CAST(\"Id\" AS text) = @mid)", new { mid = messageId })
+            .FirstAsync(ct)!;
+
+    /// <summary>按客户端消息 ID 查重（幂等发送），理由同私聊</summary>
+    public Task<GroupMessage?> FindByClientMessageIdAsync(
+        int senderId, string clientMessageId, CancellationToken ct = default)
+        => _db.Select<GroupMessage>()
+            .Where(m => m.SenderId == senderId && m.ClientMessageId == clientMessageId)
             .FirstAsync(ct)!;
 
     public Task AddAsync(GroupMessage message, CancellationToken ct = default)

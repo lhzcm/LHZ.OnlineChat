@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { authApi } from '@/api/auth'
+import { useAuthStore } from '@/stores/auth'
 import type { SessionInfoDto } from '@/types'
 
 const emit = defineEmits<{ close: [] }>()
 
+const auth = useAuthStore()
 const sessions = ref<SessionInfoDto[]>([])
 const loading = ref(true)
 const error = ref('')
@@ -46,8 +48,8 @@ async function kick(s: SessionInfoDto) {
   if (s.isCurrent) {
     // 退出当前设备 = 退出登录
     if (!window.confirm('确定退出当前设备？将退出登录')) return
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
+    // 统一走 auth store：除 localStorage 外还要清空聊天缓存，避免内存残留
+    auth.logout()
     window.location.href = '/login'
     return
   }

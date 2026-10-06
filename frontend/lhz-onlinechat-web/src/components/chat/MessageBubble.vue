@@ -5,16 +5,17 @@ import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { formatMsgTime } from '@/utils/format'
 import type { WsMessage, ChatType } from '@/types'
+import type { ChatMessage } from '@/stores/chat'
 
 const props = defineProps<{
-  msg: WsMessage
+  msg: ChatMessage
   chatType: ChatType
   chatId: number
   chatName: string
   /** 搜索高亮关键词（会话内搜索定位时传入） */
   highlight?: string
 }>()
-const emit = defineEmits<{ reply: [msg: WsMessage]; 'image-click': [url: string] }>()
+const emit = defineEmits<{ reply: [msg: WsMessage]; retry: [msg: ChatMessage]; 'image-click': [url: string] }>()
 
 const auth = useAuthStore()
 const chatStore = useChatStore()
@@ -124,7 +125,12 @@ function recallMessage(msg: WsMessage) {
       </div>
       <div class="msg-meta-line">
         <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
-        <span v-if="isMyPrivateMessage(msg)" class="msg-status"
+        <!-- 发送失败：小字标记 + 重试（沿用同一 messageId，服务端幂等去重，不会重复上屏） -->
+        <template v-if="mine && msg.status === 'failed'">
+          <span class="msg-send-failed">发送失败</span>
+          <button class="msg-retry-btn" @click.stop="emit('retry', msg)">重试</button>
+        </template>
+        <span v-else-if="isMyPrivateMessage(msg)" class="msg-status"
           :class="{ read: chatStore.isReadByPeer(msg.messageId) }">
           {{ chatStore.isReadByPeer(msg.messageId) ? '已读' : '未读' }}
         </span>
@@ -218,6 +224,23 @@ function recallMessage(msg: WsMessage) {
 .msg-status.read {
   color: var(--primary);
   font-weight: 500;
+}
+
+/* 发送失败标记与重试入口（与已读状态同一行，不额外占位） */
+.msg-send-failed {
+  font-size: 11px;
+  color: var(--danger);
+  padding: 0 4px;
+}
+
+.msg-retry-btn {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  padding: 0 2px;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 /* 撤回 */

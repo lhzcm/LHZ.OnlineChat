@@ -14,6 +14,9 @@ public sealed record GroupAnnouncementChanged(long GroupId, int EditedBy, bool H
 /// <summary>群主转让</summary>
 public sealed record GroupOwnershipTransferred(long GroupId, int PreviousOwnerId, int NewOwnerId, DateTime OccurredAt) : IDomainEvent;
 
+/// <summary>入群方式变更（仅限邀请 ↔ 开放加入）</summary>
+public sealed record GroupJoinPolicyChanged(long GroupId, GroupJoinPolicy Policy, int OperatedBy, DateTime OccurredAt) : IDomainEvent;
+
 /// <summary>群被解散 —— 订阅方向解散前的成员推送 group_dissolved，客户端自动退出会话</summary>
 public sealed record GroupDissolved(long GroupId, string Name, IReadOnlyList<int> MemberIds, DateTime OccurredAt) : IDomainEvent;
 

@@ -60,6 +60,35 @@ public class SendPrivateMessageTests
     }
 
     [Fact]
+    public async Task 同一客户端消息ID重复提交只落一行_幂等()
+    {
+        var (a, b) = _ctx.GivenFriends();
+
+        var first = await Handler().Handle(Command(a.Id, b.Id), default);
+        var second = await Handler().Handle(Command(a.Id, b.Id), default);
+
+        // 重试(网络抖动、用户点重试)不该插入第二条 —— 前端按 messageId 去重
+        // 只能掩盖表现层的重复,刷新一次就会现形
+        Assert.True(first.Delivered);
+        Assert.True(second.Delivered);
+        Assert.Single(_ctx.PrivateMessages.All);
+    }
+
+    [Fact]
+    public async Task 客户端消息ID相同但发送者不同时各自落库()
+    {
+        var a = _ctx.GivenUser("张三", "a@test.local");
+        var b = _ctx.GivenUser("李四", "b@test.local");
+        var c = _ctx.GivenUser("王五", "c@test.local");
+
+        // 唯一索引是 (SenderId, ClientMessageId):不同发送者用同一个客户端 ID 互不影响
+        await Handler().Handle(Command(a.Id, b.Id), default);
+        await Handler().Handle(Command(c.Id, b.Id), default);
+
+        Assert.Equal(2, _ctx.PrivateMessages.All.Count);
+    }
+
+    [Fact]
     public async Task 推给接收方并回显给发送方_多端同步()
     {
         var (a, b) = _ctx.GivenFriends();
@@ -228,6 +257,28 @@ public class SendGroupMessageTests
         Assert.False(result.Delivered);
         Assert.Equal("你不是该群组成员", result.RejectionReason);
         Assert.Empty(_ctx.GroupMessages.All);
+    }
+
+    [Fact]
+    public async Task 同一客户端消息ID重复提交只落一行_幂等()
+    {
+        var owner = _ctx.GivenUser();
+        var group = _ctx.GivenGroup(owner.Id);
+
+        SendGroupMessageCommand Command() => new()
+        {
+            SenderId = owner.Id,
+            GroupId = group.Id,
+            Content = "重试的消息",
+            ClientMessageId = "cmid-group-1"
+        };
+
+        var first = await Handler().Handle(Command(), default);
+        var second = await Handler().Handle(Command(), default);
+
+        Assert.True(first.Delivered);
+        Assert.True(second.Delivered);
+        Assert.Single(_ctx.GroupMessages.All);
     }
 
     [Fact]

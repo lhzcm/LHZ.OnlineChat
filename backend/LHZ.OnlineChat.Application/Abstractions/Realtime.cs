@@ -21,6 +21,9 @@ public interface IRealtimeNotifier
     /// <summary>好友申请被拒绝</summary>
     Task NotifyFriendRejectedAsync(int requesterId, int rejecterId, CancellationToken ct = default);
 
+    /// <summary>好友关系被删除（双向通知，双方刷新好友列表）</summary>
+    Task NotifyFriendRemovedAsync(int removerId, int removedId, CancellationToken ct = default);
+
     /// <summary>上线/下线状态广播给在线好友</summary>
     Task NotifyPresenceAsync(int userId, IReadOnlyList<int> friendIds, bool online, CancellationToken ct = default);
 
@@ -35,6 +38,9 @@ public interface IRealtimeNotifier
     /// <summary>群被解散（客户端自动退出该会话）</summary>
     Task NotifyGroupDissolvedAsync(IReadOnlyList<int> memberIds, long groupId, string groupName,
         CancellationToken ct = default);
+
+    /// <summary>被移出群（客户端自动退出该会话），与解散同样是「让客户端主动退出」</summary>
+    Task NotifyRemovedFromGroupAsync(int toUserId, long groupId, CancellationToken ct = default);
 
     // ===== 消息 =====
 

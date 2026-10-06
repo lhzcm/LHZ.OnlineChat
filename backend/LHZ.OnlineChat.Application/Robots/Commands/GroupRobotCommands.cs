@@ -92,6 +92,9 @@ internal sealed class RemoveGroupRobotHandler : IRequestHandler<RemoveGroupRobot
 public sealed class GetGroupRobotsQuery : IQuery<ApiResponse<List<RobotInfo>>>
 {
     public long GroupId { get; set; }
+
+    /// <summary>发起查询的用户；需为群成员（与成员名单同一套可见性规则）</summary>
+    public int RequesterId { get; set; }
 }
 
 internal sealed class GetGroupRobotsHandler : IRequestHandler<GetGroupRobotsQuery, ApiResponse<List<RobotInfo>>>
@@ -107,6 +110,11 @@ internal sealed class GetGroupRobotsHandler : IRequestHandler<GetGroupRobotsQuer
 
     public async Task<ApiResponse<List<RobotInfo>>> Handle(GetGroupRobotsQuery query, CancellationToken ct)
     {
+        var isMember = await _members
+            .ExistsAsync(query.GroupId, query.RequesterId, ct)
+            .ConfigureAwait(false);
+        DomainException.Ensure(isMember, "你不是该群成员");
+
         var memberIds = await _members.ListMemberIdsAsync(query.GroupId, ct).ConfigureAwait(false);
         if (memberIds.Count == 0)
             return ApiResponse<List<RobotInfo>>.Ok(new List<RobotInfo>());
