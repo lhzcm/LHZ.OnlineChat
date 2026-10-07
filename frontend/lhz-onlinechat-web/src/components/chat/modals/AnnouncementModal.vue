@@ -2,13 +2,11 @@
 import { ref, computed } from 'vue'
 import { groupApi } from '@/api/group'
 import { useGroupStore } from '@/stores/group'
-import { useAuthStore } from '@/stores/auth'
 import { formatMsgTime } from '@/utils/format'
 
 const props = defineProps<{ groupId: number }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const groupStore = useGroupStore()
-const auth = useAuthStore()
 
 const group = computed(() => groupStore.groups.find(g => g.id === props.groupId) ?? null)
 const announcement = computed(() => group.value?.announcement || '')

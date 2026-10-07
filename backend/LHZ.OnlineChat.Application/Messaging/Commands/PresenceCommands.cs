@@ -56,60 +56,73 @@ public sealed class SendGroupBacklogCommand : ICommand<Unit>
 
 internal sealed class SendGroupBacklogHandler : IRequestHandler<SendGroupBacklogCommand, Unit>
 {
-    private readonly IGroupMemberRepository _members;
     private readonly IGroupMessageRepository _messages;
     private readonly IUserRepository _users;
     private readonly IRealtimeNotifier _notifier;
 
     public SendGroupBacklogHandler(
-        IGroupMemberRepository members,
         IGroupMessageRepository messages,
         IUserRepository users,
         IRealtimeNotifier notifier)
     {
-        _members = members;
         _messages = messages;
         _users = users;
         _notifier = notifier;
     }
 
+    /// <summary>
+    /// 上线补发：固定 1～3 次查询。
+    ///
+    /// 原实现是「遍历我加入的每个群，各查一次游标之后的消息」——
+    /// 20 个群就是 20 次数据库往返，而这条命令**每次 WebSocket 连接都会跑**
+    /// （连上、断线重连都算），绝大多数时候一条补发都没有。
+    /// 现在改成：一次窗口查询拿到所有群的待补发 ID（没有就到此为止），
+    /// 再批量取消息正文与发件人，最后按群分组推送。
+    ///
+    /// 游标过滤（Id 大于 GroupMember.LastReadMessageId、排除已撤回）
+    /// 与每群 100 条上限都保持不变，见 GroupMessageRepository.ListBacklogIdsAsync。
+    /// </summary>
     public async Task<Unit> Handle(SendGroupBacklogCommand command, CancellationToken ct)
     {
-        var memberships = await _members.ListOfUserAsync(command.UserId, ct).ConfigureAwait(false);
-        if (memberships.Count == 0) return Unit.Value;
+        var ids = await _messages
+            .ListBacklogIdsAsync(command.UserId, SendGroupBacklogCommand.PerGroupLimit, ct)
+            .ConfigureAwait(false);
 
-        foreach (var membership in memberships)
+        // 常见路径：没有任何群需要补发，一次查询就结束
+        if (ids.Count == 0) return Unit.Value;
+
+        var backlog = await _messages.ListByIdsAsync(ids, ct).ConfigureAwait(false);
+        if (backlog.Count == 0) return Unit.Value;
+
+        var senders = await _users
+            .GetManyAsync(backlog.Select(m => m.SenderId).Distinct(), ct)
+            .ConfigureAwait(false);
+
+        // 一次取回全部群的补发，按群分组推送（保持「每个群一个批次」的原有行为）
+        foreach (var group in backlog.GroupBy(m => m.GroupId))
         {
-            var backlog = await _messages
-                .ListAfterCursorAsync(
-                    membership.GroupId, membership.LastReadMessageId,
-                    SendGroupBacklogCommand.PerGroupLimit, ct)
-                .ConfigureAwait(false);
-
-            if (backlog.Count == 0) continue;
-
-            var senders = await _users
-                .GetManyAsync(backlog.Select(m => m.SenderId).Distinct(), ct)
-                .ConfigureAwait(false);
-
-            var messages = backlog.Select(m =>
-            {
-                var sender = senders.GetValueOrDefault(m.SenderId);
-                return new RealtimeMessage
+            var messages = group
+                .OrderBy(m => m.SentAt)
+                .ThenBy(m => m.Id)
+                .Select(m =>
                 {
-                    SessionType = ChatSessionType.Group,
-                    SenderId = m.SenderId,
-                    TargetId = membership.GroupId,
-                    Content = m.Content,
-                    Kind = m.Kind,
-                    MessageId = m.PublicMessageId,
-                    SenderName = sender?.Nickname ?? "未知",
-                    SenderAvatar = sender?.Avatar,
-                    SentAt = m.SentAtUtc,
-                    Mentions = m.MentionedUsers,
-                    Reply = m.Reply
-                };
-            }).ToList();
+                    var sender = senders.GetValueOrDefault(m.SenderId);
+                    return new RealtimeMessage
+                    {
+                        SessionType = ChatSessionType.Group,
+                        SenderId = m.SenderId,
+                        TargetId = m.GroupId,
+                        Content = m.Content,
+                        Kind = m.Kind,
+                        MessageId = m.PublicMessageId,
+                        SenderName = sender?.Nickname ?? "未知",
+                        SenderAvatar = sender?.Avatar,
+                        SentAt = m.SentAtUtc,
+                        Mentions = m.MentionedUsers,
+                        Reply = m.Reply
+                    };
+                })
+                .ToList();
 
             await _notifier
                 .PushGroupBacklogAsync(command.UserId, messages, ct)

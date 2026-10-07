@@ -112,6 +112,53 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
             .CountAsync(ct);
 
     /// <summary>
+    /// 该用户所有群的待补发消息 ID，每群上限 <paramref name="perGroupLimit"/> 条。
+    ///
+    /// 用窗口函数一次算完，替代「按群循环查询」：20 个群从 20 次往返降到 1 次，
+    /// 而常见情况（没有任何补发）这条查询直接返回空集，后续两次查询都不用发。
+    ///
+    /// 游标来自 GroupMember.LastReadMessageId，与 ListAfterCursorAsync 的过滤条件一致
+    /// （Id 大于游标、排除已撤回）。这里走 Ado 原生 SQL —— 窗口函数用 FreeSql 的
+    /// 表达式树表达不出来，表名与列名都是本仓储内的常量，不涉及外部输入。
+    /// </summary>
+    public async Task<IReadOnlyList<long>> ListBacklogIdsAsync(
+        int userId, int perGroupLimit, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT t."Id"
+            FROM (
+                SELECT m."Id",
+                       ROW_NUMBER() OVER (PARTITION BY m."GroupId" ORDER BY m."SentAt", m."Id") AS rn
+                FROM "GroupMember" gm
+                JOIN "GroupMessage" m ON m."GroupId" = gm."GroupId"
+                WHERE gm."UserId" = @userId
+                  AND m."Id" > gm."LastReadMessageId"
+                  AND NOT m."IsDeleted"
+            ) t
+            WHERE t.rn <= @perGroupLimit
+            """;
+
+        var rows = await _db.Orm.Ado
+            .QueryAsync<long>(sql, new { userId, perGroupLimit }, ct)
+            .ConfigureAwait(false);
+
+        return rows;
+    }
+
+    /// <summary>按 ID 批量取消息（结果顺序不保证，调用方自行排序）</summary>
+    public async Task<IReadOnlyList<GroupMessage>> ListByIdsAsync(
+        IReadOnlyList<long> ids, CancellationToken ct = default)
+    {
+        if (ids.Count == 0) return Array.Empty<GroupMessage>();
+
+        var idList = ids.ToList();
+        return await _db.Select<GroupMessage>()
+            .Where(m => idList.Contains(m.Id))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 游标补发的过滤条件（单一来源）。
     ///
     /// 之前补发查询带 <c>!IsDeleted</c>、计数查询漏了它，于是「还有 N 条未同步」

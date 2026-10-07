@@ -6,6 +6,7 @@ import { authApi } from '@/api/auth'
 import { useToast } from '@/composables/useToast'
 import { useNotifySettings, requestNotifyPermission } from '@/composables/useNotify'
 import AvatarCropModal from './AvatarCropModal.vue'
+import { blobToFile } from '@/utils/image'
 
 const props = defineProps<{ notifySoundEnabled: boolean }>()
 const emit = defineEmits<{
@@ -87,15 +88,16 @@ function onAvatarChange(e: Event) {
   cropFile.value = file
 }
 
-/** 裁剪完成：上传裁剪后的 PNG */
+/** 裁剪完成：上传裁剪后的图片（WebP，浏览器不支持时自动退回 PNG） */
 async function onCropped(blob: Blob) {
   cropFile.value = null
   uploadingAvatar.value = true
   profileError.value = ''
   profileSuccess.value = ''
   try {
-    const file = new File([blob], 'avatar.png', { type: 'image/png' })
-    const res = await auth.uploadAvatar(file)
+    // 文件名按 blob 的实际类型取扩展名：服务端是按扩展名校验的，
+    // 名字与字节不一致会被拒或被当成另一种格式存下来
+    const res = await auth.uploadAvatar(blobToFile(blob, 'avatar'))
     if (res.success) profileSuccess.value = res.message || '头像修改成功'
     else profileError.value = res.message
   } catch (err: any) {

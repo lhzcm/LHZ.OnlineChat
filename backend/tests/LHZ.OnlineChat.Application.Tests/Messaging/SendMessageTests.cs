@@ -612,7 +612,7 @@ public class PresenceAndBacklogTests
         _ctx.GivenGroupMessage(group.Id, owner.Id, "未读消息2");
 
         await new SendGroupBacklogHandler(
-                _ctx.GroupMembers, _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
+                _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
             .Handle(new SendGroupBacklogCommand { UserId = member.Id }, default);
 
         var pushes = _ctx.Notifier.OfKind(PushKind.GroupBacklog).ToList();
@@ -632,7 +632,7 @@ public class PresenceAndBacklogTests
         await _ctx.GroupMessages.UpdateAsync(message);
 
         await new SendGroupBacklogHandler(
-                _ctx.GroupMembers, _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
+                _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
             .Handle(new SendGroupBacklogCommand { UserId = member.Id }, default);
 
         Assert.Empty(_ctx.Notifier.OfKind(PushKind.GroupBacklog));
@@ -647,7 +647,7 @@ public class PresenceAndBacklogTests
         for (var i = 0; i < 150; i++) _ctx.GivenGroupMessage(group.Id, owner.Id, $"消息{i}");
 
         await new SendGroupBacklogHandler(
-                _ctx.GroupMembers, _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
+                _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
             .Handle(new SendGroupBacklogCommand { UserId = member.Id }, default);
 
         Assert.Equal(
@@ -661,7 +661,7 @@ public class PresenceAndBacklogTests
         var user = _ctx.GivenUser();
 
         await new SendGroupBacklogHandler(
-                _ctx.GroupMembers, _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
+                _ctx.GroupMessages, _ctx.Users, _ctx.Notifier)
             .Handle(new SendGroupBacklogCommand { UserId = user.Id }, default);
 
         Assert.Empty(_ctx.Notifier.Pushes);

@@ -2,13 +2,11 @@
 import { ref, onMounted } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import { robotApi } from '@/api/robot'
-import { useGroupStore } from '@/stores/group'
 import { useToast } from '@/composables/useToast'
 import type { RobotInfo } from '@/types'
 
 const props = defineProps<{ groupId: number }>()
 const emit = defineEmits<{ close: []; added: [] }>()
-const groupStore = useGroupStore()
 const { toast } = useToast()
 
 const robots = ref<RobotInfo[]>([])

@@ -10,7 +10,7 @@ import { formatMsgTime, pad } from '@/utils/format'
 import { copyText } from '@/utils/clipboard'
 import type { FriendInfo, SessionInfo, ChatType, MessageSearchResult } from '@/types'
 
-const props = defineProps<{
+defineProps<{
   activeTab: 'sessions' | 'friends' | 'groups'
   currentChat: { type: ChatType; id: number; name: string } | null
   mobileChatOpen: boolean

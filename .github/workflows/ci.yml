@@ -1,0 +1,64 @@
+name: CI
+
+# 这个仓库此前没有任何流水线：946 个测试、0 警告、两个前端的类型检查，
+# 全靠「提交的人记得本地跑一遍」。这里把这几条固化下来。
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新推送取消上一次未跑完的任务，避免排队
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端（构建 + 测试）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: backend/**/*.csproj
+
+      # Directory.Build.props 里开了 TreatWarningsAsErrors，所以构建这一步
+      # 同时守着「0 警告」这条线
+      - name: 构建
+        run: dotnet build backend/LHZ.OnlineChat.slnx --nologo --configuration Release
+
+      # 单元测试只用内存替身，不需要 PostgreSQL / Redis —— 这也是它们能在 CI 里直接跑的前提
+      - name: 测试
+        run: dotnet test backend/LHZ.OnlineChat.slnx --nologo --configuration Release --no-build
+
+  frontend:
+    name: 前端（类型检查 + 构建）
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [lhz-onlinechat-web, admin-web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/${{ matrix.app }}/package-lock.json
+
+      # npm ci 而非 npm install：锁文件与 package.json 不一致时直接失败，
+      # 顺带保证 CI 装的依赖与本地/镜像里的一致
+      - name: 安装依赖
+        working-directory: frontend/${{ matrix.app }}
+        run: npm ci
+
+      # 两个包的 build 脚本都是 `vue-tsc && vite build`，
+      # 所以这一步同时覆盖类型检查（含 noUnusedLocals / noUnusedParameters）与产物构建
+      - name: 类型检查 + 构建
+        working-directory: frontend/${{ matrix.app }}
+        run: npm run build

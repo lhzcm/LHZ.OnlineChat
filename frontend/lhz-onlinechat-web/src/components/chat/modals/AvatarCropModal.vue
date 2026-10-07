@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { canvasToImageBlob } from '@/utils/image'
 
 const props = defineProps<{ file: File }>()
 const emit = defineEmits<{ cropped: [blob: Blob]; cancel: [] }>()
@@ -91,14 +92,14 @@ function onPointerUp() {
   dragging.value = false
 }
 
-/** 导出裁剪结果：512×512 PNG Blob 并上传 */
+/** 导出裁剪结果：512×512 WebP Blob 并上传 */
 async function confirmCrop() {
   if (!canvasRef.value || exporting.value) return
   exporting.value = true
   try {
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvasRef.value!.toBlob(resolve, 'image/png')
-    )
+    // PNG 导出 512² 约 300–700KB，而每个好友每次拉头像都要再下一次；
+    // WebP 同样尺寸只需 30–70KB（这个 canvas 无透明通道需求，可放心用有损）
+    const blob = await canvasToImageBlob(canvasRef.value)
     if (!blob) {
       loadError.value = '裁剪失败，请重试'
       return

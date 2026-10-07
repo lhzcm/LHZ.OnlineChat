@@ -106,6 +106,21 @@ public interface IGroupMessageRepository
     Task<IReadOnlyList<GroupMessage>> ListAfterCursorAsync(
         long groupId, long afterMessageId, int limit, CancellationToken ct = default);
 
+    /// <summary>
+    /// 该用户所有群的待补发消息 ID（每群上限 <paramref name="perGroupLimit"/> 条）。
+    ///
+    /// 存在的意义是「一次查询覆盖所有群」：上线补发原本按群循环查询，
+    /// 20 个群就是 20 次数据库往返，而绝大多数连接一条补发都没有。
+    /// 游标直接取自 GroupMember.LastReadMessageId，
+    /// 不需要调用方把每个群的游标传进来（也就不需要拼动态 SQL）。
+    /// </summary>
+    Task<IReadOnlyList<long>> ListBacklogIdsAsync(
+        int userId, int perGroupLimit, CancellationToken ct = default);
+
+    /// <summary>按 ID 批量取消息（配合 <see cref="ListBacklogIdsAsync"/> 使用，顺序不保证）</summary>
+    Task<IReadOnlyList<GroupMessage>> ListByIdsAsync(
+        IReadOnlyList<long> ids, CancellationToken ct = default);
+
     /// <summary>游标之后的未读条数</summary>
     Task<int> CountAfterCursorAsync(long groupId, long afterMessageId, CancellationToken ct = default);
 

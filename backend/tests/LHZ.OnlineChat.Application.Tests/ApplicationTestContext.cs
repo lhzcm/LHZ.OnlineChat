@@ -25,7 +25,7 @@ internal sealed class ApplicationTestContext
 
     internal InMemoryPrivateMessageRepository PrivateMessages { get; } = new();
 
-    internal InMemoryGroupMessageRepository GroupMessages { get; } = new();
+    internal InMemoryGroupMessageRepository GroupMessages { get; }
 
     internal InMemorySessionSettingRepository SessionSettings { get; } = new();
 
@@ -79,7 +79,12 @@ internal sealed class ApplicationTestContext
 
     internal FakeRobotConversationService RobotConversations { get; } = new();
 
-    internal ApplicationTestContext() => Terminator = new FakeSessionTerminator(Sessions);
+    internal ApplicationTestContext()
+    {
+        Terminator = new FakeSessionTerminator(Sessions);
+        // 群消息仓储的补发查询要读成员已读游标（与真实实现一致）
+        GroupMessages = new InMemoryGroupMessageRepository(GroupMembers);
+    }
 
     internal DateTime Now => Clock.UtcNow;
 

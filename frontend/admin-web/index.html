@@ -2,6 +2,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!-- 复用主前端的同源图标：管理后台自己没有 public/ 资源，
+         不声明的话浏览器会去请求 /favicon.ico，落到主前端 nginx 的 SPA 回退上拿回一段 HTML -->
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OnlineChat 管理后台</title>
     <style>

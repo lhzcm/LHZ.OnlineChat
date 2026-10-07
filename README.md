@@ -10,7 +10,7 @@
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
 - JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
-- 测试:903 个单元测试(xUnit),全量约 1.3 秒
+- 测试:946 个单元测试(xUnit),全量约 6 秒
 
 ## ✨ 功能总览
 
@@ -32,7 +32,8 @@
 - 在线状态实时广播(WS `online_status`)
 
 **群组**
-- 创建/加入/退出/踢人(权限分级:群主 0/管理员 1/成员 2)/解散/成员列表(含在线状态)
+- 创建/加入/退出/踢人(权限分级:群主 0/管理员 1/成员 2)/解散/成员列表(仅群成员可见,含在线状态)
+- **入群默认「仅限邀请」**:知道群 ID 也不能自行加入,需群主/管理员 `PUT /api/groups/{groupId}/join-policy`(body `{"openToJoin": true}`)开放;群机器人列表同样仅群成员可见
 - **群主/管理员邀请好友入群**(仅限自己的好友、排除已在群成员、批量邀请,被邀请者实时收到 `group_invited`)
 
 **🤖 机器人(Webhook)**
@@ -171,20 +172,20 @@ LHZ.OnlineChat/
 
 ```bash
 cd backend
-dotnet test                                       # 全部 903 个用例，约 1.3 秒
+dotnet test                                       # 全部 946 个用例，约 6 秒
 dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ```
 
 | 测试工程 | 用例数 | 耗时 | 覆盖内容 | 外部依赖 |
 |---|---:|---:|---|---|
-| `Domain.Tests` | 343 | 94ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
-| `Application.Tests` | 420 | 161ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
-| `Infrastructure.Tests` | 140 | 1s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储 | 无 |
+| `Domain.Tests` | 348 | 550ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
+| `Application.Tests` | 447 | 660ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
+| `Infrastructure.Tests` | 151 | 5s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储 | 无 |
 
 几点约定:
 
 - **不用 mock 框架**,一律手写内存测试替身([TestDoubles/](backend/tests/LHZ.OnlineChat.Application.Tests/TestDoubles/))。内存仓储会真的分配自增主键,因此"忘了回填 Id 就发事件"这类顺序错误测得出来;mock 测不出。
-- **领域层零依赖的直接收益**:343 个领域测试不需要数据库、不需要容器,全部跑完 94 毫秒。
+- **领域层零依赖的直接收益**:348 个领域测试不需要数据库、不需要容器,全部跑完约 550 毫秒。
 - **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
 - **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](backend/tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
 - **需要真实 PostgreSQL / Redis / SMTP 的部分不在单元测试里糊弄**(那只会测出替身自己的行为),仓储查询与会话存储属于集成测试范畴。
@@ -204,7 +205,7 @@ dotnet run --project backend/LHZ.OnlineChat.Server
 
 - HTTP API:`http://localhost:5000`,Swagger(开发环境):`/swagger`
 - WebSocket:`ws://localhost:5000/?access_token=<JWT>`
-- 启动自动:创建数据库(若不存在)→ CodeFirst 同步表结构 → 账号 ID 序列迁移(起始 10000)→ pg_trgm 搜索索引 → 初始超管
+- 启动自动:创建数据库(若不存在)→ 补 `Group_.JoinPolicy` 列(默认 0=仅限邀请)→ CodeFirst 同步表结构 → 账号 ID 序列迁移(起始 10000)→ pg_trgm 搜索索引 → 唯一约束与二级索引 → 初始超管
 - 上传的头像保存在 `backend/LHZ.OnlineChat.Server/uploads/`,经 `/uploads/*` 访问
 - `LHZ.OnlineChat.Server` 只是启动项目;`dotnet build backend/LHZ.OnlineChat.slnx` 会按依赖顺序构建四层
 
@@ -225,10 +226,22 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 | `ConnectionStrings:Default` | PostgreSQL 连接串 |
 | `Redis:Connection` | Redis 连接串 |
 | `Jwt:Secret/Issuer/Audience/ExpireMinutes` | JWT 配置(Secret 至少 32 字符) |
-| `Smtp:Host/Port/User/Password/From` | 邮件验证码;**留空为开发模式**:验证码打印到后端控制台并随 `send-code` 接口返回 `devCode` |
+| `Smtp:Host/Port/User/Password/From` | 邮件验证码;未配置时验证码只写入服务器日志(生产环境启动会记一条警告),生产环境由管理员从日志取码,接口提示「请联系管理员从服务器日志获取」且 `devCode` 为 `null`;**仅开发环境**回传 `devCode` 便于本地调试;已配置但发送失败则返回「验证码发送失败,请稍后重试」并作废该码,用户可立即重试 |
 | `Cors:AllowedOrigins` | 允许来源,逗号分隔;`*` 允许全部 |
 
 均可通过环境变量覆盖(如 `ConnectionStrings__Default`、`Smtp__Host`)。前端 WS 地址:开发用 `.env.development` 的 `VITE_WS_URL=ws://localhost:5000`;生产留空自动使用当前站点同域 `/ws`(https 下自动 wss)。
+
+### 限流
+
+| 入口 | 阈值 | 维度 |
+|---|---:|---|
+| `POST /api/auth/send-code` | 20 次 / 10 分钟 | 来源 IP(反代后取真实客户端 IP) |
+| `POST /api/robots/{令牌}/reply` | 120 次 / 分钟 | 机器人令牌 |
+| `POST /api/auth/login` / `/api/admin/auth/login` | 账号 10 次 / 15 分钟;IP 50 次 / 15 分钟 | 账号 + IP,只统计失败 |
+
+超过阈值返回 HTTP 429,响应体仍是统一契约 `{"success":false,"message":"请求过于频繁，请稍后再试"}`。登录失败限流走 `DomainException`,提示「登录失败次数过多，请在 N 分钟后重试」;登录成功后只清账号维度计数(IP 维度保留,否则攻击者猜中一个弱密码账号就能清掉自己 IP 的计数继续喷洒)。
+
+阈值是代码里的常量([Program.cs](backend/LHZ.OnlineChat.Server/Program.cs)、[RateLimitPolicies.cs](backend/LHZ.OnlineChat.Server/Configuration/RateLimitPolicies.cs)、[LoginThrottle.cs](backend/LHZ.OnlineChat.Infrastructure/Caching/LoginThrottle.cs)),不是配置项;也刻意不注册全局兜底限流器 —— 那会误伤 `/ws` 握手(客户端批量重连)。
 
 ## 🐳 生产部署
 
@@ -398,8 +411,10 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `online_status` | 服务端→客户端 | 好友上下线(`content`: `online`/`offline`) |
 | `friend_request` | 服务端→客户端 | 收到新好友申请 |
 | `friend_accepted` / `friend_rejected` | 服务端→客户端 | 申请被接受(双向)/ 被拒绝 |
+| `friend_removed` | 服务端→客户端 | 好友关系被删除(双向通知,`from` 为对方用户 ID,被删除方据此得知主动删除方),客户端刷新好友列表;若正在与该用户私聊则退出会话 |
 | `group_invited` | 服务端→客户端 | 被邀请加入群组(`from` 为群 ID) |
 | `group_dissolved` | 服务端→客户端 | 所在群被解散(`to` 为群 ID),客户端自动退出该会话 |
+| `group_removed` | 服务端→客户端 | 被移出群(`to` 为群 ID),客户端自动退出该会话 |
 | `muted` | 服务端→客户端 | 群发言被拒(禁言中),`content` 含禁言截止时间说明 |
 | `blocked` | 服务端→客户端 | 被对方拉黑,或私聊消息因对方拉黑而未送达 |
 | `kicked` | 服务端→客户端 | 该登录会话被踢下线(设备管理踢出/改密/重置/封禁),随后连接关闭 |
@@ -407,7 +422,7 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 **字段**:`from`(发送者ID)、`to`(接收者ID/群ID)、`content`、`messageId`(客户端生成则保留用于去重,否则用数据库 ID)、`messageType`(0文字/1图片/2文件)、`timestamp`(毫秒)、`senderName`、`senderAvatar`、`mentions`(群聊 @ 的成员 ID 列表)。
 
 **补充机制**
-- **消息去重**:历史/离线/群补发接口均返回与 WS 推送一致的 `messageId`(数据库 `ClientMessageId` 列),前端按此去重,不会出现重复消息
+- **消息去重**:历史/离线/群补发接口与 WS 推送返回同一个 `messageId` —— 有客户端 ID 时用它,否则回落到数据库 ID(领域侧的 `PublicMessageId`),前端按此去重,不会出现重复消息
 - **群离线补发**:`GroupMember.LastReadMessageId` 已读游标,上线推送游标之后的消息(每群 ≤100 条),打开群聊推进游标
 - **会话列表**:`GET /api/messages/sessions` 聚合私聊 + 群聊(最后消息/时间/未读数;私聊名优先显示我的备注)
 
@@ -421,7 +436,7 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `Friend` | `Friendship` | 好友关系(Status: 0待确认/1已接受/2已屏蔽,一条记录表达双向) |
 | `FriendTag` | `FriendSetting` | 好友设置(设置者视角的备注 Remark / 分类 Category) |
 | `Blacklist` | `BlacklistEntry` | 黑名单(拉黑者 → 被拉黑者) |
-| `Group_` | `Group` | 群组(OwnerId;公告三列 Announcement/At/By) |
+| `Group_` | `Group` | 群组(OwnerId;JoinPolicy: 0仅限邀请/1开放加入;公告三列 Announcement/At/By) |
 | `GroupMember` | `GroupMember` | 群成员(Role: 0群主/1管理员/2成员;LastReadMessageId 已读游标;MutedUntil 禁言) |
 | `PrivateMessage` | `PrivateMessage` | 私聊消息(ClientMessageId 去重键;IsRead;IsDeleted 撤回;引用三列) |
 | `GroupMessage` | `GroupMessage` | 群聊消息(Mentions 逗号分隔的 @ 列表;IsDeleted;引用三列) |
@@ -431,6 +446,13 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `AdminLog` | `AdminAuditLog` | 管理操作审计(Action/TargetType/TargetId/Detail/Ip) |
 
 **索引**:`PrivateMessage.Content` 与 `GroupMessage.Content` 上建有 pg_trgm(trigram)GIN 索引,使 `LIKE '%关键词%'`(含中文)走索引,大数据量下搜索不退化。
+
+此外启动时还会幂等地创建一批唯一约束与二级索引(见 [DatabaseInitializer.cs](backend/LHZ.OnlineChat.Infrastructure/Persistence/DatabaseInitializer.cs)):
+
+- **唯一约束**:邮箱(部分索引,排除机器人账号的 NULL)、`(GroupId,UserId)`、`(UserId,FriendId)`、黑名单、会话设置、机器人账号一对一、管理员用户名,以及 `(SenderId,ClientMessageId)` —— 后者是乐观发送重试的幂等兜底
+- **二级索引**:私聊/群聊的会话历史与未读统计、游标补发、好友待确认、审计日志等
+
+存量数据若已有重复行,对应的唯一索引会创建失败:服务照常启动,但只记一条警告、该约束暂不生效,需清理重复数据后重启(见 [docs/DEPLOY.md](docs/DEPLOY.md))。
 
 ## 📜 License
 

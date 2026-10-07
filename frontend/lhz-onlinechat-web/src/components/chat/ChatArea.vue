@@ -11,6 +11,7 @@ import { useWebSocketStore } from '@/stores/websocket'
 import { messageApi } from '@/api/message'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime } from '@/utils/format'
+import { compressChatImage } from '@/utils/image'
 import type { WsMessage, ChatType, GroupMemberInfo, MessageSearchResult } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
@@ -503,7 +504,10 @@ async function onImageSelect(e: Event) {
   sendingImage.value = true
   sendHint.value = ''
   try {
-    const res = await messageApi.uploadImage(file)
+    // 先压缩（长边 ≤1600px、WebP）：气泡里最多只渲染到 260px，
+    // 没必要让每个接收者都把手机原图整份下下来
+    const compressed = await compressChatImage(file)
+    const res = await messageApi.uploadImage(compressed)
     if (!res.success || !res.data?.url) {
       const msg = res.message || ''
       toast(msg.includes('5MB') || msg.includes('大小')

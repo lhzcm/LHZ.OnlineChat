@@ -2,7 +2,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- 用 PWA 图标充当 favicon：原来指向 /vite.svg，而 public/ 下没有这个文件，
+         每次加载都会多一个 404，标签页也没有图标 -->
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>OnlineChat - 在线聊天</title>
     <meta name="description" content="在线聊天系统：好友、群组、实时消息、机器人" />

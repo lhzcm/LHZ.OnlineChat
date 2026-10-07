@@ -90,7 +90,9 @@ internal sealed class MailKitEmailSender : IEmailSender
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // 发信失败不应让注册流程整体失败：返回 false，调用方会回传 DevCode
+            // 发信失败只回 false，由调用方决定怎么处置：
+            // 开发环境回传 DevCode 便于本地调试，生产环境作废该验证码并提示重试
+            // （见 SendVerificationCodeHandler）。这里不抛，避免注册流程因邮件故障整体失败。
             _logger.LogError(ex, "验证码邮件发送失败：{Email}", to.Value);
             return false;
         }

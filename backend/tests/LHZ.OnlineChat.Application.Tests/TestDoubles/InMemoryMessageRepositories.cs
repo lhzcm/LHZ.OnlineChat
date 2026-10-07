@@ -180,6 +180,11 @@ internal sealed class InMemoryPrivateMessageRepository
 internal sealed class InMemoryGroupMessageRepository
     : InMemoryStore<GroupMessage, long>, IGroupMessageRepository
 {
+    /// <summary>补发要按群成员各自的已读游标过滤，所以需要成员仓储</summary>
+    private readonly InMemoryGroupMemberRepository _members;
+
+    public InMemoryGroupMessageRepository(InMemoryGroupMemberRepository members) => _members = members;
+
     protected override long ToId(long identity) => identity;
 
     public Task<GroupMessage?> FindByIdAsync(long id, CancellationToken ct = default)
@@ -271,12 +276,54 @@ internal sealed class InMemoryGroupMessageRepository
         => Task.FromResult(Where(m =>
             m.SenderId == senderId && m.ClientMessageId == clientMessageId).FirstOrDefault());
 
+    /// <summary>
+    /// 与真实实现同口径：游标取自 GroupMember.LastReadMessageId（所以需要成员仓储），
+    /// 只取游标之后的、未撤回的消息，每群上限 perGroupLimit 条。
+    /// </summary>
+    public Task<IReadOnlyList<long>> ListBacklogIdsAsync(
+        int userId, int perGroupLimit, CancellationToken ct = default)
+    {
+        var cursors = new Dictionary<long, long>();
+        if (_members is not null)
+        {
+            foreach (var member in _members.All)
+            {
+                if (member.UserId == userId) cursors[member.GroupId] = member.LastReadMessageId;
+            }
+        }
+
+        IReadOnlyList<long> ids = Where(m =>
+                cursors.ContainsKey(m.GroupId)
+                && m.Id > cursors[m.GroupId]
+                && !m.IsDeleted)
+            .OrderBy(m => m.GroupId)
+            .ThenBy(m => m.SentAt)
+            .ThenBy(m => m.Id)
+            .GroupBy(m => m.GroupId)
+            .SelectMany(group => group.Take(perGroupLimit))
+            .Select(m => m.Id)
+            .ToList();
+
+        return Task.FromResult(ids);
+    }
+
+    /// <summary>按 ID 批量取消息；与真实实现一致，不保证返回顺序</summary>
+    public Task<IReadOnlyList<GroupMessage>> ListByIdsAsync(
+        IReadOnlyList<long> ids, CancellationToken ct = default)
+    {
+        if (ids.Count == 0)
+            return Task.FromResult<IReadOnlyList<GroupMessage>>(Array.Empty<GroupMessage>());
+
+        var wanted = ids.ToHashSet();
+        IReadOnlyList<GroupMessage> items = Where(m => wanted.Contains(m.Id)).ToList();
+        return Task.FromResult(items);
+    }
+
     public Task AddAsync(GroupMessage message, CancellationToken ct = default)
     {
         Insert(message);
         return Task.CompletedTask;
     }
-
     public Task UpdateAsync(GroupMessage message, CancellationToken ct = default)
     {
         Seed(message);

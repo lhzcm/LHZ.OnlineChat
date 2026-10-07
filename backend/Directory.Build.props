@@ -16,6 +16,14 @@
         CA2007 await 应带 ConfigureAwait —— ASP.NET Core 无同步上下文，仅在库代码显式标注
     -->
     <NoWarn>$(NoWarn);CA1000;CA1711;CA1716;CA1848;CA1873;CA2007</NoWarn>
+
+    <!--
+      警告即错误：当前四层 + 三个测试工程都是 0 警告，这条零成本地把它锁住。
+      没有它的话，一条新警告会安静地留在构建输出里 —— 而没有人会去翻 CI 日志里的
+      「1 Warning」。真需要临时放过某条警告时，用 NoWarn 显式写出来并注明原因，
+      这正是本文件上半部分的用法。
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

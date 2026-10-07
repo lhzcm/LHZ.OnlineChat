@@ -67,15 +67,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
 import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
-import { authApi } from '@/api/auth'
-import { groupApi } from '@/api/group'
 import { useToast } from '@/composables/useToast'
 import { inDnd, showDesktopNotify } from '@/composables/useNotify'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
@@ -90,7 +88,7 @@ import FriendSettingModal from '@/components/chat/modals/FriendSettingModal.vue'
 import SessionsModal from '@/components/chat/modals/SessionsModal.vue'
 import ChatSidebar from '@/components/chat/ChatSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
-import type { FriendInfo, GroupMemberInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
+import type { FriendInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
 const { toastMsg, toast } = useToast()
 
@@ -102,19 +100,8 @@ const chatStore = useChatStore()
 const ws = useWebSocketStore()
 
 const activeTab = ref<'sessions' | 'friends' | 'groups'>('friends')
-const inputText = ref('')
-const inputEl = ref<HTMLInputElement | null>(null)
-const msgContainer = ref<HTMLElement | null>(null)
-const sendHint = ref('')
 // 移动端：聊天窗口全屏开关
 const mobileChatOpen = ref(false)
-// 表情面板
-const showEmojiPanel = ref(false)
-const emojiPanelRef = ref<HTMLElement | null>(null)
-const emojiBtnRef = ref<HTMLElement | null>(null)
-// 图片消息
-const imageInputRef = ref<HTMLInputElement | null>(null)
-const sendingImage = ref(false)
 const lightboxUrl = ref('')
 // 消息提示音
 const notifySoundEnabled = ref(localStorage.getItem('notifySound') !== '0')

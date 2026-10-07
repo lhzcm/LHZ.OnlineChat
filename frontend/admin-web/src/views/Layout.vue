@@ -5,7 +5,7 @@ import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
 const route = useRoute()
-const { toastMsg, toast } = useToast()
+const { toastMsg } = useToast()
 
 const admin = ref<{ id: number; username: string; role: number } | null>(null)
 const isSuper = computed(() => admin.value?.role === 0)
