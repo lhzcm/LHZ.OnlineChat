@@ -2,6 +2,7 @@ using FreeSql;
 using System.Data;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Messaging;
+using Microsoft.Extensions.Logging;
 
 namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 
@@ -9,8 +10,13 @@ namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 {
     private readonly DbSession _db;
+    private readonly ILogger _logger;
 
-    public PrivateMessageRepository(DbSession db) => _db = db;
+    public PrivateMessageRepository(DbSession db, ILogger<PrivateMessageRepository> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     public Task<PrivateMessage?> FindByIdAsync(long id, CancellationToken ct = default)
         => _db.Select<PrivateMessage>().Where(m => m.Id == id).FirstAsync(ct)!;
@@ -212,7 +218,7 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 
     public Task<IReadOnlyDictionary<DateTime, long>> CountByHourSinceAsync(
         int hours, CancellationToken ct = default)
-        => Task.FromResult(HourlyAggregate.Query(_db.Orm, "PrivateMessage", hours));
+        => Task.FromResult(HourlyAggregate.Query(_db.Orm, "PrivateMessage", hours, _logger));
 
     // ==================== 查询片段 ====================
 
@@ -236,7 +242,8 @@ internal sealed class PrivateMessageRepository : IPrivateMessageRepository
 /// </summary>
 internal static class HourlyAggregate
 {
-    internal static IReadOnlyDictionary<DateTime, long> Query(IFreeSql fsql, string tableName, int hours)
+    internal static IReadOnlyDictionary<DateTime, long> Query(
+        IFreeSql fsql, string tableName, int hours, ILogger logger)
     {
         var result = new Dictionary<DateTime, long>();
         try
@@ -258,8 +265,10 @@ internal static class HourlyAggregate
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // 与改造前一致：聚合失败不影响仪表盘其余部分
-            Console.WriteLine($"[DASHBOARD] {tableName} 小时分布查询失败: {ex.Message}");
+            // 与改造前一致：聚合失败不影响仪表盘其余部分。
+            // 但必须走 ILogger —— 原先是 Console.WriteLine，失败只会混在容器 stdout 里，
+            // 既没有日志级别也进不了结构化日志，排查时根本看不见。
+            logger.LogWarning(ex, "仪表盘小时分布查询失败（{Table}，近 {Hours} 小时）", tableName, hours);
         }
 
         return result;

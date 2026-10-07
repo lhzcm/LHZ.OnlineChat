@@ -200,8 +200,7 @@ internal sealed class RecentMessageCache : IRecentMessageCache
 
         var databaseIdText = databaseId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var keep = items
-            .Select(i => i.ToString())
-            .Where(json => !MatchesMessageId(json, publicMessageId) && !MatchesMessageId(json, databaseIdText))
+            .Where(item => !IsTargetMessage(item.ToString(), publicMessageId, databaseIdText))
             .ToList();
 
         if (keep.Count == items.Length) return; // 缓存里没有这条
@@ -214,8 +213,22 @@ internal sealed class RecentMessageCache : IRecentMessageCache
         }
     }
 
-    private static bool MatchesMessageId(string json, string messageId)
-        => json.Contains($"\"messageId\":\"{messageId}\"", StringComparison.Ordinal);
+    /// <summary>
+    /// 判断这条缓存是否为待移除的消息。
+    ///
+    /// 必须按**解析后的 messageId 字段**精确比对，不能在原始 JSON 上做子串匹配：
+    /// 后者只要消息正文里恰好出现 {"messageId":"..."} 这样的片段就会误命中，
+    /// 删掉一条完全无关的缓存（用户手打一段 JSON 就能触发）。
+    ///
+    /// 解析失败时返回 false —— 宁可留在缓存里，也不能误删别人的消息。
+    /// </summary>
+    internal static bool IsTargetMessage(string json, string publicMessageId, string databaseIdText)
+    {
+        var cachedId = TryParse(json)?.MessageId;
+        if (string.IsNullOrEmpty(cachedId)) return false;
+
+        return cachedId == publicMessageId || cachedId == databaseIdText;
+    }
 
     private static string ResolveKey(ChatSessionType sessionType, long left, long right)
         => sessionType == ChatSessionType.Private
@@ -254,7 +267,7 @@ internal sealed class RecentMessageCache : IRecentMessageCache
 
     /// <summary>
     /// 缓存载荷。字段名与 WS 协议报文一致（camelCase），
-    /// 这样缓存内容可以直接当成推送报文理解，也便于按 messageId 做文本匹配删除。
+    /// 这样缓存内容可以直接当成推送报文理解；撤回时按解析后的 messageId 字段比对。
     /// </summary>
     private sealed class CachedPayload
     {

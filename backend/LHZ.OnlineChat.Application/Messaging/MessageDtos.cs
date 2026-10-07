@@ -120,7 +120,15 @@ public sealed class UnreadCountDto
     public int PrivateUnread { get; set; }
 }
 
-/// <summary>领域实体 → DTO 映射</summary>
+/// <summary>
+/// 领域实体 → DTO 映射。
+///
+/// MessageId 统一取 <c>PublicMessageId</c>（有客户端 ID 用它，否则回落到数据库 ID），
+/// 与 WS 推送（RealtimeMessage.MessageId）和实时缓存用同一口径 ——
+/// 三者一致，前端的 messageId 去重才能真正生效。
+/// 此前这里直接用 ClientMessageId，机器人推送的消息（没有客户端 ID）拿到 null，
+/// 前端不得不补一句 `m.messageId || String(m.id)` 来重算同一套规则。
+/// </summary>
 public static class MessageMapper
 {
     public static MessageDto ToDto(this PrivateMessage m, Domain.Users.User? sender) => new()
@@ -133,7 +141,7 @@ public static class MessageMapper
         MessageType = (int)m.Kind,
         IsRead = m.IsRead,
         IsDeleted = m.IsDeleted,
-        MessageId = m.ClientMessageId,
+        MessageId = m.PublicMessageId,
         ReplyTo = m.ReplyMessageId,
         ReplyContent = m.ReplyContent,
         ReplySender = m.ReplySenderName,
@@ -150,7 +158,7 @@ public static class MessageMapper
         Content = m.Content,
         MessageType = (int)m.Kind,
         IsDeleted = m.IsDeleted,
-        MessageId = m.ClientMessageId,
+        MessageId = m.PublicMessageId,
         ReplyTo = m.ReplyMessageId,
         ReplyContent = m.ReplyContent,
         ReplySender = m.ReplySenderName,

@@ -29,6 +29,25 @@ public class PrivateHistoryTests
     }
 
     [Fact]
+    public async Task 没有客户端消息ID的历史消息也返回可用的MessageId()
+    {
+        var (a, b) = _ctx.GivenFriends();
+        // GivenPrivateMessage 不带客户端 ID —— 与机器人推送的消息同一形态
+        var message = _ctx.GivenPrivateMessage(a.Id, b.Id, "你好");
+
+        var result = await Handler().Handle(
+            new GetPrivateHistoryQuery { UserId = a.Id, FriendId = b.Id }, default);
+
+        var item = Assert.Single(result.Data!.Items);
+
+        // 历史接口必须与 WS 推送用同一个 messageId 口径（PublicMessageId），
+        // 否则前端只能自己重算一遍回落规则，两边一旦不一致就会出现重复上屏
+        Assert.Equal(
+            message.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            item.MessageId);
+    }
+
+    [Fact]
     public async Task 历史携带发送者信息()
     {
         var (a, b) = _ctx.GivenFriends();
@@ -393,6 +412,27 @@ public class SearchMessagesTests
         Assert.Equal(2, result.Data!.Items.Count);
         Assert.Equal("关键词群聊", result.Data.Items[0].Content);   // 最新在前
         Assert.Equal("关键词私聊", result.Data.Items[1].Content);
+    }
+
+    [Fact]
+    public async Task 没有客户端消息ID的搜索结果也带可用MessageId()
+    {
+        var (a, b) = _ctx.GivenFriends();
+        // 机器人推送的消息 ClientMessageId 为 null（RobotTriggerHandlers 显式传 null），
+        // 而 MessageSearchResultDto 没有 Id 字段，前端拿不到任何兜底值
+        var message = _ctx.GivenPrivateMessage(a.Id, b.Id, "关键词内容");
+
+        var result = await Handler().Handle(
+            new SearchMessagesQuery { UserId = a.Id, Keyword = "关键词" }, default);
+
+        var item = Assert.Single(result.Data!.Items);
+
+        // 回归：此前这里返回 null，前端 `if (r.messageId)` 为假，
+        // 点击搜索结果既不定位也不高亮（静默无反应）
+        Assert.NotNull(item.MessageId);
+        Assert.Equal(
+            message.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            item.MessageId);
     }
 
     [Fact]

@@ -185,6 +185,10 @@ internal sealed class SearchMessagesHandler
             ? await _groups.GetManyAsync(groupIds, ct).ConfigureAwait(false)
             : new Dictionary<long, Group>();
 
+        // MessageId 一律用 PublicMessageId（客户端 ID 为空时回落到数据库 ID）：
+        // 机器人推送的消息没有客户端 ID，此前这里直接给 ClientMessageId，结果是 null，
+        // 而 MessageSearchResultDto 没有 Id 字段可供前端兜底 ——
+        // 点击这类搜索结果时前端的 `if (r.messageId)` 判断为假，定位与高亮静默失效。
         var merged = new List<(DateTime SentAt, MessageSearchResultDto Dto)>(
             privateMessages.Count + groupMessages.Count);
 
@@ -202,7 +206,7 @@ internal sealed class SearchMessagesHandler
                 SenderAvatar = users.GetValueOrDefault(m.SenderId)?.Avatar,
                 Content = m.Content,
                 MessageType = (int)m.Kind,
-                MessageId = m.ClientMessageId,
+                MessageId = m.PublicMessageId,
                 SentAt = m.SentAtUtc
             }));
         }
@@ -220,7 +224,7 @@ internal sealed class SearchMessagesHandler
                 SenderAvatar = users.GetValueOrDefault(m.SenderId)?.Avatar,
                 Content = m.Content,
                 MessageType = (int)m.Kind,
-                MessageId = m.ClientMessageId,
+                MessageId = m.PublicMessageId,
                 SentAt = m.SentAtUtc
             }));
         }

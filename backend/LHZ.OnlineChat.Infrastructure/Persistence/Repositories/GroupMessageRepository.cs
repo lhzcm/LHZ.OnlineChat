@@ -1,6 +1,7 @@
 using FreeSql;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Messaging;
+using Microsoft.Extensions.Logging;
 
 namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 
@@ -8,8 +9,13 @@ namespace LHZ.OnlineChat.Infrastructure.Persistence.Repositories;
 internal sealed class GroupMessageRepository : IGroupMessageRepository
 {
     private readonly DbSession _db;
+    private readonly ILogger _logger;
 
-    public GroupMessageRepository(DbSession db) => _db = db;
+    public GroupMessageRepository(DbSession db, ILogger<GroupMessageRepository> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     public Task<GroupMessage?> FindByIdAsync(long id, CancellationToken ct = default)
         => _db.Select<GroupMessage>().Where(m => m.Id == id).FirstAsync(ct)!;
@@ -249,7 +255,7 @@ internal sealed class GroupMessageRepository : IGroupMessageRepository
 
     public Task<IReadOnlyDictionary<DateTime, long>> CountByHourSinceAsync(
         int hours, CancellationToken ct = default)
-        => Task.FromResult(HourlyAggregate.Query(_db.Orm, "GroupMessage", hours));
+        => Task.FromResult(HourlyAggregate.Query(_db.Orm, "GroupMessage", hours, _logger));
 
     // ==================== 查询片段 ====================
 
