@@ -61,6 +61,13 @@ vim .env
 | `REDIS_PASSWORD` | Redis 密码(同时用于 `redis-server --requirepass` 和后端连接串):`openssl rand -base64 24` |
 | `JWT_SECRET` | JWT 签名密钥,至少 32 字符随机串:`openssl rand -base64 48` |
 | `ROBOT_TOKEN_KEY` | 机器人令牌加密密钥,随机串:`openssl rand -base64 32`;留空会退回内置开发密钥,机器人令牌可被伪造 |
+| `ADMIN_INITIAL_PASSWORD` | 初始超管口令,**务必改掉示例值**:该账号可重置任意用户密码、检索删除全部消息 |
+
+> **示例里的占位值不能直接上线**。后端在生产环境启动时会做配置自检(`AppSettings.EnsureProductionReady`),
+> 只要 `JWT_SECRET` / `ROBOT_TOKEN_KEY` / `ADMIN_INITIAL_PASSWORD` / `POSTGRES_PASSWORD` / `REDIS_PASSWORD`
+> 仍是 `.env.example` 里的占位串,进程会**拒绝启动并逐条列出**要改哪一项。
+> 这是有意为之:`ROBOT_TOKEN_KEY` 只做一次 SHA256 就当加密密钥用,占位值等于公开密钥,
+> 任何人都能据此伪造任意机器人令牌;`ADMIN_INITIAL_PASSWORD` 占位值则等于后台无鉴权。
 
 > 密码会被拼进连接串(`Host=...;Password=...`、`redis:6379,password=...`),所以**不要包含 `;` 和 `,`**;用 `openssl rand -base64` 生成即可满足。
 > `.env` 已被 `.gitignore` 忽略,切勿提交或外发。
@@ -84,10 +91,17 @@ SMTP_FROM=xxxxx@163.com
 ```ini
 VITE_WS_URL=          # 留空即可:前端自动使用当前站点同域 /ws(https 下自动 wss)
 CORS_ORIGINS=*        # 同域部署默认即可;若前端与 API 分离再收紧
+ROBOT_ALLOW_PRIVATE_WEBHOOK_TARGETS=false   # 机器人回调是否允许内网地址(默认否,见下)
 WEB_PORT=8080         # 前端入口端口(配 HTTPS 后由 80/443 反代)
 PG_PORT=55432         # 仅绑定 127.0.0.1,供本机 psql 管理
 REDIS_PORT=56379      # 仅绑定 127.0.0.1,供本机 redis-cli 管理
 ```
+
+> **关于 `ROBOT_ALLOW_PRIVATE_WEBHOOK_TARGETS`**:机器人 Webhook 地址由用户填写,而请求是
+> **服务端主动发出**的。默认关闭时,`http://127.0.0.1/`、`http://postgres:5432/`、
+> `http://169.254.169.254/`(云元数据)这类目标会在保存配置时被拒,调用前还会再校验一次
+> 域名解析结果。只有你的 Webhook 服务确实部署在内网(例如同一个 compose 网络里的自建服务),
+> 才需要打开它 —— 打开后任意注册用户都能借服务端访问内网,请谨慎评估。
 
 ---
 
@@ -239,6 +253,14 @@ docker compose up -d --build      # 重建变更的镜像并滚动重启
    该约束在清理重复数据前不生效(并发下仍可能产生重复行)。
    升级后请检查启动日志里的「唯一索引…创建失败」告警,按提示清理重复行后重启。
 
+4. **生产配置自检收紧了**:`ROBOT_TOKEN_KEY` / `ADMIN_INITIAL_PASSWORD`(以及连接串里的
+   `POSTGRES_PASSWORD` / `REDIS_PASSWORD`)若仍是 `.env.example` 的占位串,后端会**拒绝启动**
+   并逐条列出要改的项。老部署如果当年就是照抄示例值上线的,升级后第一次重启会失败 ——
+   这是有意的:那两个值等于「机器人令牌密钥公开」和「超管口令公开」。
+   处理方式:`vim .env` 把它们换成 `openssl rand -base64 32` 的输出(超管口令换成强口令),
+   然后 `docker compose up -d`;已经在后台改过密码的,顺手把 `ADMIN_INITIAL_PASSWORD` 也换掉即可
+   (Admin 表非空时该值不再被使用,但自检只认配置本身)。
+
 ### 数据备份
 
 数据全部在 Docker 卷中(`pgdata`/`redisdata`/`uploaddata`),备份:
@@ -270,6 +292,8 @@ docker compose up -d
 ## 六、上线检查清单
 
 - [ ] `.env` 已由 `.env.example` 创建,且 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`JWT_SECRET`、`ROBOT_TOKEN_KEY` 都是 `openssl rand` 生成的强随机值
+- [ ] `ADMIN_INITIAL_PASSWORD` 已改成强口令(留占位值会被后端配置自检拒绝启动);首次登录后台后按需再改一次
+- [ ] `ROBOT_ALLOW_PRIVATE_WEBHOOK_TARGETS` 保持 `false`(除非确实自建内网 Webhook)
 - [ ] `docker compose config --quiet` 能通过(缺变量会在这里就报错)
 - [ ] SMTP 已配置,注册验证码能真实收到邮件
 - [ ] 云安全组只放行 80/443(不放行 8080/55432/56379);`55432`/`56379` 仅绑定 127.0.0.1
@@ -291,5 +315,6 @@ docker compose up -d
 | 头像/文件上传报 `Permission denied` | 旧卷属主是 root,按「容器以非 root 运行」一节的命令 chown 一次 |
 | 前端容器 `unhealthy` 或服务起不来,日志说 `bind() to 0.0.0.0:80 failed` | nginx 配置里 `listen` 被改回了 80;非特权镜像只能用 8080 |
 | 收不到验证码 | 查 `docker compose logs backend` 的 `[MAIL]` 行;检查 SMTP 授权码/端口 |
+| backend 反复重启,日志是 `28P01: password authentication failed for user "postgres"` | `POSTGRES_PASSWORD` **只在数据卷为空时**生效(官方镜像的既定行为:目录里已有库就跳过初始化)。旧卷里存的还是上一次的口令,所以后端用 `.env` 的新口令连不上。先确认:`docker compose logs postgres \| Select-String "Skipping initialization"` 有这行即是此因。**保留数据**→把库里的口令改成 `.env` 的值:`docker compose exec postgres psql -U postgres -c "ALTER USER postgres WITH PASSWORD '新口令';"` 然后 `docker compose restart backend`;**数据可丢**→`docker compose down -v` 后 `docker compose up -d`(会删除全部数据、上传文件与 Redis 数据)。注意 `pg_isready` 不做认证,所以这种口令错配**不会**让 postgres 显示 unhealthy |
 | 换服务器后数据迁移 | 备份卷 → 新服务器恢复卷 → `docker compose up -d` |
 | 磁盘占用 | `docker system prune` 清理无用镜像/构建缓存(不影响数据卷) |

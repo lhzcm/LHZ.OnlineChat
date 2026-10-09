@@ -50,7 +50,11 @@ public sealed class AppSettings
                 Password = Smtp.Password,
                 From = Smtp.From
             },
-            Robot = new RobotOptions { TokenKey = Robot.TokenKey },
+            Robot = new RobotOptions
+            {
+                TokenKey = Robot.TokenKey,
+                AllowPrivateWebhookTargets = Robot.AllowPrivateWebhookTargets
+            },
             FileStorage = new FileStorageOptions { RootPath = uploadsRootPath },
             AdminBootstrap = new AdminBootstrapOptions
             {
@@ -72,6 +76,30 @@ public sealed class AppSettings
         "OnlineChat-SuperSecret-Key-AtLeast32Characters!",
         "change-me-to-a-random-secret-at-least-32-chars"
     };
+
+    /// <summary>
+    /// `.env.example` / appsettings 里写着的占位值。生产环境出现任何一个都等于「没有秘密」：
+    ///
+    ///   Robot:TokenKey      → SHA256(占位值) 可被任何人算出，据此伪造任意机器人令牌
+    ///   Admin:InitialPassword → 初始超管账号的公开口令，等于后台无鉴权
+    ///   连接串里的口令      → 只绑 127.0.0.1，风险低一档，但同样属于「照抄示例值上线」
+    ///
+    /// 与 JWT 的处理方式一致：**启动即失败**，而不是打一条可能被忽略的警告。
+    /// 只做子串匹配是够的 —— 随机生成的秘密不可能恰好包含这些片段。
+    /// </summary>
+    private static readonly string[] KnownPlaceholderValues =
+    {
+        "change-me-to-a-random-robot-token-key",
+        "change-me-admin-password",
+        "change-me-strong-password",
+        "change-me-strong-redis-password"
+    };
+
+    /// <summary>值里是否含有仓库示例占位串</summary>
+    private static bool ContainsPlaceholder(string? value)
+        => !string.IsNullOrEmpty(value)
+           && KnownPlaceholderValues.Any(
+               placeholder => value.Contains(placeholder, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>CORS 是否允许所有来源（生产环境会据此告警）</summary>
     public bool AllowsAnyOrigin
@@ -99,12 +127,38 @@ public sealed class AppSettings
         }
 
         if (string.IsNullOrWhiteSpace(ConnectionStrings.Default))
+        {
             problems.Add("ConnectionStrings:Default 未配置");
+        }
+        else if (ContainsPlaceholder(ConnectionStrings.Default))
+        {
+            problems.Add("ConnectionStrings:Default 里的 Postgres 口令仍是 .env.example 的占位值，必须换成随机串");
+        }
+
+        if (ContainsPlaceholder(Redis.Connection))
+        {
+            problems.Add("Redis:Connection 里的 Redis 口令仍是 .env.example 的占位值，必须换成随机串");
+        }
 
         if (string.IsNullOrWhiteSpace(Robot.TokenKey))
         {
             problems.Add(
                 "Robot:TokenKey 未配置（未配置会退回内置开发密钥，机器人令牌可被伪造）");
+        }
+        else if (ContainsPlaceholder(Robot.TokenKey))
+        {
+            problems.Add(
+                "Robot:TokenKey 仍是 .env.example 里的占位值，必须换成随机串（openssl rand -base64 32）"
+                + "—— 该值只做 SHA256 就当加密密钥用，任何人拿到源码都能算出它并伪造任意机器人令牌");
+        }
+
+        // 初始超管口令：只有在「打算创建初始超管」时才需要，但占位值一旦上线，
+        // 后台就有一个公开口令的最高权限账号，所以和密钥同等对待。
+        if (ContainsPlaceholder(Admin.InitialPassword))
+        {
+            problems.Add(
+                "Admin:InitialPassword 仍是 .env.example 里的占位值，必须换成强口令"
+                + "—— 初始超管可重置任意用户密码、检索并删除全部消息");
         }
 
         if (problems.Count == 0) return;
@@ -114,7 +168,8 @@ public sealed class AppSettings
             + Environment.NewLine
             + string.Join(Environment.NewLine, problems.Select(p => "  - " + p))
             + Environment.NewLine
-            + "请通过环境变量（Jwt__Secret / ConnectionStrings__Default / Robot__TokenKey）配置。");
+            + "请通过环境变量（Jwt__Secret / ConnectionStrings__Default / Redis__Connection / "
+            + "Robot__TokenKey / Admin__InitialPassword）配置。");
     }
 }
 
@@ -164,6 +219,13 @@ public sealed class RobotSection
 {
     /// <summary>机器人令牌加密密钥；生产务必通过 Robot__TokenKey 配置</summary>
     public string TokenKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 是否允许 Webhook 指向内网/本机地址。默认 false（SSRF 防护）：
+    /// 地址由用户填写、由服务端主动 POST，放行内网等于把云元数据与内网服务暴露出去。
+    /// 自建 Webhook 需要内网地址时用 Robot__AllowPrivateWebhookTargets=true 显式打开。
+    /// </summary>
+    public bool AllowPrivateWebhookTargets { get; set; }
 }
 
 public sealed class AdminSection

@@ -145,6 +145,8 @@ public static class InfrastructureServiceCollectionExtensions
             .ConfigureHttpClient(client => client.Timeout = BotHttpClientTimeout);
 
         services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();
+        // Webhook 出站目标策略（是否允许内网地址）：与 RobotOptions 同源，默认关闭
+        services.AddSingleton<IWebhookTargetPolicy, RobotWebhookTargetPolicy>();
         services.AddSingleton<IRobotConversationService, RobotConversationService>();
     }
 }

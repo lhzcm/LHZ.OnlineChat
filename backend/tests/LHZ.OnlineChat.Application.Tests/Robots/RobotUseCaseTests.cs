@@ -4,6 +4,7 @@ using LHZ.OnlineChat.Application.Robots.EventHandlers;
 using LHZ.OnlineChat.Application.Tests.TestDoubles;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Messaging;
+using LHZ.OnlineChat.Domain.Robots;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LHZ.OnlineChat.Application.Tests.Robots;
@@ -13,7 +14,7 @@ public class CreateRobotTests
     private readonly ApplicationTestContext _ctx = new();
 
     private CreateRobotHandler Handler()
-        => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher, _ctx.Events, _ctx.Clock);
+        => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Events, _ctx.Clock);
 
     [Fact]
     public async Task 创建成功_同时建账号建配置建好友()
@@ -118,12 +119,77 @@ public class CreateRobotTests
     }
 }
 
+/// <summary>
+/// Webhook 出站目标校验（SSRF 防护）。
+/// 这个地址由用户填写、由服务端主动 POST，默认必须挡住内网/本机目标。
+/// </summary>
+public class RobotWebhookTargetTests
+{
+    private readonly ApplicationTestContext _ctx = new();
+
+    private CreateRobotHandler CreateHandler()
+        => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher,
+            _ctx.WebhookTargets, _ctx.Events, _ctx.Clock);
+
+    private UpdateRobotHandler UpdateHandler()
+        => new(_ctx.Robots, _ctx.Users, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Clock);
+
+    [Theory]
+    [InlineData("http://169.254.169.254/latest/meta-data/")]
+    [InlineData("http://127.0.0.1:9000/hook")]
+    [InlineData("http://192.168.1.10:9000/hook")]
+    [InlineData("http://postgres:5432/hook")]
+    public async Task 创建时拒绝内网回调地址_且不留下半个机器人(string url)
+    {
+        var owner = _ctx.GivenUser();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => CreateHandler().Handle(
+            new CreateRobotCommand { OwnerId = owner.Id, Name = "助理", WebhookUrl = url }, default));
+
+        Assert.Equal(WebhookUrl.BlockedTargetMessage, ex.Message);
+        Assert.Empty(_ctx.Robots.All);
+        Assert.DoesNotContain(_ctx.Users.All, u => u.IsBot);
+    }
+
+    [Fact]
+    public async Task 更新时拒绝把地址改成内网_原值不变()
+    {
+        var owner = _ctx.GivenUser();
+        var (robot, _) = _ctx.GivenRobot(owner.Id);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => UpdateHandler().Handle(
+            new UpdateRobotCommand
+            {
+                OwnerId = owner.Id, RobotId = robot.Id, WebhookUrl = "http://127.0.0.1:9000/hook"
+            }, default));
+
+        Assert.Equal(WebhookUrl.BlockedTargetMessage, ex.Message);
+        Assert.Equal("https://example.com/hook", robot.WebhookUrlValue);
+    }
+
+    [Fact]
+    public async Task 配置显式开启后允许内网地址()
+    {
+        // 自建 Webhook 部署在内网是合理需求，由部署方用开关显式放行
+        _ctx.WebhookTargets.AllowPrivateTargets = true;
+        var owner = _ctx.GivenUser();
+
+        var result = await CreateHandler().Handle(new CreateRobotCommand
+        {
+            OwnerId = owner.Id, Name = "内网助理", WebhookUrl = "http://127.0.0.1:9000/hook"
+        }, default);
+
+        Assert.True(result.Success);
+        Assert.Equal("http://127.0.0.1:9000/hook", Assert.Single(_ctx.Robots.All).WebhookUrlValue);
+    }
+}
+
 public class UpdateDeleteRobotTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
     private UpdateRobotHandler UpdateHandler()
-        => new(_ctx.Robots, _ctx.Users, _ctx.Cipher, _ctx.Clock);
+        => new(_ctx.Robots, _ctx.Users, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Clock);
 
     [Fact]
     public async Task 改名时同步机器人账号昵称()
@@ -1034,7 +1100,7 @@ public class RobotNameValidationOrderTests
     private readonly ApplicationTestContext _ctx = new();
 
     private CreateRobotHandler Handler()
-        => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher, _ctx.Events, _ctx.Clock);
+        => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Events, _ctx.Clock);
 
     [Theory]
     [InlineData(null)]

@@ -10,7 +10,7 @@ public class SendPrivateMessageTests
     private readonly ApplicationTestContext _ctx = new();
 
     private SendPrivateMessageHandler Handler()
-        => new(_ctx.PrivateMessages, _ctx.Blacklist, _ctx.Users,
+        => new(_ctx.PrivateMessages, _ctx.Blacklist, _ctx.Friendships, _ctx.Users,
             _ctx.Cache, _ctx.Notifier, _ctx.Events, _ctx.Clock);
 
     private static SendPrivateMessageCommand Command(int senderId, int receiverId, string content = "你好")
@@ -75,11 +75,32 @@ public class SendPrivateMessageTests
     }
 
     [Fact]
+    public async Task 非好友发送被拒_不落库不广播()
+    {
+        var a = _ctx.GivenUser("张三", "a@test.local");
+        var b = _ctx.GivenUser("李四", "b@test.local");
+
+        var result = await Handler().Handle(Command(a.Id, b.Id), default);
+
+        Assert.False(result.Delivered);
+        Assert.Equal("你们还不是好友，无法发送私聊消息", result.RejectionReason);
+        Assert.Empty(_ctx.PrivateMessages.All);
+        Assert.Empty(_ctx.Notifier.OfKind(PushKind.PrivateMessage));
+        Assert.Empty(_ctx.Events.Dispatched);
+        // 只回执发送者：不能因为一次越权尝试去打扰接收者
+        Assert.Equal(a.Id, Assert.Single(_ctx.Notifier.OfKind(PushKind.MessageBlocked)).ToUserId);
+    }
+
+    [Fact]
     public async Task 客户端消息ID相同但发送者不同时各自落库()
     {
         var a = _ctx.GivenUser("张三", "a@test.local");
         var b = _ctx.GivenUser("李四", "b@test.local");
         var c = _ctx.GivenUser("王五", "c@test.local");
+        await _ctx.Friendships.AddAsync(
+            Domain.Friends.Friendship.EstablishDirectly(a.Id, b.Id, _ctx.Now));
+        await _ctx.Friendships.AddAsync(
+            Domain.Friends.Friendship.EstablishDirectly(c.Id, b.Id, _ctx.Now));
 
         // 唯一索引是 (SenderId, ClientMessageId):不同发送者用同一个客户端 ID 互不影响
         await Handler().Handle(Command(a.Id, b.Id), default);

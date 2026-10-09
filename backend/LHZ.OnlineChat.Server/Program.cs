@@ -226,6 +226,15 @@ if (!app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(appSettings.Sm
         + "注册 / 忘记密码 / 换绑邮箱需要管理员从日志取码；面向公众部署请配置 Smtp:Host");
 }
 
+// 放行内网 Webhook 目标是有意关闭的默认项：打开后任意用户都能让服务端去 POST
+// 内网地址（云元数据 169.254.169.254、内网管理端口等）。生产环境必须留下痕迹。
+if (!app.Environment.IsDevelopment() && appSettings.Robot.AllowPrivateWebhookTargets)
+{
+    app.Logger.LogWarning(
+        "Robot:AllowPrivateWebhookTargets 已开启：机器人回调允许指向内网/本机地址，"
+        + "注册用户可通过 Webhook 让服务端访问内网（SSRF）。仅在自建 Webhook 确需内网地址时开启");
+}
+
 // ==================== 数据库准备（建表 / 迁移 / 索引 / 初始超管） ====================
 using (var scope = app.Services.CreateScope())
 {

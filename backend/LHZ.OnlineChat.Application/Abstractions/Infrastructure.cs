@@ -162,6 +162,18 @@ public interface IWebhookDispatcher
     Task<WebhookDispatchResult> DispatchAsync(Robot robot, WebhookEvent payload, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Webhook 出站目标策略：是否允许回调内网/本机地址。
+///
+/// 默认关闭 —— 目标是任意注册用户填写的、由服务端主动 POST 的地址，
+/// 放行内网等于把云元数据与内网服务暴露给所有人（SSRF）。
+/// 自建部署确有需要时由宿主用配置显式打开，应用层与基础设施层共用这一个开关。
+/// </summary>
+public interface IWebhookTargetPolicy
+{
+    bool AllowPrivateTargets { get; }
+}
+
 /// <summary>Webhook 投递结果</summary>
 public sealed class WebhookDispatchResult
 {

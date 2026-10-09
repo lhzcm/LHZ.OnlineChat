@@ -42,6 +42,7 @@
 - **同步回复**:回调返回 `200 {"content":"回复文本"}` 即自动以机器人身份回复(10s 超时,失败重试 1 次,自动带回复引用)
 - **异步回复/主动推送**:`POST /api/robots/{令牌}/reply`;**Webhook 地址可留空**——纯推送模式:不接收消息回调,仅由第三方主动推送
 - **安全**:对外暴露的是**加密 ID 令牌**(AES-256-GCM,由 `Robot__TokenKey` 派生密钥,管理面板一键复制),不泄露内部自增 ID;**签名可选**——配置了 `WebhookSecret` 才强制验签,未配置则仅靠令牌鉴权
+- **出站目标限制**:Webhook 地址由用户填写、由服务端主动 POST,因此**默认禁止内网/本机地址**(`127.0.0.1`、`10.x`、`169.254.169.254`、`postgres` 这类容器内主机名等),保存配置时拒绝、调用前再按域名解析结果校验一次;自建服务确需回调内网时用 `ROBOT_ALLOW_PRIVATE_WEBHOOK_TARGETS=true` 显式打开
 - 管理面板:创建/编辑/删除/**测试触发**;机器人有独立账号 ID、禁止登录、🤖 标识,好友/会话/群成员列表可见
 
 **聊天**
@@ -248,11 +249,13 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 **详细手册见 [docs/DEPLOY.md](docs/DEPLOY.md)**(服务器准备 / HTTPS / 备份 / 运维)。核心两步:
 
 ```bash
-cp .env.example .env        # 必填:POSTGRES_PASSWORD、REDIS_PASSWORD、JWT_SECRET、ROBOT_TOKEN_KEY
+cp .env.example .env        # 必填:POSTGRES_PASSWORD、REDIS_PASSWORD、JWT_SECRET、ROBOT_TOKEN_KEY、ADMIN_INITIAL_PASSWORD
 docker compose up -d --build
 ```
 
 > `.env` 必须创建:compose 里的敏感变量都是硬性要求,缺失时会直接报错退出,不会退回内置默认口令。
+> 后端的**生产配置自检**还会拒绝启动仍是 `.env.example` 占位值的密钥/口令(JWT_SECRET、ROBOT_TOKEN_KEY、ADMIN_INITIAL_PASSWORD,以及连接串里的库口令),并逐条告诉你该改哪一项 ——
+> `ROBOT_TOKEN_KEY` 只做一次 SHA256 就当加密密钥用,占位值等于公开密钥、可伪造任意机器人令牌;`ADMIN_INITIAL_PASSWORD` 占位值则等于后台无鉴权。
 > PostgreSQL / Redis 的宿主端口只绑定 `127.0.0.1`(默认 55432 / 56379),仅供本机管理;对外只有 `WEB_PORT`(8080)。
 > 容器均以非 root 运行:backend 使用 `appuser`(UID 10001),两个前端使用 `nginx-unprivileged` 镜像(UID 101)。
 

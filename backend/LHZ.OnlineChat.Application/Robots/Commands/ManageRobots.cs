@@ -1,3 +1,4 @@
+using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Common;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Friends;
@@ -31,6 +32,7 @@ internal sealed class CreateRobotHandler : IRequestHandler<CreateRobotCommand, A
     private readonly IUserRepository _users;
     private readonly IFriendshipRepository _friendships;
     private readonly IRobotTokenCipher _cipher;
+    private readonly IWebhookTargetPolicy _webhookTargets;
     private readonly IDomainEventDispatcher _events;
     private readonly IClock _clock;
 
@@ -39,6 +41,7 @@ internal sealed class CreateRobotHandler : IRequestHandler<CreateRobotCommand, A
         IUserRepository users,
         IFriendshipRepository friendships,
         IRobotTokenCipher cipher,
+        IWebhookTargetPolicy webhookTargets,
         IDomainEventDispatcher events,
         IClock clock)
     {
@@ -46,12 +49,15 @@ internal sealed class CreateRobotHandler : IRequestHandler<CreateRobotCommand, A
         _users = users;
         _friendships = friendships;
         _cipher = cipher;
+        _webhookTargets = webhookTargets;
         _events = events;
         _clock = clock;
     }
 
     public async Task<ApiResponse<RobotInfo>> Handle(CreateRobotCommand command, CancellationToken ct)
     {
+        // SSRF 防护：这个地址由用户填写、由服务端主动 POST，默认不允许内网/本机目标
+        WebhookUrl.EnsureTargetAllowed(command.WebhookUrl, _webhookTargets.AllowPrivateTargets);
         var webhook = WebhookUrl.Parse(command.WebhookUrl);
 
         // 名称必须先按「机器人名称」规则校验：
@@ -111,14 +117,17 @@ internal sealed class UpdateRobotHandler : IRequestHandler<UpdateRobotCommand, A
     private readonly IRobotRepository _robots;
     private readonly IUserRepository _users;
     private readonly IRobotTokenCipher _cipher;
+    private readonly IWebhookTargetPolicy _webhookTargets;
     private readonly IClock _clock;
 
     public UpdateRobotHandler(
-        IRobotRepository robots, IUserRepository users, IRobotTokenCipher cipher, IClock clock)
+        IRobotRepository robots, IUserRepository users, IRobotTokenCipher cipher,
+        IWebhookTargetPolicy webhookTargets, IClock clock)
     {
         _robots = robots;
         _users = users;
         _cipher = cipher;
+        _webhookTargets = webhookTargets;
         _clock = clock;
     }
 
@@ -127,6 +136,12 @@ internal sealed class UpdateRobotHandler : IRequestHandler<UpdateRobotCommand, A
         var robot = await _robots.FindByIdAsync(command.RobotId, ct).ConfigureAwait(false)
                     ?? throw new EntityNotFoundException("机器人不存在");
         robot.EnsureOwnedBy(command.OwnerId);
+
+        // 改地址同样要过 SSRF 校验 —— 否则创建时填公网、之后改成内网就绕过了
+        if (command.WebhookUrl is not null)
+        {
+            WebhookUrl.EnsureTargetAllowed(command.WebhookUrl, _webhookTargets.AllowPrivateTargets);
+        }
 
         var nameChanged = robot.UpdateConfiguration(
             command.Name, command.Avatar, command.WebhookUrl,

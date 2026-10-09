@@ -185,6 +185,14 @@ public sealed class RobotOptions
 {
     /// <summary>令牌加密密钥；生产环境务必通过 Robot__TokenKey 配置</summary>
     public string TokenKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 是否允许 Webhook 指向内网/本机地址。默认关闭（SSRF 防护）。
+    ///
+    /// 打开后，任意用户都能让服务端去 POST 内网地址（云元数据 169.254.169.254、
+    /// 内网管理端口等），只应在「Webhook 确实是自建的、且部署方清楚这一点」时开启。
+    /// </summary>
+    public bool AllowPrivateWebhookTargets { get; set; }
 }
 
 /// <summary>Webhook HMAC-SHA256 签名</summary>

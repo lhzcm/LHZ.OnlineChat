@@ -64,7 +64,10 @@ services:
       Smtp__From: ${SMTP_FROM:-no-reply@onlinechat.local}
       # 必填:留空会静默退回内置开发密钥,等于机器人令牌可被伪造
       Robot__TokenKey: "${ROBOT_TOKEN_KEY:?ROBOT_TOKEN_KEY 未设置：请先 cp .env.example .env 并填写}"
+      # Webhook 出站目标是否允许内网地址(默认 false = SSRF 防护;自建内网 Webhook 才开)
+      Robot__AllowPrivateWebhookTargets: ${ROBOT_ALLOW_PRIVATE_WEBHOOK_TARGETS:-false}
       # 管理后台：Admin 表为空时创建初始超级管理员（密码至少 6 位）
+      # 注意:占位口令会被后端的生产配置自检拒绝启动(见 AppSettings.EnsureProductionReady)
       Admin__InitialUsername: ${ADMIN_INITIAL_USERNAME:-}
       Admin__InitialPassword: ${ADMIN_INITIAL_PASSWORD:-}
       ASPNETCORE_ENVIRONMENT: Production

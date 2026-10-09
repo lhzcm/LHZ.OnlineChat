@@ -513,6 +513,12 @@ internal sealed class FakeWebhookSigner : IWebhookSigner
     public bool Verify(string secret, string body, string? signature) => VerifyResult;
 }
 
+/// <summary>Webhook 出站目标策略替身：默认与生产一致（禁止内网地址）</summary>
+internal sealed class FakeWebhookTargetPolicy : IWebhookTargetPolicy
+{
+    public bool AllowPrivateTargets { get; set; }
+}
+
 /// <summary>机器人令牌加解密替身：可逆的明文编码，便于构造与断言</summary>
 internal sealed class FakeRobotTokenCipher : IRobotTokenCipher
 {

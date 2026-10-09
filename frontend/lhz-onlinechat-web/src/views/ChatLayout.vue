@@ -17,6 +17,12 @@
       <button class="startup-error-close" @click="startupError = ''" title="关闭">✕</button>
     </div>
 
+    <!-- WS 自动重连次数耗尽：必须给出口，否则界面看起来"一直在重连"却永远不会恢复 -->
+    <div class="startup-error" v-if="ws.reconnectExhausted">
+      <span class="startup-error-text">实时连接已断开（自动重连失败），消息可能无法即时收发</span>
+      <button class="startup-error-btn" @click="reconnectNow">重新连接</button>
+    </div>
+
     <!-- 轻提示 Toast -->
     <transition name="toast-fade">
       <div class="app-toast" v-if="toastMsg">{{ toastMsg }}</div>
@@ -67,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
@@ -155,6 +161,24 @@ const currentChat = ref<{ type: ChatType; id: number; name: string } | null>(nul
 // 初始化数据加载失败提示（非致命：聊天本身仍可用）
 const startupError = ref('')
 
+// WS 回调的取消订阅函数：SPA 内部跳转不会刷新页面，卸载时必须调用（详见 onMounted 的说明）
+let offMessage: (() => void) | null = null
+let offStatusChange: (() => void) | null = null
+
+/** 桌面通知点击 → 打开对应会话（具名函数：注册与移除必须是同一个引用） */
+function handleOpenSession(e: Event) {
+  const detail = (e as CustomEvent<{ type: ChatType; id: number }>).detail
+  if (!detail) return
+  if (detail.type === 'private') {
+    const f = friendStore.friends.find(x => x.userId === detail.id)
+    selectPrivateChat({ userId: detail.id, nickname: f ? (f.remark || f.nickname) : String(detail.id) })
+  } else {
+    const g = groupStore.groups.find(x => x.id === detail.id)
+    selectGroupChat({ id: detail.id, name: g?.name || String(detail.id) })
+  }
+  mobileChatOpen.value = true
+}
+
 /**
  * 后台静默刷新：这类刷新由 WS 事件触发、调用方不等待结果，
  * 不 catch 会产生未处理的 Promise 拒绝（控制台报错且可能触发全局错误上报）。
@@ -200,25 +224,18 @@ onMounted(async () => {
   await auth.fetchUser()
 
   // 桌面通知点击：跳转到对应会话
-  window.addEventListener('oc:open-session', ((e: Event) => {
-    const detail = (e as CustomEvent<{ type: ChatType; id: number }>).detail
-    if (!detail) return
-    if (detail.type === 'private') {
-      const f = friendStore.friends.find(x => x.userId === detail.id)
-      selectPrivateChat({ userId: detail.id, nickname: f ? (f.remark || f.nickname) : String(detail.id) })
-    } else {
-      const g = groupStore.groups.find(x => x.id === detail.id)
-      selectGroupChat({ id: detail.id, name: g?.name || String(detail.id) })
-    }
-    mobileChatOpen.value = true
-  }) as EventListener)
+  window.addEventListener('oc:open-session', handleOpenSession)
 
-  // 先注册回调，再建立连接，避免漏掉连接期间的消息
-  ws.onMessage((msg) => {
+  // 先注册回调，再建立连接，避免漏掉连接期间的消息。
+  // 取消订阅函数必须留着并在卸载时调用：这个页面是 SPA 内部跳转（登出→登录不会刷新页面），
+  // 不注销的话每次重新登录都会往回调数组里再塞一份闭包 ——
+  // 未读角标、提示音、桌面通知、已读回执各被处理 N 次，
+  // 而且旧闭包属于上一个账号，会把上一个账号的消息写进当前 store（串号）。
+  offMessage = ws.onMessage((msg) => {
     handleWsMessage(msg)
   })
 
-  ws.onStatusChange((online, userId) => {
+  offStatusChange = ws.onStatusChange((online, userId) => {
     friendStore.updateOnlineStatus(userId, online)
   })
 
@@ -235,6 +252,20 @@ onMounted(async () => {
     }
   } catch { /* 离线消息拉取失败不阻塞界面 */ }
 })
+
+onUnmounted(() => {
+  offMessage?.()
+  offStatusChange?.()
+  window.removeEventListener('oc:open-session', handleOpenSession)
+  offMessage = null
+  offStatusChange = null
+})
+
+/** 自动重连失败后的手动重连（界面上的「重新连接」按钮） */
+function reconnectNow() {
+  if (ws.connected) return
+  ws.connect(auth.token)
+}
 
 async function openSearchResult(r: MessageSearchResult) {
   if (r.type === 'private') {

@@ -60,6 +60,80 @@ public class WebhookUrlTests
     }
 }
 
+/// <summary>
+/// 出站目标校验（SSRF 防护）。
+///
+/// Parse 只做语法校验、故意放行内网地址（历史数据与本地调试都要能解析）；
+/// 真正拦住「服务端替用户访问内网」的是 EnsureTargetAllowed ——
+/// 写入配置时与发起调用前各调一次。
+/// </summary>
+public class WebhookTargetPolicyTests
+{
+    [Theory]
+    [InlineData("http://127.0.0.1:8080/hook")]                  // 环回
+    [InlineData("http://127.9.9.9/hook")]                       // 整个 127/8 都是环回
+    [InlineData("http://10.0.0.5/hook")]                        // 私网
+    [InlineData("http://172.16.3.4/hook")]                      // 私网
+    [InlineData("http://192.168.1.10/hook")]                    // 私网
+    [InlineData("http://169.254.169.254/latest/meta-data/")]    // 链路本地（云元数据）
+    [InlineData("http://100.64.0.1/hook")]                      // CGNAT
+    [InlineData("http://0.0.0.0/hook")]
+    [InlineData("http://224.0.0.1/hook")]                       // 组播
+    [InlineData("http://[::1]/hook")]                           // IPv6 环回
+    [InlineData("http://[fd00::1]/hook")]                       // IPv6 ULA
+    [InlineData("http://[fe80::1]/hook")]                       // IPv6 链路本地
+    [InlineData("http://[::ffff:127.0.0.1]/hook")]              // IPv4 映射地址
+    [InlineData("http://localhost/hook")]
+    [InlineData("http://postgres:5432/hook")]                   // 容器内单标签主机名
+    [InlineData("http://bot.internal/hook")]
+    [InlineData("http://db.local/hook")]
+    public void 默认拒绝内网与本机目标(string url)
+    {
+        var ex = Assert.Throws<DomainException>(
+            () => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: false));
+
+        Assert.Equal(WebhookUrl.BlockedTargetMessage, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/hook")]
+    [InlineData("http://93.184.216.34/hook")]                   // 公网 IP 字面量
+    [InlineData("https://hooks.slack.com/services/T/B/X")]
+    [InlineData("")]                                            // 纯推送模式
+    [InlineData(null)]
+    public void 允许公网目标与纯推送模式(string? url)
+        => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: false);
+
+    [Theory]
+    [InlineData("http://127.0.0.1:8080/hook")]
+    [InlineData("http://postgres:5432/hook")]
+    public void 显式开启后放行内网目标(string url)
+        => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: true);
+
+    [Theory]
+    [InlineData("ftp://example.com/hook")]
+    [InlineData("example.com/hook")]
+    [InlineData("javascript:alert(1)")]
+    public void 非http协议仍被拒(string url)
+    {
+        var ex = Assert.Throws<DomainException>(
+            () => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: false));
+
+        Assert.Equal("Webhook 地址必须是 http/https 开头", ex.Message);
+    }
+
+    [Fact]
+    public void 超长地址被拒()
+    {
+        var tooLong = "https://example.com/" + new string('a', WebhookUrl.MaxLength);
+
+        var ex = Assert.Throws<DomainException>(
+            () => WebhookUrl.EnsureTargetAllowed(tooLong, allowPrivateTargets: false));
+
+        Assert.Equal("Webhook 地址过长", ex.Message);
+    }
+}
+
 public class RobotCreationTests
 {
     [Fact]

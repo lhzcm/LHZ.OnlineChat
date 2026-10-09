@@ -8,12 +8,23 @@ const PONG_TIMEOUT_MS = 10000
 
 export const useWebSocketStore = defineStore('websocket', () => {
   const connected = ref(false)
+  /** 重连次数已耗尽：连接不再自动恢复，界面要给出明确的「重新连接」入口 */
+  const reconnectExhausted = ref(false)
   let ws: WebSocket | null = null
   let reconnectTimer: number | null = null
   let heartbeatTimer: number | null = null
   let pongTimer: number | null = null
   let retryCount = 0
   const maxRetries = 10
+  /**
+   * 主动断开（登出 / 被踢下线）标记。
+   *
+   * 必须显式区分「主动断开」与「链路自己断了」：close() 一样会触发 onclose，
+   * 而被动的 onclose 会安排重连。没有这个标记时，登出后 1 秒就会**拿着旧 token 重连**，
+   * 而服务端会话（7 天有效）并不会因为前端清掉本地令牌而失效 ——
+   * 结果是换了账号浏览器里还挂着一个属于上一个账号的活连接。
+   */
+  let manualClose = false
 
   const onMessageCallbacks: ((msg: WsMessage) => void)[] = []
   const onStatusCallbacks: ((online: boolean, userId: number) => void)[] = []
@@ -22,6 +33,9 @@ export const useWebSocketStore = defineStore('websocket', () => {
     if (!token) return
     // CONNECTING 也要挡:否则重复调用会开出第二条连接,前一条变成无人引用的僵尸
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+
+    manualClose = false
+    reconnectExhausted.value = false
 
     // 生产:VITE_WS_URL 未配置时自动使用当前站点同域的 /ws 路径(经 nginx 反代);
     // 开发:通过 .env.development 配置 VITE_WS_URL=ws://localhost:5000
@@ -35,6 +49,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
       console.log('[WS] 已连接')
       connected.value = true
       retryCount = 0
+      reconnectExhausted.value = false
       startHeartbeat()
     }
 
@@ -66,6 +81,8 @@ export const useWebSocketStore = defineStore('websocket', () => {
       console.log('[WS] 已断开')
       connected.value = false
       stopHeartbeat()
+      // 主动断开不再重连（登出/被踢场景）
+      if (manualClose) return
       scheduleReconnect(token)
     }
 
@@ -75,6 +92,9 @@ export const useWebSocketStore = defineStore('websocket', () => {
   }
 
   function disconnect() {
+    manualClose = true
+    retryCount = 0
+    reconnectExhausted.value = false
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
@@ -149,6 +169,8 @@ export const useWebSocketStore = defineStore('websocket', () => {
   function scheduleReconnect(token: string) {
     if (retryCount >= maxRetries) {
       console.log('[WS] 重连次数已达上限')
+      // 不能只写日志：用户看到的是一个"看起来还在重连、实际永远不会好"的界面
+      reconnectExhausted.value = true
       return
     }
     const delay = Math.min(1000 * Math.pow(2, retryCount), 30000)
@@ -174,5 +196,5 @@ export const useWebSocketStore = defineStore('websocket', () => {
     }
   }
 
-  return { connected, connect, disconnect, sendMessage, onMessage, onStatusChange }
+  return { connected, reconnectExhausted, connect, disconnect, sendMessage, onMessage, onStatusChange }
 })

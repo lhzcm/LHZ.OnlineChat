@@ -2,6 +2,7 @@ using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Common;
 using LHZ.OnlineChat.Domain.Blacklists;
 using LHZ.OnlineChat.Domain.Common;
+using LHZ.OnlineChat.Domain.Friends;
 using LHZ.OnlineChat.Domain.Messaging;
 using LHZ.OnlineChat.Domain.Users;
 using MediatR;
@@ -56,6 +57,7 @@ internal sealed class SendPrivateMessageHandler : IRequestHandler<SendPrivateMes
 {
     private readonly IPrivateMessageRepository _messages;
     private readonly IBlacklistRepository _blacklist;
+    private readonly IFriendshipRepository _friendships;
     private readonly IUserRepository _users;
     private readonly IRecentMessageCache _cache;
     private readonly IRealtimeNotifier _notifier;
@@ -65,6 +67,7 @@ internal sealed class SendPrivateMessageHandler : IRequestHandler<SendPrivateMes
     public SendPrivateMessageHandler(
         IPrivateMessageRepository messages,
         IBlacklistRepository blacklist,
+        IFriendshipRepository friendships,
         IUserRepository users,
         IRecentMessageCache cache,
         IRealtimeNotifier notifier,
@@ -73,6 +76,7 @@ internal sealed class SendPrivateMessageHandler : IRequestHandler<SendPrivateMes
     {
         _messages = messages;
         _blacklist = blacklist;
+        _friendships = friendships;
         _users = users;
         _cache = cache;
         _notifier = notifier;
@@ -101,6 +105,23 @@ internal sealed class SendPrivateMessageHandler : IRequestHandler<SendPrivateMes
         if (blocked)
         {
             const string reason = "对方已将你拉黑，消息未发送";
+            await _notifier
+                .NotifyMessageBlockedAsync(command.SenderId, command.ReceiverId, reason, command.ClientMessageId, ct)
+                .ConfigureAwait(false);
+            return SendMessageResult.Rejected(reason);
+        }
+
+        // 好友校验：私聊只允许发生在已接受的好友之间（机器人会话在创建时就是好友）。
+        //
+        // 缺了这道校验，任意登录用户只要知道账号 ID，就能把消息塞进任意人的会话列表
+        // 并触发对方的桌面通知；而对方因为历史接口要求好友关系，点进去还读不到 ——
+        // 等于一条单向的骚扰/钓鱼通道。WS 路径不回错误帧，与拉黑一致地只回执发送者。
+        var areFriends = await _friendships
+            .AreFriendsAsync(command.SenderId, command.ReceiverId, ct)
+            .ConfigureAwait(false);
+        if (!areFriends)
+        {
+            const string reason = "你们还不是好友，无法发送私聊消息";
             await _notifier
                 .NotifyMessageBlockedAsync(command.SenderId, command.ReceiverId, reason, command.ClientMessageId, ct)
                 .ConfigureAwait(false);

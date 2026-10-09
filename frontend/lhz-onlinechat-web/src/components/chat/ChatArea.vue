@@ -438,7 +438,9 @@ function send() {
   const text = inputText.value.trim()
   if (!text) return
   // 断线时不再直接丢弃消息：照常乐观上屏，由 sendMessage 的返回值决定是否标记"发送失败"（可重试）
-  sendHint.value = ws.connected ? '' : '连接已断开，正在重连，请稍候…'
+  sendHint.value = ws.connected
+    ? ''
+    : (ws.reconnectExhausted ? '实时连接已断开，请点顶部「重新连接」' : '连接已断开，正在重连，请稍候…')
   const key = chatStore.sessionKey(props.chat.type, props.chat.id)
   const msg: ChatMessage = {
     type: props.chat.type === 'private' ? 'private_message' : 'group_message',

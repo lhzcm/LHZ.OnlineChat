@@ -63,6 +63,9 @@ internal sealed class ApplicationTestContext
 
     internal FakeWebhookSigner Signer { get; } = new();
 
+    /// <summary>Webhook 出站目标策略：默认禁止内网地址（与生产默认一致）</summary>
+    internal FakeWebhookTargetPolicy WebhookTargets { get; } = new();
+
     internal FakeRobotTokenCipher Cipher { get; } = new();
 
     internal FakeMuteMessageFormatter MuteFormatter { get; } = new();
