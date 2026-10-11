@@ -20,8 +20,8 @@ public class SendPrivateMessageTests
             Kind = MessageKind.Text, ClientMessageId = "cmid-1"
         };
 
-    [Fact]
-    public async Task 发送成功并落库()
+    [Fact(DisplayName = "发送成功并落库")]
+    public async Task Send_ToFriend_PersistsMessage()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -35,8 +35,8 @@ public class SendPrivateMessageTests
         Assert.False(message.IsRead);
     }
 
-    [Fact]
-    public async Task 保留客户端消息ID用于乐观发送去重()
+    [Fact(DisplayName = "保留客户端消息ID用于乐观发送去重")]
+    public async Task Send_PreservesClientMessageId_ForOptimisticDeduplication()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -45,8 +45,8 @@ public class SendPrivateMessageTests
         Assert.Equal("cmid-1", Assert.Single(_ctx.PrivateMessages.All).ClientMessageId);
     }
 
-    [Fact]
-    public async Task 未带客户端ID时对外标识回落数据库ID()
+    [Fact(DisplayName = "未带客户端ID时对外标识回落数据库ID")]
+    public async Task Send_WithoutClientMessageId_FallsBackToDatabaseId()
     {
         var (a, b) = _ctx.GivenFriends();
         var command = Command(a.Id, b.Id);
@@ -59,8 +59,8 @@ public class SendPrivateMessageTests
             message.PublicMessageId);
     }
 
-    [Fact]
-    public async Task 同一客户端消息ID重复提交只落一行_幂等()
+    [Fact(DisplayName = "同一客户端消息ID重复提交只落一行_幂等")]
+    public async Task SendPrivate_DuplicateClientMessageId_InsertsOnce()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -74,8 +74,8 @@ public class SendPrivateMessageTests
         Assert.Single(_ctx.PrivateMessages.All);
     }
 
-    [Fact]
-    public async Task 非好友发送被拒_不落库不广播()
+    [Fact(DisplayName = "非好友发送被拒_不落库不广播")]
+    public async Task Send_ToNonFriend_IsRejectedWithoutPersisting()
     {
         var a = _ctx.GivenUser("张三", "a@test.local");
         var b = _ctx.GivenUser("李四", "b@test.local");
@@ -91,8 +91,8 @@ public class SendPrivateMessageTests
         Assert.Equal(a.Id, Assert.Single(_ctx.Notifier.OfKind(PushKind.MessageBlocked)).ToUserId);
     }
 
-    [Fact]
-    public async Task 客户端消息ID相同但发送者不同时各自落库()
+    [Fact(DisplayName = "客户端消息ID相同但发送者不同时各自落库")]
+    public async Task Send_SameClientMessageIdFromDifferentSenders_PersistsSeparately()
     {
         var a = _ctx.GivenUser("张三", "a@test.local");
         var b = _ctx.GivenUser("李四", "b@test.local");
@@ -109,8 +109,8 @@ public class SendPrivateMessageTests
         Assert.Equal(2, _ctx.PrivateMessages.All.Count);
     }
 
-    [Fact]
-    public async Task 推给接收方并回显给发送方_多端同步()
+    [Fact(DisplayName = "推给接收方并回显给发送方_多端同步")]
+    public async Task Send_PushesToReceiverAndEchoesToSender()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -123,8 +123,8 @@ public class SendPrivateMessageTests
         Assert.Equal(a.Id, echo.ToUserId);
     }
 
-    [Fact]
-    public async Task 推送载荷携带发送者昵称与头像()
+    [Fact(DisplayName = "推送载荷携带发送者昵称与头像")]
+    public async Task Send_PushPayloadCarriesSenderNameAndAvatar()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -135,8 +135,8 @@ public class SendPrivateMessageTests
         Assert.Equal(ChatSessionType.Private, push.Message.SessionType);
     }
 
-    [Fact]
-    public async Task 写入最近消息缓存_键按双向归一化()
+    [Fact(DisplayName = "写入最近消息缓存_键按双向归一化")]
+    public async Task Send_WritesRecentMessageCache_WithNormalizedBidirectionalKey()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -152,8 +152,8 @@ public class SendPrivateMessageTests
         Assert.Single(fromB);
     }
 
-    [Fact]
-    public async Task 发出消息已发送事件_供机器人等订阅方使用()
+    [Fact(DisplayName = "发出消息已发送事件_供机器人等订阅方使用")]
+    public async Task Send_PublishesMessageSentEvent()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -165,8 +165,8 @@ public class SendPrivateMessageTests
         Assert.NotEqual(0, e.MessageId);
     }
 
-    [Fact]
-    public async Task 被对方拉黑时拒绝发送_不落库不广播()
+    [Fact(DisplayName = "被对方拉黑时拒绝发送_不落库不广播")]
+    public async Task Send_BlockedByReceiver_IsRejectedWithoutPersisting()
     {
         var (a, b) = _ctx.GivenFriends();
         await _ctx.Blacklist.AddAsync(BlacklistEntry.Create(b.Id, a.Id, _ctx.Now));
@@ -180,8 +180,8 @@ public class SendPrivateMessageTests
         Assert.Empty(_ctx.Events.Dispatched);
     }
 
-    [Fact]
-    public async Task 被拉黑时只回执发送者()
+    [Fact(DisplayName = "被拉黑时只回执发送者")]
+    public async Task Send_WhenBlocked_NotifiesSenderOnly()
     {
         var (a, b) = _ctx.GivenFriends();
         await _ctx.Blacklist.AddAsync(BlacklistEntry.Create(b.Id, a.Id, _ctx.Now));
@@ -192,8 +192,8 @@ public class SendPrivateMessageTests
         Assert.Equal(a.Id, push.ToUserId);
     }
 
-    [Fact]
-    public async Task 自己拉黑对方时仍可发送()
+    [Fact(DisplayName = "自己拉黑对方时仍可发送")]
+    public async Task Send_WhenSenderBlockedReceiver_StillDelivers()
     {
         // 拉黑是单向拦截：我拉黑你，是你不能发给我，我仍可发给你
         var (a, b) = _ctx.GivenFriends();
@@ -204,8 +204,8 @@ public class SendPrivateMessageTests
         Assert.True(result.Delivered);
     }
 
-    [Fact]
-    public async Task 带引用回复时拆列存储()
+    [Fact(DisplayName = "带引用回复时拆列存储")]
+    public async Task Send_WithReplyQuote_StoresQuoteColumns()
     {
         var (a, b) = _ctx.GivenFriends();
         var command = Command(a.Id, b.Id);
@@ -221,11 +221,11 @@ public class SendPrivateMessageTests
         Assert.Equal("李四", message.ReplySenderName);
     }
 
-    [Theory]
+    [Theory(DisplayName = "支持全部消息类型")]
     [InlineData(MessageKind.Text)]
     [InlineData(MessageKind.Image)]
     [InlineData(MessageKind.File)]
-    public async Task 支持全部消息类型(MessageKind kind)
+    public async Task Send_AllMessageKinds_AreSupported(MessageKind kind)
     {
         var (a, b) = _ctx.GivenFriends();
         var command = Command(a.Id, b.Id);
@@ -245,8 +245,8 @@ public class SendGroupMessageTests
         => new(_ctx.GroupMessages, _ctx.GroupMembers, _ctx.Users, _ctx.Cache,
             _ctx.Notifier, _ctx.Events, _ctx.MuteFormatter, _ctx.Clock);
 
-    [Fact]
-    public async Task 群成员发送成功并广播给所有成员()
+    [Fact(DisplayName = "群成员发送成功并广播给所有成员")]
+    public async Task SendGroup_MemberSends_BroadcastsToAllMembers()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -264,8 +264,8 @@ public class SendGroupMessageTests
         Assert.Contains(pushes, p => p.ToUserId == member.Id);
     }
 
-    [Fact]
-    public async Task 非群成员静默丢弃_不落库()
+    [Fact(DisplayName = "非群成员静默丢弃_不落库")]
+    public async Task SendGroup_NonMember_IsSilentlyDiscarded()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -280,8 +280,8 @@ public class SendGroupMessageTests
         Assert.Empty(_ctx.GroupMessages.All);
     }
 
-    [Fact]
-    public async Task 同一客户端消息ID重复提交只落一行_幂等()
+    [Fact(DisplayName = "同一客户端消息ID重复提交只落一行_幂等")]
+    public async Task SendGroup_DuplicateClientMessageId_InsertsOnce()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -302,8 +302,8 @@ public class SendGroupMessageTests
         Assert.Single(_ctx.GroupMessages.All);
     }
 
-    [Fact]
-    public async Task 提及列表被持久化并可解析回读()
+    [Fact(DisplayName = "提及列表被持久化并可解析回读")]
+    public async Task SendGroup_MentionList_IsPersistedAndReadBack()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -321,8 +321,8 @@ public class SendGroupMessageTests
         Assert.Equal(new[] { member.Id }, message.MentionedUsers.UserIds);
     }
 
-    [Fact]
-    public async Task 提及列表去重与剔除非法ID()
+    [Fact(DisplayName = "提及列表去重与剔除非法ID")]
+    public async Task SendGroup_MentionList_DeduplicatesAndDropsInvalidIds()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -338,8 +338,8 @@ public class SendGroupMessageTests
         Assert.Equal(new[] { 10002 }, Assert.Single(_ctx.GroupMessages.All).MentionedUsers.UserIds);
     }
 
-    [Fact]
-    public async Task 禁言期间发送被拒并收到带截止时间的提示()
+    [Fact(DisplayName = "禁言期间发送被拒并收到带截止时间的提示")]
+    public async Task SendGroup_WhileMuted_IsRejectedWithMuteDeadline()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -363,8 +363,8 @@ public class SendGroupMessageTests
         Assert.Equal(member.Id, push.ToUserId);
     }
 
-    [Fact]
-    public async Task 禁言到期后可正常发送()
+    [Fact(DisplayName = "禁言到期后可正常发送")]
+    public async Task SendGroup_AfterMuteExpires_DeliversNormally()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -383,8 +383,8 @@ public class SendGroupMessageTests
         Assert.True(result.Delivered);
     }
 
-    [Fact]
-    public async Task 群主不受禁言影响()
+    [Fact(DisplayName = "群主不受禁言影响")]
+    public async Task SendGroup_OwnerIsImmuneToMute()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -397,8 +397,8 @@ public class SendGroupMessageTests
         Assert.True(result.Delivered);
     }
 
-    [Fact]
-    public async Task 写入群缓存并发出事件()
+    [Fact(DisplayName = "写入群缓存并发出事件")]
+    public async Task SendGroup_WritesGroupCacheAndPublishesEvent()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -424,8 +424,8 @@ public class RecallMessageTests
     private RecallMessageHandler Handler()
         => new(_ctx.PrivateMessages, _ctx.GroupMessages, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 本人在时间窗内可撤回私聊消息()
+    [Fact(DisplayName = "本人在时间窗内可撤回私聊消息")]
+    public async Task Recall_BySenderWithinWindow_Succeeds()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, sentAt: _ctx.Now.AddMinutes(-1));
@@ -439,8 +439,8 @@ public class RecallMessageTests
         Assert.True((await _ctx.PrivateMessages.FindByIdAsync(message.Id))!.IsDeleted);
     }
 
-    [Fact]
-    public async Task 撤回后发出事件并携带会话上下文()
+    [Fact(DisplayName = "撤回后发出事件并携带会话上下文")]
+    public async Task Recall_PublishesEventCarryingSessionContext()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, sentAt: _ctx.Now.AddMinutes(-1));
@@ -458,8 +458,8 @@ public class RecallMessageTests
         Assert.False(e.ByAdmin);
     }
 
-    [Fact]
-    public async Task 超过时间窗无法撤回()
+    [Fact(DisplayName = "超过时间窗无法撤回")]
+    public async Task Recall_OutsideTimeWindow_IsRejected()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, sentAt: _ctx.Now.AddMinutes(-3));
@@ -473,8 +473,8 @@ public class RecallMessageTests
         Assert.False((await _ctx.PrivateMessages.FindByIdAsync(message.Id))!.IsDeleted);
     }
 
-    [Fact]
-    public async Task 非本人无法撤回()
+    [Fact(DisplayName = "非本人无法撤回")]
+    public async Task Recall_ByNonSender_IsRejected()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, sentAt: _ctx.Now.AddMinutes(-1));
@@ -488,8 +488,8 @@ public class RecallMessageTests
         Assert.False((await _ctx.PrivateMessages.FindByIdAsync(message.Id))!.IsDeleted);
     }
 
-    [Fact]
-    public async Task 群消息撤回_先按私聊找不到再按群找()
+    [Fact(DisplayName = "群消息撤回_先按私聊找不到再按群找")]
+    public async Task Recall_GroupMessage_LooksUpPrivatelyFirstThenByGroup()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -506,8 +506,8 @@ public class RecallMessageTests
         Assert.Equal(group.Id, e.GroupId);
     }
 
-    [Fact]
-    public async Task 消息标识不存在时返回false()
+    [Fact(DisplayName = "消息标识不存在时返回false")]
+    public async Task Recall_UnknownMessageId_ReturnsFalse()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -520,10 +520,10 @@ public class RecallMessageTests
         Assert.Empty(_ctx.Events.Dispatched);
     }
 
-    [Theory]
+    [Theory(DisplayName = "消息标识为空时直接返回false")]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task 消息标识为空时直接返回false(string messageId)
+    public async Task Recall_EmptyMessageId_ReturnsFalseImmediately(string messageId)
     {
         var recalled = await Handler().Handle(new RecallMessageCommand
         {
@@ -533,8 +533,8 @@ public class RecallMessageTests
         Assert.False(recalled);
     }
 
-    [Fact]
-    public async Task 撤回订阅方清缓存并广播给双方()
+    [Fact(DisplayName = "撤回订阅方清缓存并广播给双方")]
+    public async Task Recall_SubscriberClearsCacheAndBroadcastsToBoth()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, sentAt: _ctx.Now.AddMinutes(-1));
@@ -553,8 +553,8 @@ public class RecallMessageTests
         Assert.Contains(pushes, p => p.ToUserId == b.Id);
     }
 
-    [Fact]
-    public async Task 群消息撤回广播给全部成员()
+    [Fact(DisplayName = "群消息撤回广播给全部成员")]
+    public async Task Recall_GroupMessage_BroadcastsToAllMembers()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -576,8 +576,8 @@ public class PresenceAndBacklogTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 上线广播给全部好友()
+    [Fact(DisplayName = "上线广播给全部好友")]
+    public async Task Presence_Online_BroadcastsToAllFriends()
     {
         var me = _ctx.GivenUser("我", "me@test.local");
         var f1 = _ctx.GivenUser("甲", "a@test.local");
@@ -595,8 +595,8 @@ public class PresenceAndBacklogTests
         Assert.All(pushes, p => Assert.Equal("online", p.Content));
     }
 
-    [Fact]
-    public async Task 下线广播内容为offline()
+    [Fact(DisplayName = "下线广播内容为offline")]
+    public async Task Presence_Offline_BroadcastsOfflineContent()
     {
         var (me, _) = _ctx.GivenFriends();
 
@@ -606,8 +606,8 @@ public class PresenceAndBacklogTests
         Assert.Equal("offline", Assert.Single(_ctx.Notifier.OfKind(PushKind.Presence)).Content);
     }
 
-    [Fact]
-    public async Task 无好友时不推送()
+    [Fact(DisplayName = "无好友时不推送")]
+    public async Task Presence_WithoutFriends_PushesNothing()
     {
         var me = _ctx.GivenUser();
 
@@ -617,8 +617,8 @@ public class PresenceAndBacklogTests
         Assert.Empty(_ctx.Notifier.Pushes);
     }
 
-    [Fact]
-    public async Task 补发游标之后的群消息()
+    [Fact(DisplayName = "补发游标之后的群消息")]
+    public async Task Backlog_ResendsGroupMessagesAfterReadCursor()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -642,8 +642,8 @@ public class PresenceAndBacklogTests
         Assert.DoesNotContain(pushes, p => p.Content == "已读消息");
     }
 
-    [Fact]
-    public async Task 已撤回的消息不补发()
+    [Fact(DisplayName = "已撤回的消息不补发")]
+    public async Task Backlog_SkipsRecalledMessages()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -659,8 +659,8 @@ public class PresenceAndBacklogTests
         Assert.Empty(_ctx.Notifier.OfKind(PushKind.GroupBacklog));
     }
 
-    [Fact]
-    public async Task 每群补发上限为100条_防游标异常刷屏()
+    [Fact(DisplayName = "每群补发上限为100条_防游标异常刷屏")]
+    public async Task Backlog_PerGroupLimitIs100()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -676,8 +676,8 @@ public class PresenceAndBacklogTests
             _ctx.Notifier.OfKind(PushKind.GroupBacklog).Count());
     }
 
-    [Fact]
-    public async Task 未加入任何群时不补发()
+    [Fact(DisplayName = "未加入任何群时不补发")]
+    public async Task Backlog_WithoutAnyGroup_ResendsNothing()
     {
         var user = _ctx.GivenUser();
 

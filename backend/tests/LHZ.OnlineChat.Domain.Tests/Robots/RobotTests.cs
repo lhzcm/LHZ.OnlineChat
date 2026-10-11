@@ -5,10 +5,10 @@ namespace LHZ.OnlineChat.Domain.Tests.Robots;
 
 public class WebhookUrlTests
 {
-    [Theory]
+    [Theory(DisplayName = "Parse_接受http与https")]
     [InlineData("https://example.com/hook")]
     [InlineData("http://192.168.1.10:9000/hook")]   // 允许内网 http，便于本地调试
-    public void Parse_接受http与https(string url)
+    public void Parse_HttpAndHttps_AreAccepted(string url)
     {
         var parsed = WebhookUrl.Parse(url);
 
@@ -16,11 +16,11 @@ public class WebhookUrlTests
         Assert.Equal(url, parsed.Value);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Parse_空地址是合法的_表示纯推送模式")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("    ")]
-    public void Parse_空地址是合法的_表示纯推送模式(string? url)
+    public void Parse_EmptyUrl_IsValidPushOnlyMode(string? url)
     {
         // 纯推送模式：不接收消息回调，只由第三方主动推送
         var parsed = WebhookUrl.Parse(url);
@@ -29,21 +29,21 @@ public class WebhookUrlTests
         Assert.Equal(WebhookUrl.None, parsed);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Parse_非http协议时抛出")]
     [InlineData("ftp://example.com/hook")]
     [InlineData("ws://example.com/hook")]
     [InlineData("example.com/hook")]        // 缺少协议
     [InlineData("/relative/path")]
     [InlineData("javascript:alert(1)")]
-    public void Parse_非http协议时抛出(string url)
+    public void Parse_NonHttpScheme_Throws(string url)
     {
         var ex = Assert.Throws<DomainException>(() => WebhookUrl.Parse(url));
 
         Assert.Equal("Webhook 地址必须是 http/https 开头", ex.Message);
     }
 
-    [Fact]
-    public void Parse_超长时抛出()
+    [Fact(DisplayName = "Parse_超长时抛出")]
+    public void Parse_TooLong_Throws()
     {
         var url = "https://example.com/" + new string('a', WebhookUrl.MaxLength);
 
@@ -52,8 +52,8 @@ public class WebhookUrlTests
         Assert.Equal("Webhook 地址过长", ex.Message);
     }
 
-    [Fact]
-    public void Parse_去除首尾空白()
+    [Fact(DisplayName = "Parse_去除首尾空白")]
+    public void Parse_TrimsSurroundingWhitespace()
     {
         Assert.Equal("https://example.com/hook",
             WebhookUrl.Parse("  https://example.com/hook  ").Value);
@@ -69,7 +69,7 @@ public class WebhookUrlTests
 /// </summary>
 public class WebhookTargetPolicyTests
 {
-    [Theory]
+    [Theory(DisplayName = "默认拒绝内网与本机目标")]
     [InlineData("http://127.0.0.1:8080/hook")]                  // 环回
     [InlineData("http://127.9.9.9/hook")]                       // 整个 127/8 都是环回
     [InlineData("http://10.0.0.5/hook")]                        // 私网
@@ -87,7 +87,7 @@ public class WebhookTargetPolicyTests
     [InlineData("http://postgres:5432/hook")]                   // 容器内单标签主机名
     [InlineData("http://bot.internal/hook")]
     [InlineData("http://db.local/hook")]
-    public void 默认拒绝内网与本机目标(string url)
+    public void EnsureTargetAllowed_PrivateOrLocal_IsRejectedByDefault(string url)
     {
         var ex = Assert.Throws<DomainException>(
             () => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: false));
@@ -95,26 +95,26 @@ public class WebhookTargetPolicyTests
         Assert.Equal(WebhookUrl.BlockedTargetMessage, ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "允许公网目标与纯推送模式")]
     [InlineData("https://example.com/hook")]
     [InlineData("http://93.184.216.34/hook")]                   // 公网 IP 字面量
     [InlineData("https://hooks.slack.com/services/T/B/X")]
     [InlineData("")]                                            // 纯推送模式
     [InlineData(null)]
-    public void 允许公网目标与纯推送模式(string? url)
+    public void EnsureTargetAllowed_PublicTargetOrNone_IsAllowed(string? url)
         => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: false);
 
-    [Theory]
+    [Theory(DisplayName = "显式开启后放行内网目标")]
     [InlineData("http://127.0.0.1:8080/hook")]
     [InlineData("http://postgres:5432/hook")]
-    public void 显式开启后放行内网目标(string url)
+    public void EnsureTargetAllowed_PrivateTargetsEnabled_IsAllowed(string url)
         => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: true);
 
-    [Theory]
+    [Theory(DisplayName = "非http协议仍被拒")]
     [InlineData("ftp://example.com/hook")]
     [InlineData("example.com/hook")]
     [InlineData("javascript:alert(1)")]
-    public void 非http协议仍被拒(string url)
+    public void EnsureTargetAllowed_NonHttpScheme_IsRejected(string url)
     {
         var ex = Assert.Throws<DomainException>(
             () => WebhookUrl.EnsureTargetAllowed(url, allowPrivateTargets: false));
@@ -122,8 +122,8 @@ public class WebhookTargetPolicyTests
         Assert.Equal("Webhook 地址必须是 http/https 开头", ex.Message);
     }
 
-    [Fact]
-    public void 超长地址被拒()
+    [Fact(DisplayName = "超长地址被拒")]
+    public void EnsureTargetAllowed_TooLongUrl_IsRejected()
     {
         var tooLong = "https://example.com/" + new string('a', WebhookUrl.MaxLength);
 
@@ -136,8 +136,8 @@ public class WebhookTargetPolicyTests
 
 public class RobotCreationTests
 {
-    [Fact]
-    public void Create_记录归属与配置()
+    [Fact(DisplayName = "Create_记录归属与配置")]
+    public void Create_RecordsOwnershipAndConfiguration()
     {
         var robot = Robot.Create(
             ownerId: 10001, botUserId: 10005, "助理", "/uploads/bot.png",
@@ -154,11 +154,11 @@ public class RobotCreationTests
         Assert.Equal(0, robot.CallbackFailCount);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Create_名称为空时抛出")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Create_名称为空时抛出(string? name)
+    public void Create_EmptyName_Throws(string? name)
     {
         var ex = Assert.Throws<DomainException>(() => Robot.Create(
             10001, 10005, name!, null, WebhookUrl.None, null, null, T.Now));
@@ -166,8 +166,8 @@ public class RobotCreationTests
         Assert.Equal("机器人名称不能为空", ex.Message);
     }
 
-    [Fact]
-    public void Create_名称超长时抛出()
+    [Fact(DisplayName = "Create_名称超长时抛出")]
+    public void Create_TooLongName_Throws()
     {
         var ex = Assert.Throws<DomainException>(() => Robot.Create(
             10001, 10005, new string('x', Robot.MaxNameLength + 1),
@@ -176,25 +176,25 @@ public class RobotCreationTests
         Assert.Equal($"机器人名称不能超过 {Robot.MaxNameLength} 个字符", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Create_超时值归一化")]
     [InlineData(null, Robot.DefaultTimeoutMs)]
     [InlineData(0, Robot.DefaultTimeoutMs)]
     [InlineData(-1, Robot.DefaultTimeoutMs)]
     [InlineData(70000, Robot.DefaultTimeoutMs)]        // 超上限回落默认
     [InlineData(5000, 5000)]
     [InlineData(Robot.MaxTimeoutMs, Robot.MaxTimeoutMs)]
-    public void Create_超时值归一化(int? input, int expected)
+    public void Create_Timeout_IsNormalized(int? input, int expected)
     {
         var robot = Robot.Create(10001, 10005, "助理", null, WebhookUrl.None, null, input, T.Now);
 
         Assert.Equal(expected, robot.TimeoutMs);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Create_密钥空白时归为null_表示不验签")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Create_密钥空白时归为null_表示不验签(string? secret)
+    public void Create_BlankSecret_BecomesNullAndDisablesSignature(string? secret)
     {
         var robot = Robot.Create(10001, 10005, "助理", null, WebhookUrl.None, secret, null, T.Now);
 
@@ -202,8 +202,8 @@ public class RobotCreationTests
         Assert.False(robot.SignatureRequired);
     }
 
-    [Fact]
-    public void AssignToken_绑定对外令牌()
+    [Fact(DisplayName = "AssignToken_绑定对外令牌")]
+    public void AssignToken_SetsExternalToken()
     {
         var robot = TestRobots.Create();
 
@@ -212,11 +212,11 @@ public class RobotCreationTests
         Assert.Equal("encrypted-token", robot.Token);
     }
 
-    [Theory]
+    [Theory(DisplayName = "AssignToken_空值时抛出")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void AssignToken_空值时抛出(string? token)
+    public void AssignToken_EmptyValue_Throws(string? token)
     {
         var ex = Assert.Throws<DomainException>(() => TestRobots.Create().AssignToken(token!));
 
@@ -226,15 +226,15 @@ public class RobotCreationTests
 
 public class RobotStateTests
 {
-    [Fact]
-    public void SignatureRequired_配了密钥才强制验签()
+    [Fact(DisplayName = "SignatureRequired_配了密钥才强制验签")]
+    public void SignatureRequired_OnlyWhenSecretConfigured()
     {
         Assert.True(TestRobots.Create(secret: "s").SignatureRequired);
         Assert.False(TestRobots.Create(secret: null).SignatureRequired);
     }
 
-    [Fact]
-    public void RespondsToMessages_需要同时启用且配了回调地址()
+    [Fact(DisplayName = "RespondsToMessages_需要同时启用且配了回调地址")]
+    public void RespondsToMessages_RequiresEnabledAndWebhook()
     {
         Assert.True(TestRobots.Create(webhook: "https://e.com/h", enabled: true).RespondsToMessages);
 
@@ -245,8 +245,8 @@ public class RobotStateTests
         Assert.False(TestRobots.Create(webhook: "https://e.com/h", enabled: false).RespondsToMessages);
     }
 
-    [Fact]
-    public void EnsureOwnedBy_非创建者时抛不存在_不泄露存在性()
+    [Fact(DisplayName = "EnsureOwnedBy_非创建者时抛不存在_不泄露存在性")]
+    public void EnsureOwnedBy_NonOwner_ThrowsNotFoundWithoutLeaking()
     {
         var robot = TestRobots.Create(ownerId: 10001);
 
@@ -256,8 +256,8 @@ public class RobotStateTests
         Assert.Equal("机器人不存在", ex.Message);
     }
 
-    [Fact]
-    public void EnsureTestable_纯推送模式不支持测试触发()
+    [Fact(DisplayName = "EnsureTestable_纯推送模式不支持测试触发")]
+    public void EnsureTestable_PushOnlyMode_IsNotSupported()
     {
         var pushOnly = TestRobots.Create(webhook: "");
 
@@ -266,14 +266,14 @@ public class RobotStateTests
         Assert.Equal("该机器人未配置 Webhook 地址，仅支持第三方主动推送", ex.Message);
     }
 
-    [Fact]
-    public void EnsureTestable_配了地址时通过()
+    [Fact(DisplayName = "EnsureTestable_配了地址时通过")]
+    public void EnsureTestable_WithWebhook_Succeeds()
     {
         TestRobots.Create(webhook: "https://e.com/h").EnsureTestable();
     }
 
-    [Fact]
-    public void SetEnabled_启停()
+    [Fact(DisplayName = "SetEnabled_启停")]
+    public void SetEnabled_TogglesState()
     {
         var robot = TestRobots.Create();
 
@@ -284,8 +284,8 @@ public class RobotStateTests
         Assert.True(robot.Enabled);
     }
 
-    [Fact]
-    public void RecordPush_与_RecordCallbackFailure_各自累计()
+    [Fact(DisplayName = "RecordPush_与_RecordCallbackFailure_各自累计")]
+    public void RecordPushAndCallbackFailure_AccumulateSeparately()
     {
         var robot = TestRobots.Create();
 
@@ -297,19 +297,19 @@ public class RobotStateTests
         Assert.Equal(1, robot.CallbackFailCount);
     }
 
-    [Theory]
+    [Theory(DisplayName = "EnsureReplyContentValid_空内容被拒")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void EnsureReplyContentValid_空内容被拒(string? content)
+    public void EnsureReplyContentValid_EmptyContent_IsRejected(string? content)
     {
         var ex = Assert.Throws<DomainException>(() => Robot.EnsureReplyContentValid(content));
 
         Assert.Equal("回复内容不能为空", ex.Message);
     }
 
-    [Fact]
-    public void EnsureReplyContentValid_超长被拒()
+    [Fact(DisplayName = "EnsureReplyContentValid_超长被拒")]
+    public void EnsureReplyContentValid_TooLongContent_IsRejected()
     {
         var ex = Assert.Throws<DomainException>(
             () => Robot.EnsureReplyContentValid(new string('x', Robot.MaxReplyLength + 1)));
@@ -317,8 +317,8 @@ public class RobotStateTests
         Assert.Equal("回复内容过长", ex.Message);
     }
 
-    [Fact]
-    public void EnsureReplyContentValid_恰好达到上限时通过()
+    [Fact(DisplayName = "EnsureReplyContentValid_恰好达到上限时通过")]
+    public void EnsureReplyContentValid_AtMaxLength_Succeeds()
     {
         Robot.EnsureReplyContentValid(new string('x', Robot.MaxReplyLength));
     }
@@ -326,8 +326,8 @@ public class RobotStateTests
 
 public class RobotUpdateTests
 {
-    [Fact]
-    public void UpdateConfiguration_只改传入项_未传的保持原值()
+    [Fact(DisplayName = "UpdateConfiguration_只改传入项_未传的保持原值")]
+    public void UpdateConfiguration_OnlyProvidedFields_AreChanged()
     {
         var robot = TestRobots.Create(name: "原名", webhook: "https://old.com/h", secret: "old");
 
@@ -340,8 +340,8 @@ public class RobotUpdateTests
         Assert.Equal("old", robot.WebhookSecret);
     }
 
-    [Fact]
-    public void UpdateConfiguration_改名时返回true_供调用方同步账号昵称()
+    [Fact(DisplayName = "UpdateConfiguration_改名时返回true_供调用方同步账号昵称")]
+    public void UpdateConfiguration_NameChanged_ReturnsTrueForCallerSync()
     {
         var robot = TestRobots.Create(name: "原名");
 
@@ -351,8 +351,8 @@ public class RobotUpdateTests
         Assert.Equal("新名", robot.Name);
     }
 
-    [Fact]
-    public void UpdateConfiguration_未改名时返回false()
+    [Fact(DisplayName = "UpdateConfiguration_未改名时返回false")]
+    public void UpdateConfiguration_NameUnchanged_ReturnsFalse()
     {
         var robot = TestRobots.Create();
 
@@ -361,8 +361,8 @@ public class RobotUpdateTests
         Assert.False(nameChanged);
     }
 
-    [Fact]
-    public void UpdateConfiguration_可把回调地址清空为纯推送模式()
+    [Fact(DisplayName = "UpdateConfiguration_可把回调地址清空为纯推送模式")]
+    public void UpdateConfiguration_ClearWebhook_SwitchesToPushOnly()
     {
         var robot = TestRobots.Create(webhook: "https://old.com/h");
 
@@ -372,8 +372,8 @@ public class RobotUpdateTests
         Assert.False(robot.RespondsToMessages);
     }
 
-    [Fact]
-    public void UpdateConfiguration_非法地址时抛出且不改动状态()
+    [Fact(DisplayName = "UpdateConfiguration_非法地址时抛出且不改动状态")]
+    public void UpdateConfiguration_InvalidUrl_ThrowsWithoutMutation()
     {
         var robot = TestRobots.Create(webhook: "https://old.com/h");
 
@@ -383,8 +383,8 @@ public class RobotUpdateTests
         Assert.Equal("https://old.com/h", robot.WebhookUrlValue);
     }
 
-    [Fact]
-    public void UpdateConfiguration_可清空密钥为不验签()
+    [Fact(DisplayName = "UpdateConfiguration_可清空密钥为不验签")]
+    public void UpdateConfiguration_ClearSecret_DisablesSignature()
     {
         var robot = TestRobots.Create(secret: "old");
 
@@ -394,8 +394,8 @@ public class RobotUpdateTests
         Assert.False(robot.SignatureRequired);
     }
 
-    [Fact]
-    public void UpdateConfiguration_超时越界时保持原值()
+    [Fact(DisplayName = "UpdateConfiguration_超时越界时保持原值")]
+    public void UpdateConfiguration_OutOfRangeTimeout_KeepsOldValue()
     {
         var robot = TestRobots.Create(timeoutMs: 8000);
 

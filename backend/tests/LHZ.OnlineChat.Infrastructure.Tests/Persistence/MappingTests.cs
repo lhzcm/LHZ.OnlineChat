@@ -24,7 +24,7 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
 
     public EntityMappingTests(MappingFixture fixture) => _fixture = fixture;
 
-    [Theory]
+    [Theory(DisplayName = "表名与既有库结构一致")]
     // 表名与既有库结构严格对齐（带下划线后缀的是为了避开 SQL 关键字）
     [InlineData(typeof(User), "User_")]
     [InlineData(typeof(Friendship), "Friend")]
@@ -38,13 +38,13 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
     [InlineData(typeof(Robot), "RobotProfile")]
     [InlineData(typeof(Admin), "Admin")]
     [InlineData(typeof(AdminAuditLog), "AdminLog")]
-    public void 表名与既有库结构一致(Type entityType, string expectedTableName)
+    public void TableName_MatchesExistingDatabaseSchema(Type entityType, string expectedTableName)
     {
         Assert.Equal(expectedTableName, _fixture.Table(entityType).DbName);
     }
 
-    [Fact]
-    public void 需要同步的实体共12个_与库里表数一致()
+    [Fact(DisplayName = "需要同步的实体共12个_与库里表数一致")]
+    public void SyncedEntityCount_IsTwelve_MatchesTableCount()
     {
         Assert.Equal(12, EntityConfiguration.AllEntityTypes.Length);
         Assert.Equal(
@@ -52,7 +52,7 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
             EntityConfiguration.AllEntityTypes.Distinct().Count());
     }
 
-    [Theory]
+    [Theory(DisplayName = "每个实体都有且仅有一个自增主键")]
     [InlineData(typeof(User))]
     [InlineData(typeof(Friendship))]
     [InlineData(typeof(FriendSetting))]
@@ -65,7 +65,7 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
     [InlineData(typeof(Robot))]
     [InlineData(typeof(Admin))]
     [InlineData(typeof(AdminAuditLog))]
-    public void 每个实体都有且仅有一个自增主键(Type entityType)
+    public void EveryEntity_HasExactlyOne_AutoIncrementPrimaryKey(Type entityType)
     {
         var table = _fixture.Table(entityType);
 
@@ -74,13 +74,13 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.True(primary.Attribute.IsIdentity, "主键必须是自增");
     }
 
-    [Theory]
+    [Theory(DisplayName = "属性名与列名的映射正确")]
     // 属性名与既有列名不同的几处，必须显式对齐
     [InlineData(typeof(Group), nameof(Group.AnnouncementText), "Announcement")]
     [InlineData(typeof(PrivateMessage), nameof(PrivateMessage.Kind), "MessageType")]
     [InlineData(typeof(GroupMessage), nameof(GroupMessage.Kind), "MessageType")]
     [InlineData(typeof(Robot), nameof(Robot.WebhookUrlValue), "WebhookUrl")]
-    public void 属性名与列名的映射正确(Type entityType, string propertyName, string expectedColumn)
+    public void PropertyToColumn_Mapping_IsCorrect(Type entityType, string propertyName, string expectedColumn)
     {
         var table = _fixture.Table(entityType);
 
@@ -89,8 +89,8 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.Equal(expectedColumn, column!.Attribute.Name);
     }
 
-    [Fact]
-    public void 只读计算属性不被映射成列()
+    [Fact(DisplayName = "只读计算属性不被映射成列")]
+    public void ComputedProperty_ReadOnly_IsNotMappedAsColumn()
     {
         // Group.Announcement / Message.Reply / MentionedUsers 等都是聚合视图，
         // 一旦被当成列，SyncStructure 会往库里加多余字段
@@ -110,8 +110,8 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
             groupMessage.ColumnsByCs.Values.Select(c => c.CsName));
     }
 
-    [Fact]
-    public void 聚合根基类的领域事件集合不被映射()
+    [Fact(DisplayName = "聚合根基类的领域事件集合不被映射")]
+    public void AggregateRoot_DomainEvents_AreNotMapped()
     {
         foreach (var entityType in EntityConfiguration.AllEntityTypes)
         {
@@ -120,11 +120,11 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         }
     }
 
-    [Theory]
+    [Theory(DisplayName = "值对象属性被映射为字符串列")]
     [InlineData(typeof(User), nameof(User.Email))]
     [InlineData(typeof(User), nameof(User.PasswordHash))]
     [InlineData(typeof(Admin), nameof(Admin.PasswordHash))]
-    public void 值对象属性被映射为字符串列(Type entityType, string propertyName)
+    public void ValueObjectProperty_MapsTo_StringColumn(Type entityType, string propertyName)
     {
         var column = _fixture.Table(entityType).ColumnsByCs.Values
             .FirstOrDefault(c => c.CsName == propertyName);
@@ -134,14 +134,14 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.Equal(typeof(string), column!.Attribute.MapType);
     }
 
-    [Theory]
+    [Theory(DisplayName = "枚举属性被映射为int列_与既有魔法数取值一致")]
     [InlineData(typeof(Friendship), nameof(Friendship.Status))]
     [InlineData(typeof(GroupMember), nameof(GroupMember.Role))]
     [InlineData(typeof(PrivateMessage), nameof(PrivateMessage.Kind))]
     [InlineData(typeof(GroupMessage), nameof(GroupMessage.Kind))]
     [InlineData(typeof(Admin), nameof(Admin.Role))]
     [InlineData(typeof(Admin), nameof(Admin.Status))]
-    public void 枚举属性被映射为int列_与既有魔法数取值一致(Type entityType, string propertyName)
+    public void EnumProperty_IsMappedAsInt_MatchesMagicNumbers(Type entityType, string propertyName)
     {
         var column = _fixture.Table(entityType).ColumnsByCs.Values
             .FirstOrDefault(c => c.CsName == propertyName);
@@ -150,8 +150,8 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.Equal(typeof(int), column!.Attribute.MapType);
     }
 
-    [Fact]
-    public void 群公告的三列都存在()
+    [Fact(DisplayName = "群公告的三列都存在")]
+    public void GroupAnnouncement_AllThreeColumns_Exist()
     {
         var columns = _fixture.Table(typeof(Group)).ColumnsByCs.Values
             .Select(c => c.Attribute.Name).ToList();
@@ -161,8 +161,8 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.Contains("AnnouncementBy", columns);
     }
 
-    [Fact]
-    public void 引用回复的三列都存在()
+    [Fact(DisplayName = "引用回复的三列都存在")]
+    public void QuotedReply_AllThreeColumns_Exist()
     {
         foreach (var entityType in new[] { typeof(PrivateMessage), typeof(GroupMessage) })
         {
@@ -175,8 +175,8 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         }
     }
 
-    [Fact]
-    public void 消息内容为长文本列_不截断()
+    [Fact(DisplayName = "消息内容为长文本列_不截断")]
+    public void MessageContent_IsLongText_NotTruncated()
     {
         foreach (var entityType in new[] { typeof(PrivateMessage), typeof(GroupMessage) })
         {
@@ -193,12 +193,12 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
     /// 改造前它们走 FreeSql 默认值，若在此声明更严格的约束，
     /// SyncStructure 会对线上表执行 ALTER（缩列 / SET NOT NULL），存量数据可能导致启动失败。
     /// </summary>
-    [Theory]
+    [Theory(DisplayName = "管理表的字符串列保持默认约束_避免启动期ALTER")]
     [InlineData(typeof(Admin), nameof(Admin.Username))]
     [InlineData(typeof(AdminAuditLog), nameof(AdminAuditLog.AdminName))]
     [InlineData(typeof(AdminAuditLog), nameof(AdminAuditLog.Action))]
     [InlineData(typeof(AdminAuditLog), nameof(AdminAuditLog.TargetType))]
-    public void 管理表的字符串列保持默认约束_避免启动期ALTER(Type entityType, string propertyName)
+    public void AdminStringColumns_KeepDefaults_AvoidStartupAlter(Type entityType, string propertyName)
     {
         var column = _fixture.Table(entityType).ColumnsByCs.Values
             .First(c => c.CsName == propertyName);
@@ -240,8 +240,8 @@ public sealed class MappingFixture : IDisposable
 /// <summary>值对象 ↔ 列 转换器的往返正确性</summary>
 public class ValueObjectTypeHandlerTests
 {
-    [Fact]
-    public void Email转换器往返一致()
+    [Fact(DisplayName = "Email转换器往返一致")]
+    public void EmailTypeHandler_RoundTrip_PreservesValue()
     {
         var handler = new EmailTypeHandler();
         var email = Email.Parse("A@Test.LOCAL");
@@ -253,8 +253,8 @@ public class ValueObjectTypeHandlerTests
         Assert.Equal(email, restored);
     }
 
-    [Fact]
-    public void Email转换器声明的目标类型是string()
+    [Fact(DisplayName = "Email转换器声明的目标类型是string")]
+    public void EmailTypeHandler_DeclaredType_IsString()
     {
         // FluentApi 里 MapType(string) 的实际生效结果，
         // 由 EntityMappingTests.值对象属性被映射为字符串列 从表元数据侧验证
@@ -262,8 +262,8 @@ public class ValueObjectTypeHandlerTests
         Assert.Equal(typeof(PasswordHash), new PasswordHashTypeHandler().Type);
     }
 
-    [Fact]
-    public void PasswordHash转换器往返一致()
+    [Fact(DisplayName = "PasswordHash转换器往返一致")]
+    public void PasswordHashTypeHandler_RoundTrip_PreservesValue()
     {
         var handler = new PasswordHashTypeHandler();
         var hash = PasswordHash.FromHash("$2a$11$abcdefghijklmnop");
@@ -275,8 +275,8 @@ public class ValueObjectTypeHandlerTests
         Assert.Equal(hash, restored);
     }
 
-    [Fact]
-    public void PasswordHash转换器不校验格式_兼容历史数据()
+    [Fact(DisplayName = "PasswordHash转换器不校验格式_兼容历史数据")]
+    public void PasswordHashTypeHandler_IgnoresFormat_AcceptsLegacyData()
     {
         // 库里可能存着非 BCrypt 格式的历史值，读取时不能抛
         var restored = new PasswordHashTypeHandler().Deserialize("legacy-plain-value");

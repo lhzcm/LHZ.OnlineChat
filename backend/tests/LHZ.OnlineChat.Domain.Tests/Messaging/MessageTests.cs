@@ -5,8 +5,8 @@ namespace LHZ.OnlineChat.Domain.Tests.Messaging;
 
 public class PrivateMessageTests
 {
-    [Fact]
-    public void Send_记录收发双方与内容()
+    [Fact(DisplayName = "Send_记录收发双方与内容")]
+    public void Send_RecordsSenderAndReceiverWithContent()
     {
         var message = PrivateMessage.Send(
             senderId: 10001, receiverId: 10002, "你好", MessageKind.Text,
@@ -22,11 +22,11 @@ public class PrivateMessageTests
         Assert.Equal(T.Now, message.SentAt);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Send_客户端消息ID为空白时归为null")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Send_客户端消息ID为空白时归为null(string? clientMessageId)
+    public void Send_BlankClientMessageId_BecomesNull(string? clientMessageId)
     {
         var message = PrivateMessage.Send(
             10001, 10002, "x", MessageKind.Text, clientMessageId, null, T.Now);
@@ -34,11 +34,11 @@ public class PrivateMessageTests
         Assert.Null(message.ClientMessageId);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Send_内容为空时被拒")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Send_内容为空时被拒(string? content)
+    public void Send_EmptyContent_IsRejected(string? content)
     {
         // 空内容曾经被静默归为空串入库,前端会渲染出没有内容的空气泡
         var ex = Assert.Throws<DomainException>(() => PrivateMessage.Send(
@@ -47,8 +47,8 @@ public class PrivateMessageTests
         Assert.Equal("消息内容不能为空", ex.Message);
     }
 
-    [Fact]
-    public void Send_内容超长时被拒()
+    [Fact(DisplayName = "Send_内容超长时被拒")]
+    public void Send_ContentTooLong_IsRejected()
     {
         var tooLong = new string('x', MessageContentRules.MaxLength + 1);
 
@@ -58,8 +58,8 @@ public class PrivateMessageTests
         Assert.Contains("不能超过", ex.Message);
     }
 
-    [Fact]
-    public void Send_恰好达到长度上限时通过()
+    [Fact(DisplayName = "Send_恰好达到长度上限时通过")]
+    public void Send_ExactlyAtLengthLimit_IsAccepted()
     {
         var atLimit = new string('x', MessageContentRules.MaxLength);
 
@@ -69,8 +69,8 @@ public class PrivateMessageTests
         Assert.Equal(MessageContentRules.MaxLength, message.Content.Length);
     }
 
-    [Fact]
-    public void Send_未定义的消息类型被拒()
+    [Fact(DisplayName = "Send_未定义的消息类型被拒")]
+    public void Send_UndefinedMessageKind_IsRejected()
     {
         // WS 入口是 (MessageKind)整数 的未检查转换,枚举校验是最后一道闸
         var undefined = (MessageKind)99;
@@ -81,8 +81,8 @@ public class PrivateMessageTests
         Assert.Equal("不支持的消息类型", ex.Message);
     }
 
-    [Fact]
-    public void Send_带引用回复时拆成三列并可聚合回读()
+    [Fact(DisplayName = "Send_带引用回复时拆成三列并可聚合回读")]
+    public void Send_WithReply_SplitsIntoThreeColumnsAndAggregatesBack()
     {
         var reply = MessageReply.Create("origin-1", "原文", "李四");
 
@@ -95,43 +95,43 @@ public class PrivateMessageTests
         Assert.Equal(reply, message.Reply);
     }
 
-    [Fact]
-    public void Reply_无引用时为null()
+    [Fact(DisplayName = "Reply_无引用时为null")]
+    public void ReplyMessage_CreatedWithoutReply_IsNull()
     {
         var message = PrivateMessage.Send(10001, 10002, "x", MessageKind.Text, null, null, T.Now);
 
         Assert.Null(message.Reply);
     }
 
-    [Fact]
-    public void PublicMessageId_优先用客户端ID()
+    [Fact(DisplayName = "PublicMessageId_优先用客户端ID")]
+    public void PublicMessageId_PrefersClientMessageId()
     {
         var message = TestMessages.Private(id: 77, clientMessageId: "cmid-1");
 
         Assert.Equal("cmid-1", message.PublicMessageId);
     }
 
-    [Fact]
-    public void PublicMessageId_无客户端ID时回落数据库ID()
+    [Fact(DisplayName = "PublicMessageId_无客户端ID时回落数据库ID")]
+    public void PublicMessageId_WithoutClientMessageId_FallsBackToDatabaseId()
     {
         var message = TestMessages.Private(id: 77, clientMessageId: null);
 
         Assert.Equal("77", message.PublicMessageId);
     }
 
-    [Theory]
+    [Theory(DisplayName = "HasPublicId_两种标识都能匹配")]
     [InlineData("cmid-1", true)]
     [InlineData("77", true)]        // 数据库 ID 也算匹配
     [InlineData("other", false)]
-    public void HasPublicId_两种标识都能匹配(string probe, bool expected)
+    public void HasPublicId_MatchesBothIdentifiers(string probe, bool expected)
     {
         var message = TestMessages.Private(id: 77, clientMessageId: "cmid-1");
 
         Assert.Equal(expected, message.HasPublicId(probe));
     }
 
-    [Fact]
-    public void SentAtUtc_补齐UTC标识()
+    [Fact(DisplayName = "SentAtUtc_补齐UTC标识")]
+    public void SentAtUtc_FillsInUtcKind()
     {
         var message = PrivateMessage.Send(
             10001, 10002, "x", MessageKind.Text, null, null,
@@ -140,8 +140,8 @@ public class PrivateMessageTests
         Assert.Equal(DateTimeKind.Utc, message.SentAtUtc.Kind);
     }
 
-    [Fact]
-    public void MarkAsRead_接收方可标记()
+    [Fact(DisplayName = "MarkAsRead_接收方可标记")]
+    public void MarkAsRead_ByReceiver_IsAllowed()
     {
         var message = TestMessages.Private(senderId: 10001, receiverId: 10002);
 
@@ -150,8 +150,8 @@ public class PrivateMessageTests
         Assert.True(message.IsRead);
     }
 
-    [Fact]
-    public void MarkAsRead_非接收方被拒且提示语不泄露消息是否存在()
+    [Fact(DisplayName = "MarkAsRead_非接收方被拒且提示语不泄露消息是否存在")]
+    public void MarkAsRead_ByNonReceiver_RejectedWithGenericError()
     {
         var message = TestMessages.Private(senderId: 10001, receiverId: 10002);
 
@@ -164,8 +164,8 @@ public class PrivateMessageTests
 
 public class PrivateMessageRecallTests
 {
-    [Fact]
-    public void Recall_本人在时间窗内可撤回()
+    [Fact(DisplayName = "Recall_本人在时间窗内可撤回")]
+    public void Recall_BySenderWithinTimeWindow_IsAllowed()
     {
         var message = TestMessages.Private(senderId: 10001, sentAt: T.MinusMinutes(1));
 
@@ -174,8 +174,8 @@ public class PrivateMessageRecallTests
         Assert.True(message.IsDeleted);
     }
 
-    [Fact]
-    public void Recall_非本人被拒()
+    [Fact(DisplayName = "Recall_非本人被拒")]
+    public void Recall_ByNonSender_IsRejected()
     {
         var message = TestMessages.Private(senderId: 10001, receiverId: 10002);
 
@@ -185,8 +185,8 @@ public class PrivateMessageRecallTests
         Assert.False(message.IsDeleted);
     }
 
-    [Fact]
-    public void Recall_超过时间窗被拒()
+    [Fact(DisplayName = "Recall_超过时间窗被拒")]
+    public void Recall_AfterTimeWindow_IsRejected()
     {
         var message = TestMessages.Private(senderId: 10001, sentAt: T.MinusMinutes(3));
 
@@ -196,8 +196,8 @@ public class PrivateMessageRecallTests
         Assert.False(message.IsDeleted);
     }
 
-    [Fact]
-    public void Recall_已撤回不能重复撤回()
+    [Fact(DisplayName = "Recall_已撤回不能重复撤回")]
+    public void Recall_AlreadyRecalled_CannotRecallAgain()
     {
         var message = TestMessages.Private(senderId: 10001, sentAt: T.MinusMinutes(1));
         message.Recall(10001, T.Now);
@@ -207,8 +207,8 @@ public class PrivateMessageRecallTests
         Assert.Equal("该消息已撤回", ex.Message);
     }
 
-    [Fact]
-    public void ForceDelete_管理后台不受本人与时间窗限制()
+    [Fact(DisplayName = "ForceDelete_管理后台不受本人与时间窗限制")]
+    public void ForceDelete_AdminBypassesOwnerAndTimeWindow()
     {
         var message = TestMessages.Private(senderId: 10001, sentAt: T.MinusMinutes(600));
 
@@ -217,8 +217,8 @@ public class PrivateMessageRecallTests
         Assert.True(message.IsDeleted);
     }
 
-    [Fact]
-    public void ForceDelete_幂等()
+    [Fact(DisplayName = "ForceDelete_幂等")]
+    public void ForceDelete_CalledTwice_IsIdempotent()
     {
         var message = TestMessages.Private();
 
@@ -231,8 +231,8 @@ public class PrivateMessageRecallTests
 
 public class GroupMessageTests
 {
-    [Fact]
-    public void Send_记录群与发送者()
+    [Fact(DisplayName = "Send_记录群与发送者")]
+    public void Send_RecordsGroupAndSender()
     {
         var mentions = MentionList.From(new[] { 10002, 10003 });
 
@@ -247,8 +247,8 @@ public class GroupMessageTests
         Assert.Equal(mentions, message.MentionedUsers);
     }
 
-    [Fact]
-    public void Send_无提及时Mentions列存null()
+    [Fact(DisplayName = "Send_无提及时Mentions列存null")]
+    public void Send_WithoutMentions_StoresNullMentionsColumn()
     {
         var message = GroupMessage.Send(
             5, 10001, "x", MessageKind.Text, null, MentionList.Empty, null, T.Now);
@@ -257,19 +257,19 @@ public class GroupMessageTests
         Assert.True(message.MentionedUsers.IsEmpty);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Send_支持全部消息类型")]
     [InlineData(MessageKind.Text)]
     [InlineData(MessageKind.Image)]
     [InlineData(MessageKind.File)]
-    public void Send_支持全部消息类型(MessageKind kind)
+    public void Send_SupportsAllMessageKinds(MessageKind kind)
     {
         var message = GroupMessage.Send(5, 10001, "x", kind, null, MentionList.Empty, null, T.Now);
 
         Assert.Equal(kind, message.Kind);
     }
 
-    [Fact]
-    public void Recall_规则与私聊一致()
+    [Fact(DisplayName = "Recall_规则与私聊一致")]
+    public void Recall_FollowsSameRulesAsPrivateMessage()
     {
         var message = TestMessages.Group(senderId: 10001, sentAt: T.MinusMinutes(1));
 
@@ -285,8 +285,8 @@ public class GroupMessageTests
             Assert.Throws<DomainException>(() => other.Recall(10002, T.Now)).Message);
     }
 
-    [Fact]
-    public void PublicMessageId_规则与私聊一致()
+    [Fact(DisplayName = "PublicMessageId_规则与私聊一致")]
+    public void PublicMessageId_FollowsSameRulesAsPrivateMessage()
     {
         Assert.Equal("gmid-1", TestMessages.Group(id: 88, clientMessageId: "gmid-1").PublicMessageId);
         Assert.Equal("88", TestMessages.Group(id: 88, clientMessageId: null).PublicMessageId);
@@ -295,8 +295,8 @@ public class GroupMessageTests
 
 public class SessionSettingTests
 {
-    [Fact]
-    public void Create_按用户与会话维度记录()
+    [Fact(DisplayName = "Create_按用户与会话维度记录")]
+    public void Create_RecordsUserAndSessionDimensions()
     {
         var setting = SessionSetting.Create(
             userId: 10001, ChatSessionType.Group, sessionId: 5,
@@ -310,10 +310,10 @@ public class SessionSettingTests
         Assert.False(setting.Muted);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Create_会话ID非法时抛出")]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Create_会话ID非法时抛出(long sessionId)
+    public void Create_InvalidSessionId_Throws(long sessionId)
     {
         var ex = Assert.Throws<DomainException>(() => SessionSetting.Create(
             10001, ChatSessionType.Private, sessionId, false, false, T.Now));
@@ -321,8 +321,8 @@ public class SessionSettingTests
         Assert.Equal("无效的会话 ID", ex.Message);
     }
 
-    [Fact]
-    public void Update_只改传入的项()
+    [Fact(DisplayName = "Update_只改传入的项")]
+    public void Update_ChangesOnlyProvidedFields()
     {
         var setting = SessionSetting.Create(
             10001, ChatSessionType.Group, 5, isPinned: true, muted: true, T.Now);
@@ -334,8 +334,8 @@ public class SessionSettingTests
         Assert.Equal(T.PlusMinutes(1), setting.UpdatedAt);
     }
 
-    [Fact]
-    public void Update_两项都不传时抛出()
+    [Fact(DisplayName = "Update_两项都不传时抛出")]
+    public void Update_NoFieldsProvided_Throws()
     {
         var setting = SessionSetting.Create(10001, ChatSessionType.Group, 5, false, false, T.Now);
 

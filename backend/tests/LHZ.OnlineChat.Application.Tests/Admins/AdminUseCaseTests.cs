@@ -16,8 +16,8 @@ public class AdminAuthTests
     private AdminLoginHandler Handler()
         => new(_ctx.Admins, _ctx.Hasher, _ctx.Tokens, _ctx.AdminSessions, _ctx.Throttle, _ctx.Clock);
 
-    [Fact]
-    public async Task 登录成功并返回角色()
+    [Fact(DisplayName = "登录成功并返回角色")]
+    public async Task Login_ValidCredentials_ReturnsRole()
     {
         _ctx.GivenAdmin("admin", AdminRole.Super);
 
@@ -34,8 +34,8 @@ public class AdminAuthTests
         Assert.True(await _ctx.AdminSessions.IsValidAsync(sessionId));
     }
 
-    [Fact]
-    public async Task 登录时记录最后登录时间()
+    [Fact(DisplayName = "登录时记录最后登录时间")]
+    public async Task Login_ValidCredentials_RecordsLastLoginAt()
     {
         var admin = _ctx.GivenAdmin();
 
@@ -45,8 +45,8 @@ public class AdminAuthTests
         Assert.Equal(_ctx.Now, (await _ctx.Admins.FindByIdAsync(admin.Id))!.LastLoginAt);
     }
 
-    [Fact]
-    public async Task 口令错误时统一提示语()
+    [Fact(DisplayName = "口令错误时统一提示语")]
+    public async Task Login_WrongPassword_ReturnsGenericMessage()
     {
         _ctx.GivenAdmin();
 
@@ -56,8 +56,8 @@ public class AdminAuthTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Fact]
-    public async Task 账号不存在时与口令错误同一提示语()
+    [Fact(DisplayName = "账号不存在时与口令错误同一提示语")]
+    public async Task Login_UnknownUsername_ReturnsSameMessageAsWrongPassword()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new AdminLoginCommand { Username = "nobody", Password = "admin123456" }, default));
@@ -65,8 +65,8 @@ public class AdminAuthTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Fact]
-    public async Task 停用的管理员不能登录()
+    [Fact(DisplayName = "停用的管理员不能登录")]
+    public async Task Login_DisabledAdmin_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
         admin.ChangeRoleAndStatus(null, AdminStatus.Disabled, operatorId: 9999);
@@ -78,11 +78,11 @@ public class AdminAuthTests
         Assert.Equal("该管理员账号已停用", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "账号或口令为空时提示补全")]
     [InlineData("", "admin123456")]
     [InlineData("   ", "admin123456")]
     [InlineData("admin", "")]
-    public async Task 账号或口令为空时提示补全(string username, string password)
+    public async Task Login_MissingCredentials_PromptsToFillIn(string username, string password)
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new AdminLoginCommand { Username = username, Password = password }, default));
@@ -90,8 +90,8 @@ public class AdminAuthTests
         Assert.Equal("请输入账号和密码", ex.Message);
     }
 
-    [Fact]
-    public async Task 取当前管理员信息()
+    [Fact(DisplayName = "取当前管理员信息")]
+    public async Task GetAdminProfile_ExistingAdmin_ReturnsInfo()
     {
         var admin = _ctx.GivenAdmin("ops", AdminRole.Operator);
 
@@ -103,8 +103,8 @@ public class AdminAuthTests
         Assert.Equal(1, result.Data.Status);
     }
 
-    [Fact]
-    public async Task 管理员改密成功_并吊销全部会话迫使用新口令重新登录()
+    [Fact(DisplayName = "管理员改密成功_并吊销全部会话迫使用新口令重新登录")]
+    public async Task ChangePassword_Succeeds_RevokesAllSessions()
     {
         var admin = _ctx.GivenAdmin();
         await _ctx.AdminSessions.CreateAsync(admin.Id, "sess-a");
@@ -126,8 +126,8 @@ public class AdminAuthTests
         Assert.False(await _ctx.AdminSessions.IsValidAsync("sess-b"));
     }
 
-    [Fact]
-    public async Task 管理员改密_原口令错误时被拒()
+    [Fact(DisplayName = "管理员改密_原口令错误时被拒")]
+    public async Task ChangePassword_WrongOldPassword_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
 
@@ -149,8 +149,8 @@ public class ManageAdminsTests
     private CreateAdminHandler CreateHandler()
         => new(_ctx.Admins, _ctx.Hasher, _ctx.Audit, _ctx.Clock);
 
-    [Fact]
-    public async Task 创建运营管理员并留审计()
+    [Fact(DisplayName = "创建运营管理员并留审计")]
+    public async Task CreateAdmin_OperatorRole_LeavesAuditRecord()
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -164,8 +164,8 @@ public class ManageAdminsTests
         Assert.True(_ctx.Audit.Has(AuditActions.AdminCreate));
     }
 
-    [Fact]
-    public async Task 账号重复时被拒()
+    [Fact(DisplayName = "账号重复时被拒")]
+    public async Task CreateAdmin_DuplicateUsername_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
 
@@ -178,11 +178,11 @@ public class ManageAdminsTests
         Assert.Equal("该管理员账号已存在", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "无效角色被拒")]
     [InlineData(2)]
     [InlineData(-1)]
     [InlineData(99)]
-    public async Task 无效角色被拒(int role)
+    public async Task CreateAdmin_InvalidRole_IsRejected(int role)
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -195,8 +195,8 @@ public class ManageAdminsTests
         Assert.Equal("无效的角色", ex.Message);
     }
 
-    [Fact]
-    public async Task 账号过短被拒()
+    [Fact(DisplayName = "账号过短被拒")]
+    public async Task CreateAdmin_TooShortUsername_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -209,8 +209,8 @@ public class ManageAdminsTests
         Assert.Contains("账号长度", ex.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 口令过短被拒()
+    [Fact(DisplayName = "口令过短被拒")]
+    public async Task CreateAdmin_TooShortPassword_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -223,8 +223,8 @@ public class ManageAdminsTests
         Assert.Equal("密码长度不能少于 6 个字符", ex.Message);
     }
 
-    [Fact]
-    public async Task 更新他人角色与状态()
+    [Fact(DisplayName = "更新他人角色与状态")]
+    public async Task UpdateAdmin_OtherAdmin_ChangesRoleAndStatus()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -242,8 +242,8 @@ public class ManageAdminsTests
         Assert.True(_ctx.Audit.Has(AuditActions.AdminUpdate));
     }
 
-    [Fact]
-    public async Task 停用管理员后其令牌立即失效()
+    [Fact(DisplayName = "停用管理员后其令牌立即失效")]
+    public async Task UpdateAdmin_DisableTarget_RevokesSessionImmediately()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -260,8 +260,8 @@ public class ManageAdminsTests
         Assert.False(await _ctx.AdminSessions.IsValidAsync("ops-session"));
     }
 
-    [Fact]
-    public async Task 仅改状态为启用时不吊销会话()
+    [Fact(DisplayName = "仅改状态为启用时不吊销会话")]
+    public async Task UpdateAdmin_EnableOnly_KeepsSessionValid()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -278,8 +278,8 @@ public class ManageAdminsTests
         Assert.True(await _ctx.AdminSessions.IsValidAsync("ops-session"));
     }
 
-    [Fact]
-    public async Task 不能停用自己()
+    [Fact(DisplayName = "不能停用自己")]
+    public async Task UpdateAdmin_DisablingSelf_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -293,8 +293,8 @@ public class ManageAdminsTests
         Assert.Equal("不能停用或降级自己", ex.Message);
     }
 
-    [Fact]
-    public async Task 不能把自己降级为运营()
+    [Fact(DisplayName = "不能把自己降级为运营")]
+    public async Task UpdateAdmin_DemotingSelf_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -308,8 +308,8 @@ public class ManageAdminsTests
         Assert.Equal("不能停用或降级自己", ex.Message);
     }
 
-    [Fact]
-    public async Task 无效状态值被拒()
+    [Fact(DisplayName = "无效状态值被拒")]
+    public async Task UpdateAdmin_InvalidStatus_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -324,8 +324,8 @@ public class ManageAdminsTests
         Assert.Equal("无效的状态", ex.Message);
     }
 
-    [Fact]
-    public async Task 删除运营管理员并留审计()
+    [Fact(DisplayName = "删除运营管理员并留审计")]
+    public async Task DeleteAdmin_OperatorRole_LeavesAuditRecord()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -338,8 +338,8 @@ public class ManageAdminsTests
         Assert.True(_ctx.Audit.Has(AuditActions.AdminDelete));
     }
 
-    [Fact]
-    public async Task 删除管理员后其令牌立即失效()
+    [Fact(DisplayName = "删除管理员后其令牌立即失效")]
+    public async Task DeleteAdmin_RemovedTarget_RevokesSessionImmediately()
     {
         var superAdmin = _ctx.GivenAdmin("admin");
         var ops = _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -353,8 +353,8 @@ public class ManageAdminsTests
         Assert.False(await _ctx.AdminSessions.IsValidAsync("ops-session"));
     }
 
-    [Fact]
-    public async Task 不能删除自己()
+    [Fact(DisplayName = "不能删除自己")]
+    public async Task DeleteAdmin_Self_IsRejected()
     {
         var superAdmin = _ctx.GivenAdmin();
 
@@ -368,8 +368,8 @@ public class ManageAdminsTests
         Assert.Equal("不能删除自己", ex.Message);
     }
 
-    [Fact]
-    public async Task 不能删除超级管理员()
+    [Fact(DisplayName = "不能删除超级管理员")]
+    public async Task DeleteAdmin_SuperAdmin_IsRejected()
     {
         var operatorAdmin = _ctx.GivenAdmin("ops", AdminRole.Operator);
         var superAdmin = _ctx.GivenAdmin("root", AdminRole.Super);
@@ -384,8 +384,8 @@ public class ManageAdminsTests
         Assert.Equal("不能删除超级管理员", ex.Message);
     }
 
-    [Fact]
-    public async Task 管理员列表按ID升序()
+    [Fact(DisplayName = "管理员列表按ID升序")]
+    public async Task ListAdmins_Default_OrdersByIdAscending()
     {
         _ctx.GivenAdmin("admin");
         _ctx.GivenAdmin("ops", AdminRole.Operator);
@@ -396,8 +396,8 @@ public class ManageAdminsTests
         Assert.True(result.Data[0].Id < result.Data[1].Id);
     }
 
-    [Fact]
-    public async Task 审计日志分页与按动作过滤()
+    [Fact(DisplayName = "审计日志分页与按动作过滤")]
+    public async Task ListAuditLogs_SupportsPagingAndActionFilter()
     {
         await _ctx.AuditLogs.AddAsync(AdminAuditLog.Record(
             1, "admin", AuditActions.UserBan, AuditActions.TargetUser, "1", "d", null, _ctx.Now));
@@ -421,8 +421,8 @@ public class AdminUserManagementTests
     private BanUserHandler BanHandler()
         => new(_ctx.Users, _ctx.Events, _ctx.Audit, _ctx.Clock);
 
-    [Fact]
-    public async Task 封禁成功并留审计()
+    [Fact(DisplayName = "封禁成功并留审计")]
+    public async Task BanUser_ValidTarget_SucceedsAndAudits()
     {
         var admin = _ctx.GivenAdmin();
         var user = _ctx.GivenUser();
@@ -441,8 +441,8 @@ public class AdminUserManagementTests
     /// 封禁的「踢掉全部设备」由 UserBanned 事件订阅方完成，
     /// 而非在用例里手写 —— 这样任何触发封禁的路径都自动获得该行为。
     /// </summary>
-    [Fact]
-    public async Task 封禁触发终止全部会话()
+    [Fact(DisplayName = "封禁触发终止全部会话")]
+    public async Task BanUser_Triggers_TerminatesAllSessions()
     {
         var admin = _ctx.GivenAdmin();
         var user = _ctx.GivenUser();
@@ -460,8 +460,8 @@ public class AdminUserManagementTests
         Assert.Empty(await _ctx.Sessions.ListSessionIdsAsync(user.Id));
     }
 
-    [Fact]
-    public async Task 解封成功并清空封禁字段()
+    [Fact(DisplayName = "解封成功并清空封禁字段")]
+    public async Task UnbanUser_ValidTarget_ClearsBanFields()
     {
         var admin = _ctx.GivenAdmin();
         var user = _ctx.GivenUser();
@@ -482,8 +482,8 @@ public class AdminUserManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.UserUnban));
     }
 
-    [Fact]
-    public async Task 机器人账号不支持封禁()
+    [Fact(DisplayName = "机器人账号不支持封禁")]
+    public async Task BanUser_BotAccount_IsNotSupported()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -495,8 +495,8 @@ public class AdminUserManagementTests
         Assert.Equal("机器人账号不支持封禁，请直接删除机器人", ex.Message);
     }
 
-    [Fact]
-    public async Task 用户不存在时抛出()
+    [Fact(DisplayName = "用户不存在时抛出")]
+    public async Task BanUser_UnknownUser_ThrowsEntityNotFound()
     {
         var admin = _ctx.GivenAdmin();
 
@@ -504,8 +504,8 @@ public class AdminUserManagementTests
             new BanUserCommand { AdminId = admin.Id, UserId = 99999, Banned = true }, default));
     }
 
-    [Fact]
-    public async Task 强制下线不改账号状态()
+    [Fact(DisplayName = "强制下线不改账号状态")]
+    public async Task KickUser_TerminatesSessions_KeepsAccountStatus()
     {
         var admin = _ctx.GivenAdmin();
         var user = _ctx.GivenUser();
@@ -520,8 +520,8 @@ public class AdminUserManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.UserKick));
     }
 
-    [Fact]
-    public async Task 重置口令成功并留审计()
+    [Fact(DisplayName = "重置口令成功并留审计")]
+    public async Task ResetUserPassword_SucceedsAndLeavesAudit()
     {
         var admin = _ctx.GivenAdmin();
         var user = _ctx.GivenUser();
@@ -539,8 +539,8 @@ public class AdminUserManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.UserResetPassword));
     }
 
-    [Fact]
-    public async Task 重置口令过短时被拒()
+    [Fact(DisplayName = "重置口令过短时被拒")]
+    public async Task ResetUserPassword_TooShort_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
         var user = _ctx.GivenUser();
@@ -556,8 +556,8 @@ public class AdminUserManagementTests
         Assert.Equal("密码长度不能少于 6 个字符", ex.Message);
     }
 
-    [Fact]
-    public async Task 机器人账号无口令可重置()
+    [Fact(DisplayName = "机器人账号无口令可重置")]
+    public async Task ResetUserPassword_BotAccount_HasNoPassword()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -585,8 +585,8 @@ public class AdminUserQueryTests
 
     private ListUsersHandler ListHandler() => new(_ctx.Users, Builder());
 
-    [Fact]
-    public async Task 用户列表按ID倒序分页()
+    [Fact(DisplayName = "用户列表按ID倒序分页")]
+    public async Task ListUsers_SortedByIdDescending_Paged()
     {
         for (var i = 0; i < 5; i++) _ctx.GivenUser($"用户{i}", $"u{i}@test.local");
 
@@ -597,8 +597,8 @@ public class AdminUserQueryTests
         Assert.True(result.Data.Items[0].Id > result.Data.Items[1].Id);
     }
 
-    [Fact]
-    public async Task 按昵称搜索()
+    [Fact(DisplayName = "按昵称搜索")]
+    public async Task ListUsers_KeywordNickname_FiltersMatch()
     {
         _ctx.GivenUser("张三", "a@test.local");
         _ctx.GivenUser("李四", "b@test.local");
@@ -608,8 +608,8 @@ public class AdminUserQueryTests
         Assert.Equal("张三", Assert.Single(result.Data!.Items).Nickname);
     }
 
-    [Fact]
-    public async Task 按账号ID搜索()
+    [Fact(DisplayName = "按账号ID搜索")]
+    public async Task ListUsers_KeywordUserId_FiltersMatch()
     {
         var user = _ctx.GivenUser();
 
@@ -621,8 +621,8 @@ public class AdminUserQueryTests
         Assert.Equal(user.Id, Assert.Single(result.Data!.Items).Id);
     }
 
-    [Fact]
-    public async Task 按邮箱片段搜索()
+    [Fact(DisplayName = "按邮箱片段搜索")]
+    public async Task ListUsers_KeywordEmailFragment_FiltersMatch()
     {
         _ctx.GivenUser("张三", "alice@test.local");
         _ctx.GivenUser("李四", "bob@test.local");
@@ -632,8 +632,8 @@ public class AdminUserQueryTests
         Assert.Equal("张三", Assert.Single(result.Data!.Items).Nickname);
     }
 
-    [Fact]
-    public async Task 按机器人筛选()
+    [Fact(DisplayName = "按机器人筛选")]
+    public async Task ListUsers_IsBotFilter_ReturnsOnlyBots()
     {
         var owner = _ctx.GivenUser();
         _ctx.GivenRobot(owner.Id);
@@ -645,8 +645,8 @@ public class AdminUserQueryTests
         Assert.All(humans.Data!.Items, u => Assert.False(u.IsBot));
     }
 
-    [Fact]
-    public async Task 按封禁状态筛选()
+    [Fact(DisplayName = "按封禁状态筛选")]
+    public async Task ListUsers_BannedFilter_ReturnsOnlyBanned()
     {
         var admin = _ctx.GivenAdmin();
         var banned = _ctx.GivenUser("被封", "a@test.local");
@@ -659,8 +659,8 @@ public class AdminUserQueryTests
         Assert.Equal(banned.Id, Assert.Single(result.Data!.Items).Id);
     }
 
-    [Fact]
-    public async Task 用户DTO含好友数群数消息数与在线状态()
+    [Fact(DisplayName = "用户DTO含好友数群数消息数与在线状态")]
+    public async Task ListUsers_Dto_IncludesCountsAndOnlineStatus()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id, b.Id);
@@ -677,8 +677,8 @@ public class AdminUserQueryTests
         Assert.True(dto.IsOnline);
     }
 
-    [Fact]
-    public async Task 用户详情含登录设备()
+    [Fact(DisplayName = "用户详情含登录设备")]
+    public async Task GetUserDetail_ExistingUser_IncludesLoginDevices()
     {
         var user = _ctx.GivenUser();
         await _ctx.Sessions.SeedSessionAsync(user.Id, "s1", "手机");
@@ -690,16 +690,16 @@ public class AdminUserQueryTests
         Assert.Equal("手机", Assert.Single(result.Data.Sessions).DeviceName);
     }
 
-    [Fact]
-    public async Task 用户详情_用户不存在时抛出()
+    [Fact(DisplayName = "用户详情_用户不存在时抛出")]
+    public async Task GetUserDetail_UnknownUser_ThrowsNotFound()
     {
         await Assert.ThrowsAsync<EntityNotFoundException>(
             () => new GetUserDetailHandler(_ctx.Users, _ctx.Sessions, Builder())
                 .Handle(new GetUserDetailQuery { UserId = 99999 }, default));
     }
 
-    [Fact]
-    public async Task 空结果时返回空分页()
+    [Fact(DisplayName = "空结果时返回空分页")]
+    public async Task ListUsers_NoMatches_ReturnsEmptyPage()
     {
         var result = await ListHandler().Handle(new ListUsersQuery { Keyword = "不存在" }, default);
 
@@ -712,8 +712,8 @@ public class AdminGroupManagementTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 强制解散群_删群删成员删消息()
+    [Fact(DisplayName = "强制解散群_删群删成员删消息")]
+    public async Task DissolveGroup_RemovesGroupMembersAndMessages()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser("群主", "o@test.local");
@@ -734,8 +734,8 @@ public class AdminGroupManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.GroupDissolve));
     }
 
-    [Fact]
-    public async Task 强制解散与用户自行解散发同一事件()
+    [Fact(DisplayName = "强制解散与用户自行解散发同一事件")]
+    public async Task DissolveGroup_ByAdmin_RaisesSameEventAsSelfDissolve()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -750,8 +750,8 @@ public class AdminGroupManagementTests
         Assert.True(_ctx.Events.Has<Domain.Groups.GroupDissolved>());
     }
 
-    [Fact]
-    public async Task 强制移除成员()
+    [Fact(DisplayName = "强制移除成员")]
+    public async Task RemoveGroupMember_ByAdmin_Succeeds()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser("群主", "o@test.local");
@@ -770,8 +770,8 @@ public class AdminGroupManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.GroupRemoveMember));
     }
 
-    [Fact]
-    public async Task 不能移除群主()
+    [Fact(DisplayName = "不能移除群主")]
+    public async Task RemoveGroupMember_Owner_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -788,8 +788,8 @@ public class AdminGroupManagementTests
         Assert.Equal("不能移除群主，请先转让群主", ex.Message);
     }
 
-    [Fact]
-    public async Task 禁言与解除禁言()
+    [Fact(DisplayName = "禁言与解除禁言")]
+    public async Task MuteGroupMember_MuteAndUnmute_Apply()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser("群主", "o@test.local");
@@ -814,8 +814,8 @@ public class AdminGroupManagementTests
         Assert.Null((await _ctx.GroupMembers.FindAsync(group.Id, member.Id))!.MutedUntil);
     }
 
-    [Fact]
-    public async Task 不能禁言群主()
+    [Fact(DisplayName = "不能禁言群主")]
+    public async Task MuteGroupMember_Owner_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -833,8 +833,8 @@ public class AdminGroupManagementTests
         Assert.Equal("不能禁言群主", ex.Message);
     }
 
-    [Fact]
-    public async Task 禁言留审计且描述含截止时间()
+    [Fact(DisplayName = "禁言留审计且描述含截止时间")]
+    public async Task MuteGroupMember_AuditDetail_ContainsDeadline()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser("群主", "o@test.local");
@@ -854,8 +854,8 @@ public class AdminGroupManagementTests
         Assert.Contains("UTC", record.Detail!, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 转让群主_新群主升级原群主降级()
+    [Fact(DisplayName = "转让群主_新群主升级原群主降级")]
+    public async Task TransferGroupOwner_PromotesNewOwner_DemotesOldOwner()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser("群主", "o@test.local");
@@ -878,8 +878,8 @@ public class AdminGroupManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.GroupTransfer));
     }
 
-    [Fact]
-    public async Task 新群主必须是群成员()
+    [Fact(DisplayName = "新群主必须是群成员")]
+    public async Task TransferGroupOwner_NonMember_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -896,8 +896,8 @@ public class AdminGroupManagementTests
         Assert.Equal("新群主必须是群成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 群列表含群主昵称成员数消息数()
+    [Fact(DisplayName = "群列表含群主昵称成员数消息数")]
+    public async Task ListGroups_Dto_IncludesOwnerNameMemberAndMessageCounts()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -914,8 +914,8 @@ public class AdminGroupManagementTests
         Assert.Equal(1, dto.MessageCount);
     }
 
-    [Fact]
-    public async Task 群详情含成员禁言状态与机器人标记()
+    [Fact(DisplayName = "群详情含成员禁言状态与机器人标记")]
+    public async Task GetGroupDetail_IncludesMemberMuteStateAndBotFlag()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -933,8 +933,8 @@ public class AdminGroupManagementTests
         Assert.NotNull(bot.MutedUntil);
     }
 
-    [Fact]
-    public async Task 群详情_群不存在时抛出()
+    [Fact(DisplayName = "群详情_群不存在时抛出")]
+    public async Task GetGroupDetail_UnknownGroup_ThrowsNotFound()
     {
         await Assert.ThrowsAsync<EntityNotFoundException>(
             () => new GetGroupDetailHandler(
@@ -950,8 +950,8 @@ public class AdminMessageManagementTests
     private DeleteMessageByAdminHandler Handler()
         => new(_ctx.PrivateMessages, _ctx.GroupMessages, _ctx.Events, _ctx.Audit, _ctx.Clock);
 
-    [Fact]
-    public async Task 强制删除私聊消息_复用撤回事件()
+    [Fact(DisplayName = "强制删除私聊消息_复用撤回事件")]
+    public async Task DeleteMessage_PrivateChat_ReusesRecallEvent()
     {
         var admin = _ctx.GivenAdmin();
         var (a, b) = _ctx.GivenFriends();
@@ -971,8 +971,8 @@ public class AdminMessageManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.MessageDelete));
     }
 
-    [Fact]
-    public async Task 强制删除不受时间窗限制()
+    [Fact(DisplayName = "强制删除不受时间窗限制")]
+    public async Task DeleteMessage_OldMessage_IgnoresTimeWindow()
     {
         var admin = _ctx.GivenAdmin();
         var (a, b) = _ctx.GivenFriends();
@@ -986,8 +986,8 @@ public class AdminMessageManagementTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 强制删除群消息()
+    [Fact(DisplayName = "强制删除群消息")]
+    public async Task DeleteMessage_GroupChat_MarksDeleted()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -1003,8 +1003,8 @@ public class AdminMessageManagementTests
         Assert.Equal(group.Id, _ctx.Events.SingleEvent<Domain.Messaging.MessageRecalled>().GroupId);
     }
 
-    [Fact]
-    public async Task 无效消息类型被拒()
+    [Fact(DisplayName = "无效消息类型被拒")]
+    public async Task DeleteMessage_InvalidType_IsRejected()
     {
         var admin = _ctx.GivenAdmin();
 
@@ -1017,8 +1017,8 @@ public class AdminMessageManagementTests
         Assert.Equal("无效的消息类型", ex.Message);
     }
 
-    [Fact]
-    public async Task 消息不存在时抛出()
+    [Fact(DisplayName = "消息不存在时抛出")]
+    public async Task DeleteMessage_UnknownMessage_ThrowsNotFound()
     {
         var admin = _ctx.GivenAdmin();
 
@@ -1029,8 +1029,8 @@ public class AdminMessageManagementTests
             }, default));
     }
 
-    [Fact]
-    public async Task 检索合并私聊与群聊_按时间倒序()
+    [Fact(DisplayName = "检索合并私聊与群聊_按时间倒序")]
+    public async Task SearchMessages_MergesBothTypes_OrdersByTimeDesc()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id);
@@ -1045,8 +1045,8 @@ public class AdminMessageManagementTests
         Assert.Equal("关键词群聊", result.Data.Items[0].Content);
     }
 
-    [Fact]
-    public async Task 指定群时不掺入私聊结果()
+    [Fact(DisplayName = "指定群时不掺入私聊结果")]
+    public async Task SearchMessages_GroupFilter_ExcludesPrivateResults()
     {
         // 否则「按群过滤」形同虚设
         var (a, b) = _ctx.GivenFriends();
@@ -1062,8 +1062,8 @@ public class AdminMessageManagementTests
         Assert.Equal("关键词群聊", Assert.Single(result.Data!.Items).Content);
     }
 
-    [Fact]
-    public async Task 已删除的消息仍出现在管理检索里()
+    [Fact(DisplayName = "已删除的消息仍出现在管理检索里")]
+    public async Task SearchMessages_DeletedMessages_AreStillReturned()
     {
         // 管理员需要能看到被删内容以便复核
         var admin = _ctx.GivenAdmin();
@@ -1086,8 +1086,8 @@ public class AdminRobotManagementTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 机器人列表含创建者与统计()
+    [Fact(DisplayName = "机器人列表含创建者与统计")]
+    public async Task ListRobots_Dto_IncludesOwnerAndStats()
     {
         var owner = _ctx.GivenUser(nickname: "创建者");
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -1104,8 +1104,8 @@ public class AdminRobotManagementTests
         Assert.Equal(1, dto.CallbackFailCount);
     }
 
-    [Fact]
-    public async Task 启停机器人并留审计()
+    [Fact(DisplayName = "启停机器人并留审计")]
+    public async Task SetRobotEnabled_EnableAndDisable_LeavesAudit()
     {
         var admin = _ctx.GivenAdmin();
         var owner = _ctx.GivenUser();
@@ -1127,8 +1127,8 @@ public class AdminRobotManagementTests
         Assert.True(_ctx.Audit.Has(AuditActions.RobotSetEnabled));
     }
 
-    [Fact]
-    public async Task 启停不存在的机器人时抛出()
+    [Fact(DisplayName = "启停不存在的机器人时抛出")]
+    public async Task SetRobotEnabled_UnknownRobot_ThrowsNotFound()
     {
         var admin = _ctx.GivenAdmin();
 
@@ -1140,8 +1140,8 @@ public class AdminRobotManagementTests
                 }, default));
     }
 
-    [Fact]
-    public async Task 机器人列表搜索()
+    [Fact(DisplayName = "机器人列表搜索")]
+    public async Task ListRobots_Keyword_FiltersByName()
     {
         var owner = _ctx.GivenUser();
         _ctx.GivenRobot(owner.Id, name: "客服助理");
@@ -1162,8 +1162,8 @@ public class DashboardTests
         => new(_ctx.Users, _ctx.Groups, _ctx.Robots,
             _ctx.PrivateMessages, _ctx.GroupMessages, _ctx.Connections, _ctx.Clock);
 
-    [Fact]
-    public async Task 统计卡片数据正确()
+    [Fact(DisplayName = "统计卡片数据正确")]
+    public async Task GetDashboard_StatCards_HaveCorrectValues()
     {
         var admin = _ctx.GivenAdmin();
         var (a, b) = _ctx.GivenFriends();
@@ -1190,8 +1190,8 @@ public class DashboardTests
         Assert.NotEqual(0, botUser.Id);
     }
 
-    [Fact]
-    public async Task 消息总数等于私聊加群聊()
+    [Fact(DisplayName = "消息总数等于私聊加群聊")]
+    public async Task GetDashboard_TotalMessages_EqualsPrivatePlusGroup()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id);
@@ -1205,8 +1205,8 @@ public class DashboardTests
         Assert.Equal(dto.TodayPrivateMessages + dto.TodayGroupMessages, dto.TodayMessages);
     }
 
-    [Fact]
-    public async Task 趋势与小时分布点数固定()
+    [Fact(DisplayName = "趋势与小时分布点数固定")]
+    public async Task GetDashboard_TrendAndHourlyBuckets_HaveFixedCounts()
     {
         var dto = (await Handler().Handle(new GetDashboardQuery(), default)).Data!;
 
@@ -1219,8 +1219,8 @@ public class DashboardTests
     /// 改造前这里有 bug：先按 dayAgo 算刻度、下一行又用 UtcNow 覆盖，
     /// 两行都 AddHours(-i)，导致图表左右颠倒。
     /// </summary>
-    [Fact]
-    public async Task 小时刻度按时间正序_末位是当前小时()
+    [Fact(DisplayName = "小时刻度按时间正序_末位是当前小时")]
+    public async Task GetDashboard_HourlyTicks_AscendingWithCurrentHourLast()
     {
         var dto = (await Handler().Handle(new GetDashboardQuery(), default)).Data!;
 
@@ -1233,8 +1233,8 @@ public class DashboardTests
         Assert.Equal(expectedFirst, dto.MessageHourTrend[0].Hour);
     }
 
-    [Fact]
-    public async Task 今日活跃用户按去重发送者统计()
+    [Fact(DisplayName = "今日活跃用户按去重发送者统计")]
+    public async Task GetDashboard_TodayActiveUsers_CountsDistinctSenders()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id);
@@ -1247,8 +1247,8 @@ public class DashboardTests
         Assert.Equal(2, dto.TodayActiveUsers);
     }
 
-    [Fact]
-    public async Task TOP用户排行按发送量合并私聊与群聊()
+    [Fact(DisplayName = "TOP用户排行按发送量合并私聊与群聊")]
+    public async Task GetDashboard_TopUsers_RanksByCombinedMessageCount()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id, b.Id);
@@ -1264,8 +1264,8 @@ public class DashboardTests
         Assert.Equal("张三", dto.TopUsers[0].Nickname);
     }
 
-    [Fact]
-    public async Task TOP群排行按消息量倒序()
+    [Fact(DisplayName = "TOP群排行按消息量倒序")]
+    public async Task GetDashboard_TopGroups_OrderedByMessageCountDesc()
     {
         var owner = _ctx.GivenUser();
         var busy = _ctx.GivenGroup(owner.Id);
@@ -1280,8 +1280,8 @@ public class DashboardTests
         Assert.Equal(2, dto.TopGroups[0].Count);
     }
 
-    [Fact]
-    public async Task 空库时各项为0且不报错()
+    [Fact(DisplayName = "空库时各项为0且不报错")]
+    public async Task GetDashboard_EmptyDatabase_ReturnsZeroes()
     {
         var dto = (await Handler().Handle(new GetDashboardQuery(), default)).Data!;
 

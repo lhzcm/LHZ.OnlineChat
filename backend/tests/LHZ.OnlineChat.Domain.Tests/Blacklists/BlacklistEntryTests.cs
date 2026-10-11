@@ -5,8 +5,8 @@ namespace LHZ.OnlineChat.Domain.Tests.Blacklists;
 
 public class BlacklistEntryTests
 {
-    [Fact]
-    public void Create_记录拉黑方向()
+    [Fact(DisplayName = "Create_记录拉黑方向")]
+    public void Create_RecordsBlockDirection()
     {
         var entry = BlacklistEntry.Create(userId: 10001, blockedUserId: 10002, T.Now);
 
@@ -15,18 +15,18 @@ public class BlacklistEntryTests
         Assert.Equal(T.Now, entry.CreatedAt);
     }
 
-    [Fact]
-    public void Create_不能拉黑自己()
+    [Fact(DisplayName = "Create_不能拉黑自己")]
+    public void Create_BlockingSelf_Throws()
     {
         var ex = Assert.Throws<DomainException>(() => BlacklistEntry.Create(10001, 10001, T.Now));
 
         Assert.Equal("不能拉黑自己", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Create_被拉黑ID非法时抛出")]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Create_被拉黑ID非法时抛出(int blockedUserId)
+    public void Create_InvalidBlockedUserId_Throws(int blockedUserId)
     {
         var ex = Assert.Throws<DomainException>(
             () => BlacklistEntry.Create(10001, blockedUserId, T.Now));
@@ -34,8 +34,8 @@ public class BlacklistEntryTests
         Assert.Equal("无效的用户 ID", ex.Message);
     }
 
-    [Fact]
-    public void UserBlocked事件携带双方标识()
+    [Fact(DisplayName = "UserBlocked事件携带双方标识")]
+    public void UserBlockedEvent_CarriesBothParties()
     {
         // 这个事件有两个订阅方：解除好友关系 + 推送 WS 通知。
         // 改造前这两件事一个写在 Service、一个写在 Controller，被劈成了两半。

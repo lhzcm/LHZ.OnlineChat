@@ -8,8 +8,8 @@ public class UserRegistrationTests
     private static readonly Email AnyEmail = Email.Parse("a@test.local");
     private static readonly PasswordHash AnyHash = PasswordHash.FromHash("$2a$11$fakehash");
 
-    [Fact]
-    public void Register_归一化昵称并记录时间()
+    [Fact(DisplayName = "Register_归一化昵称并记录时间")]
+    public void Register_PaddedNickname_TrimsAndUpdatesTimestamp()
     {
         var user = User.Register("  张三  ", AnyEmail, AnyHash, T.Now);
 
@@ -22,8 +22,8 @@ public class UserRegistrationTests
         Assert.Equal(T.Now, user.UpdatedAt);
     }
 
-    [Fact]
-    public void Register_此刻还没有账号ID_也还没有事件()
+    [Fact(DisplayName = "Register_此刻还没有账号ID_也还没有事件")]
+    public void Register_BeforePersist_HasNoIdAndNoEvents()
     {
         // 自增主键要等仓储插入后才有，事件必须等到那时才发（否则携带 Id=0）
         var user = User.Register("张三", AnyEmail, AnyHash, T.Now);
@@ -32,8 +32,8 @@ public class UserRegistrationTests
         Assert.Empty(user.DequeueDomainEvents());
     }
 
-    [Fact]
-    public void ConfirmRegistration_在主键回填后发出携带真实ID的事件()
+    [Fact(DisplayName = "ConfirmRegistration_在主键回填后发出携带真实ID的事件")]
+    public void ConfirmRegistration_AfterIdAssigned_RaisesEventWithRealId()
     {
         var user = User.Register("张三", AnyEmail, AnyHash, T.Now);
         user.AssignPersistedId(10001);
@@ -47,11 +47,11 @@ public class UserRegistrationTests
         Assert.Equal(T.Now, registered.OccurredAt);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Register_昵称为空时抛出")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
-    public void Register_昵称为空时抛出(string? nickname)
+    public void Register_EmptyNickname_Throws(string? nickname)
     {
         var ex = Assert.Throws<DomainException>(
             () => User.Register(nickname!, AnyEmail, AnyHash, T.Now));
@@ -59,8 +59,8 @@ public class UserRegistrationTests
         Assert.Equal("昵称不能为空", ex.Message);
     }
 
-    [Fact]
-    public void Register_昵称超长时抛出()
+    [Fact(DisplayName = "Register_昵称超长时抛出")]
+    public void Register_NicknameTooLong_Throws()
     {
         var ex = Assert.Throws<DomainException>(
             () => User.Register(new string('长', 51), AnyEmail, AnyHash, T.Now));
@@ -68,16 +68,16 @@ public class UserRegistrationTests
         Assert.Equal("昵称长度不能超过 50 个字符", ex.Message);
     }
 
-    [Fact]
-    public void Register_昵称恰好50字符时通过()
+    [Fact(DisplayName = "Register_昵称恰好50字符时通过")]
+    public void Register_NicknameAtMaxLength_Succeeds()
     {
         var user = User.Register(new string('长', 50), AnyEmail, AnyHash, T.Now);
 
         Assert.Equal(50, user.Nickname.Length);
     }
 
-    [Fact]
-    public void CreateBot_无邮箱无口令且标记为机器人()
+    [Fact(DisplayName = "CreateBot_无邮箱无口令且标记为机器人")]
+    public void CreateBot_WithoutEmailOrPassword_IsMarkedAsBot()
     {
         var bot = User.CreateBot("助理", "/uploads/bot.png", T.Now);
 
@@ -88,8 +88,8 @@ public class UserRegistrationTests
         Assert.Equal("/uploads/bot.png", bot.Avatar);
     }
 
-    [Fact]
-    public void ConfirmBotCreation_发出携带创建者的事件()
+    [Fact(DisplayName = "ConfirmBotCreation_发出携带创建者的事件")]
+    public void ConfirmBotCreation_WithOwnerId_RaisesCreatedEvent()
     {
         var bot = User.CreateBot("助理", null, T.Now);
         bot.AssignPersistedId(10005);
@@ -106,16 +106,16 @@ public class UserRegistrationTests
 
 public class UserLoginRulesTests
 {
-    [Fact]
-    public void EnsureCanLogin_正常账号通过()
+    [Fact(DisplayName = "EnsureCanLogin_正常账号通过")]
+    public void EnsureCanLogin_NormalAccount_Succeeds()
     {
         var user = TestUsers.Normal();
 
         user.EnsureCanLogin();
     }
 
-    [Fact]
-    public void EnsureCanLogin_机器人账号被拒()
+    [Fact(DisplayName = "EnsureCanLogin_机器人账号被拒")]
+    public void EnsureCanLogin_BotAccount_IsRejected()
     {
         var bot = TestUsers.Bot();
 
@@ -124,8 +124,8 @@ public class UserLoginRulesTests
         Assert.Equal("机器人账号不能登录", ex.Message);
     }
 
-    [Fact]
-    public void EnsureCanLogin_封禁账号被拒且提示语为封禁原因()
+    [Fact(DisplayName = "EnsureCanLogin_封禁账号被拒且提示语为封禁原因")]
+    public void EnsureCanLogin_BannedAccount_RejectedWithBanReason()
     {
         var user = TestUsers.Normal();
         user.Ban("发布违规内容", T.Now);
@@ -135,8 +135,8 @@ public class UserLoginRulesTests
         Assert.Equal("发布违规内容", ex.Message);
     }
 
-    [Fact]
-    public void EnsureCanLogin_封禁未填原因时用兜底提示语()
+    [Fact(DisplayName = "EnsureCanLogin_封禁未填原因时用兜底提示语")]
+    public void EnsureCanLogin_BannedWithoutReason_UsesFallbackMessage()
     {
         var user = TestUsers.Normal();
         user.Ban(null, T.Now);
@@ -146,8 +146,8 @@ public class UserLoginRulesTests
         Assert.Equal("账号已被封禁，请联系管理员", ex.Message);
     }
 
-    [Fact]
-    public void EnsureCanLogin_机器人判定优先于封禁判定()
+    [Fact(DisplayName = "EnsureCanLogin_机器人判定优先于封禁判定")]
+    public void EnsureCanLogin_BotCheck_TakesPrecedenceOverBan()
     {
         // 机器人不可能被封禁（Ban 会抛），所以顺序上机器人先被拦下
         var bot = TestUsers.Bot();
@@ -160,8 +160,8 @@ public class UserLoginRulesTests
 
 public class UserBehaviourTests
 {
-    [Fact]
-    public void Rename_归一化并推进更新时间()
+    [Fact(DisplayName = "Rename_归一化并推进更新时间")]
+    public void Rename_PaddedNickname_TrimsAndUpdatesTimestamp()
     {
         var user = TestUsers.Normal();
         var later = T.PlusMinutes(5);
@@ -172,8 +172,8 @@ public class UserBehaviourTests
         Assert.Equal(later, user.UpdatedAt);
     }
 
-    [Fact]
-    public void ChangeAvatar_可设置也可清空()
+    [Fact(DisplayName = "ChangeAvatar_可设置也可清空")]
+    public void ChangeAvatar_WithValueOrNull_UpdatesAvatar()
     {
         var user = TestUsers.Normal();
 
@@ -184,8 +184,8 @@ public class UserBehaviourTests
         Assert.Null(user.Avatar);
     }
 
-    [Fact]
-    public void ChangeEmail_更新并发出事件()
+    [Fact(DisplayName = "ChangeEmail_更新并发出事件")]
+    public void ChangeEmail_NewEmail_UpdatesAndRaisesEvent()
     {
         var user = TestUsers.Normal();
         var newEmail = Email.Parse("new@test.local");
@@ -198,8 +198,8 @@ public class UserBehaviourTests
         Assert.Equal(user.Id, changed.UserId);
     }
 
-    [Fact]
-    public void ChangeEmail_机器人账号被拒()
+    [Fact(DisplayName = "ChangeEmail_机器人账号被拒")]
+    public void ChangeEmail_BotAccount_IsRejected()
     {
         var bot = TestUsers.Bot();
 
@@ -209,11 +209,11 @@ public class UserBehaviourTests
         Assert.Equal("机器人账号没有邮箱", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "SetPassword_三条路径都发出同一个事件")]
     [InlineData(PasswordChangeReason.SelfService)]
     [InlineData(PasswordChangeReason.ForgotPassword)]
     [InlineData(PasswordChangeReason.AdminReset)]
-    public void SetPassword_三条路径都发出同一个事件(PasswordChangeReason reason)
+    public void SetPassword_AnyReason_RaisesSameEvent(PasswordChangeReason reason)
     {
         // 这正是改造要解决的问题：只要口令变了，"踢掉全部会话"就必然被触发，
         // 不再依赖三处调用方各自记得去调
@@ -228,8 +228,8 @@ public class UserBehaviourTests
         Assert.Equal(user.Id, changed.UserId);
     }
 
-    [Fact]
-    public void SetPassword_机器人账号被拒()
+    [Fact(DisplayName = "SetPassword_机器人账号被拒")]
+    public void SetPassword_BotAccount_IsRejected()
     {
         var bot = TestUsers.Bot();
 
@@ -239,8 +239,8 @@ public class UserBehaviourTests
         Assert.Equal("机器人账号无密码", ex.Message);
     }
 
-    [Fact]
-    public void Ban_记录原因时间并发出事件()
+    [Fact(DisplayName = "Ban_记录原因时间并发出事件")]
+    public void Ban_WithReason_RecordsAndRaisesEvent()
     {
         var user = TestUsers.Normal();
 
@@ -253,8 +253,8 @@ public class UserBehaviourTests
         Assert.Equal("刷屏", banned.Reason);
     }
 
-    [Fact]
-    public void Ban_机器人账号被拒()
+    [Fact(DisplayName = "Ban_机器人账号被拒")]
+    public void Ban_BotAccount_IsRejected()
     {
         var bot = TestUsers.Bot();
 
@@ -263,8 +263,8 @@ public class UserBehaviourTests
         Assert.Equal("机器人账号不支持封禁，请直接删除机器人", ex.Message);
     }
 
-    [Fact]
-    public void Unban_清空封禁字段并发出事件()
+    [Fact(DisplayName = "Unban_清空封禁字段并发出事件")]
+    public void Unban_ClearsBanFields_RaisesEvent()
     {
         var user = TestUsers.Normal();
         user.Ban("刷屏", T.Now);
@@ -278,8 +278,8 @@ public class UserBehaviourTests
         Assert.IsType<UserUnbanned>(Assert.Single(user.DequeueDomainEvents()));
     }
 
-    [Fact]
-    public void Unban_解封后可重新登录()
+    [Fact(DisplayName = "Unban_解封后可重新登录")]
+    public void Unban_LiftedBan_AllowsLoginAgain()
     {
         var user = TestUsers.Normal();
         user.Ban("刷屏", T.Now);

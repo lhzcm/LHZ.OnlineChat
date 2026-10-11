@@ -8,8 +8,8 @@ public class AdminCreationTests
 {
     private static readonly PasswordHash AnyHash = PasswordHash.FromHash("$2a$11$fakehash");
 
-    [Fact]
-    public void Create_默认启用()
+    [Fact(DisplayName = "Create_默认启用")]
+    public void Create_DefaultStatus_IsEnabled()
     {
         var admin = Admin.Create("ops01", AnyHash, AdminRole.Operator, T.Now);
 
@@ -21,25 +21,25 @@ public class AdminCreationTests
         Assert.Equal(T.Now, admin.CreatedAt);
     }
 
-    [Fact]
-    public void Create_超管角色()
+    [Fact(DisplayName = "Create_超管角色")]
+    public void Create_SuperRole_SetsIsSuper()
     {
         var admin = Admin.Create("root", AnyHash, AdminRole.Super, T.Now);
 
         Assert.True(admin.IsSuper);
     }
 
-    [Fact]
-    public void NormalizeUsername_去空白()
+    [Fact(DisplayName = "NormalizeUsername_去空白")]
+    public void NormalizeUsername_TrimsWhitespace()
     {
         Assert.Equal("ops01", Admin.NormalizeUsername("  ops01 "));
     }
 
-    [Theory]
+    [Theory(DisplayName = "NormalizeUsername_过短时抛出")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("a")]              // 短于下限
-    public void NormalizeUsername_过短时抛出(string? username)
+    public void NormalizeUsername_TooShort_Throws(string? username)
     {
         var ex = Assert.Throws<DomainException>(() => Admin.NormalizeUsername(username));
 
@@ -47,17 +47,17 @@ public class AdminCreationTests
             $"账号长度需为 {Admin.MinUsernameLength}-{Admin.MaxUsernameLength} 个字符", ex.Message);
     }
 
-    [Fact]
-    public void NormalizeUsername_过长时抛出()
+    [Fact(DisplayName = "NormalizeUsername_过长时抛出")]
+    public void NormalizeUsername_TooLong_Throws()
     {
         Assert.Throws<DomainException>(
             () => Admin.NormalizeUsername(new string('x', Admin.MaxUsernameLength + 1)));
     }
 
-    [Theory]
+    [Theory(DisplayName = "NormalizeUsername_边界长度通过")]
     [InlineData(Admin.MinUsernameLength)]
     [InlineData(Admin.MaxUsernameLength)]
-    public void NormalizeUsername_边界长度通过(int length)
+    public void NormalizeUsername_BoundaryLength_Succeeds(int length)
     {
         Assert.Equal(length, Admin.NormalizeUsername(new string('x', length)).Length);
     }
@@ -65,14 +65,14 @@ public class AdminCreationTests
 
 public class AdminLoginTests
 {
-    [Fact]
-    public void EnsureCanLogin_启用状态通过()
+    [Fact(DisplayName = "EnsureCanLogin_启用状态通过")]
+    public void EnsureCanLogin_WhenEnabled_Succeeds()
     {
         TestAdmins.Create(status: AdminStatus.Enabled).EnsureCanLogin();
     }
 
-    [Fact]
-    public void EnsureCanLogin_停用状态被拒()
+    [Fact(DisplayName = "EnsureCanLogin_停用状态被拒")]
+    public void EnsureCanLogin_WhenDisabled_IsRejected()
     {
         var admin = TestAdmins.Create(status: AdminStatus.Disabled);
 
@@ -81,8 +81,8 @@ public class AdminLoginTests
         Assert.Equal("该管理员账号已停用", ex.Message);
     }
 
-    [Fact]
-    public void RecordLogin_记录最后登录时间()
+    [Fact(DisplayName = "RecordLogin_记录最后登录时间")]
+    public void RecordLogin_SetsLastLoginAt()
     {
         var admin = TestAdmins.Create();
 
@@ -91,8 +91,8 @@ public class AdminLoginTests
         Assert.Equal(T.Now, admin.LastLoginAt);
     }
 
-    [Fact]
-    public void SetPassword_替换哈希()
+    [Fact(DisplayName = "SetPassword_替换哈希")]
+    public void SetPassword_ReplacesHash()
     {
         var admin = TestAdmins.Create();
         var newHash = PasswordHash.FromHash("$2a$11$newhash");
@@ -105,8 +105,8 @@ public class AdminLoginTests
 
 public class AdminRoleChangeTests
 {
-    [Fact]
-    public void ChangeRoleAndStatus_可改他人角色与状态()
+    [Fact(DisplayName = "ChangeRoleAndStatus_可改他人角色与状态")]
+    public void ChangeRoleAndStatus_OtherAdmin_UpdatesRoleAndStatus()
     {
         var target = TestAdmins.Create(id: 2, role: AdminRole.Operator);
 
@@ -116,8 +116,8 @@ public class AdminRoleChangeTests
         Assert.Equal(AdminStatus.Disabled, target.Status);
     }
 
-    [Fact]
-    public void ChangeRoleAndStatus_只传角色时状态不变()
+    [Fact(DisplayName = "ChangeRoleAndStatus_只传角色时状态不变")]
+    public void ChangeRoleAndStatus_RoleOnly_KeepsStatus()
     {
         var target = TestAdmins.Create(id: 2, status: AdminStatus.Enabled);
 
@@ -126,8 +126,8 @@ public class AdminRoleChangeTests
         Assert.Equal(AdminStatus.Enabled, target.Status);
     }
 
-    [Fact]
-    public void ChangeRoleAndStatus_不能停用自己()
+    [Fact(DisplayName = "ChangeRoleAndStatus_不能停用自己")]
+    public void ChangeRoleAndStatus_CannotDisableSelf()
     {
         // 否则超管可能把自己锁在门外
         var self = TestAdmins.Create(id: 1, role: AdminRole.Super);
@@ -139,8 +139,8 @@ public class AdminRoleChangeTests
         Assert.Equal(AdminStatus.Enabled, self.Status);
     }
 
-    [Fact]
-    public void ChangeRoleAndStatus_不能把自己降级为运营()
+    [Fact(DisplayName = "ChangeRoleAndStatus_不能把自己降级为运营")]
+    public void ChangeRoleAndStatus_CannotDemoteSelfToOperator()
     {
         var self = TestAdmins.Create(id: 1, role: AdminRole.Super);
 
@@ -151,8 +151,8 @@ public class AdminRoleChangeTests
         Assert.Equal(AdminRole.Super, self.Role);
     }
 
-    [Fact]
-    public void ChangeRoleAndStatus_可以把自己保持为超管()
+    [Fact(DisplayName = "ChangeRoleAndStatus_可以把自己保持为超管")]
+    public void ChangeRoleAndStatus_KeepingSelfAsSuper_IsAllowed()
     {
         // 幂等操作不该被拦
         var self = TestAdmins.Create(id: 1, role: AdminRole.Super);
@@ -162,8 +162,8 @@ public class AdminRoleChangeTests
         Assert.True(self.IsSuper);
     }
 
-    [Fact]
-    public void EnsureDeletableBy_不能删自己()
+    [Fact(DisplayName = "EnsureDeletableBy_不能删自己")]
+    public void EnsureDeletableBy_CannotDeleteSelf()
     {
         var self = TestAdmins.Create(id: 1, role: AdminRole.Operator);
 
@@ -171,8 +171,8 @@ public class AdminRoleChangeTests
             Assert.Throws<DomainException>(() => self.EnsureDeletableBy(1)).Message);
     }
 
-    [Fact]
-    public void EnsureDeletableBy_不能删超管()
+    [Fact(DisplayName = "EnsureDeletableBy_不能删超管")]
+    public void EnsureDeletableBy_CannotDeleteSuperAdmin()
     {
         var superAdmin = TestAdmins.Create(id: 2, role: AdminRole.Super);
 
@@ -180,8 +180,8 @@ public class AdminRoleChangeTests
             Assert.Throws<DomainException>(() => superAdmin.EnsureDeletableBy(1)).Message);
     }
 
-    [Fact]
-    public void EnsureDeletableBy_可删他人运营账号()
+    [Fact(DisplayName = "EnsureDeletableBy_可删他人运营账号")]
+    public void EnsureDeletableBy_CanDeleteOtherOperator()
     {
         TestAdmins.Create(id: 2, role: AdminRole.Operator).EnsureDeletableBy(1);
     }
@@ -189,8 +189,8 @@ public class AdminRoleChangeTests
 
 public class AdminAuditLogTests
 {
-    [Fact]
-    public void Record_完整记录操作上下文()
+    [Fact(DisplayName = "Record_完整记录操作上下文")]
+    public void Record_FullContext_IsCaptured()
     {
         var log = AdminAuditLog.Record(
             adminId: 1, adminName: "admin", AuditActions.UserBan, AuditActions.TargetUser,
@@ -206,8 +206,8 @@ public class AdminAuditLogTests
         Assert.Equal(T.Now, log.CreatedAt);
     }
 
-    [Fact]
-    public void Record_可选字段允许为空()
+    [Fact(DisplayName = "Record_可选字段允许为空")]
+    public void Record_OptionalFields_AllowNull()
     {
         var log = AdminAuditLog.Record(1, "admin", "x", "y", null, null, null, T.Now);
 
@@ -216,8 +216,8 @@ public class AdminAuditLogTests
         Assert.Null(log.Ip);
     }
 
-    [Fact]
-    public void 审计动作常量与目标类型互不重叠()
+    [Fact(DisplayName = "审计动作常量与目标类型互不重叠")]
+    public void AuditActions_AndTargetTypes_DoNotOverlap()
     {
         // 动作名形如 "对象.动作"，目标类型是单个词；混用会让按动作过滤失效
         var actions = new[]

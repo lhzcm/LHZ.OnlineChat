@@ -5,8 +5,8 @@ namespace LHZ.OnlineChat.Domain.Tests.Friends;
 
 public class FriendshipRequestTests
 {
-    [Fact]
-    public void Request_初始为待确认()
+    [Fact(DisplayName = "Request_初始为待确认")]
+    public void Request_InitialStatus_IsPending()
     {
         var friendship = Friendship.Request(requesterId: 10001, targetId: 10002, T.Now);
 
@@ -17,26 +17,26 @@ public class FriendshipRequestTests
         Assert.Equal(T.Now, friendship.CreatedAt);
     }
 
-    [Fact]
-    public void Request_不能添加自己()
+    [Fact(DisplayName = "Request_不能添加自己")]
+    public void Request_ToSelf_IsRejected()
     {
         var ex = Assert.Throws<DomainException>(() => Friendship.Request(10001, 10001, T.Now));
 
         Assert.Equal("不能添加自己为好友", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Request_目标ID非法时抛出")]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Request_目标ID非法时抛出(int targetId)
+    public void Request_InvalidTargetId_Throws(int targetId)
     {
         var ex = Assert.Throws<DomainException>(() => Friendship.Request(10001, targetId, T.Now));
 
         Assert.Equal("请输入正确的账号 ID", ex.Message);
     }
 
-    [Fact]
-    public void EstablishDirectly_直接建立已接受关系()
+    [Fact(DisplayName = "EstablishDirectly_直接建立已接受关系")]
+    public void EstablishDirectly_CreatesAcceptedFriendship()
     {
         // 创建机器人时与创建者自动成为好友，不走申请流程
         var friendship = Friendship.EstablishDirectly(10001, 10005, T.Now);
@@ -45,11 +45,11 @@ public class FriendshipRequestTests
         Assert.True(friendship.IsAccepted);
     }
 
-    [Theory]
+    [Theory(DisplayName = "DescribeRejectionOfNewRequest_提示语随状态而定")]
     [InlineData(FriendshipStatus.Pending, "已发送好友申请，等待对方确认")]
     [InlineData(FriendshipStatus.Accepted, "你们已经是好友了")]
     [InlineData(FriendshipStatus.Blocked, "对方已将你屏蔽")]
-    public void DescribeRejectionOfNewRequest_提示语随状态而定(
+    public void DescribeRejectionOfNewRequest_MessageDependsOnStatus(
         FriendshipStatus status, string expected)
     {
         var friendship = TestFriendships.With(status);
@@ -60,8 +60,8 @@ public class FriendshipRequestTests
 
 public class FriendshipAcceptTests
 {
-    [Fact]
-    public void Accept_被申请方可接受并发出事件()
+    [Fact(DisplayName = "Accept_被申请方可接受并发出事件")]
+    public void Accept_ByTarget_AcceptsAndRaisesEvent()
     {
         var friendship = TestFriendships.Pending(requesterId: 10001, targetId: 10002);
 
@@ -74,8 +74,8 @@ public class FriendshipAcceptTests
         Assert.Equal(10002, accepted.AccepterId);
     }
 
-    [Fact]
-    public void Accept_申请方自己不能接受()
+    [Fact(DisplayName = "Accept_申请方自己不能接受")]
+    public void Accept_ByRequester_IsRejected()
     {
         var friendship = TestFriendships.Pending(requesterId: 10001, targetId: 10002);
 
@@ -84,16 +84,16 @@ public class FriendshipAcceptTests
         Assert.Equal("无权操作此申请", ex.Message);
     }
 
-    [Fact]
-    public void Accept_无关第三方不能接受()
+    [Fact(DisplayName = "Accept_无关第三方不能接受")]
+    public void Accept_ByUnrelatedUser_IsRejected()
     {
         var friendship = TestFriendships.Pending(10001, 10002);
 
         Assert.Throws<DomainException>(() => friendship.Accept(10003, T.Now));
     }
 
-    [Fact]
-    public void Accept_已处理的申请不能重复接受()
+    [Fact(DisplayName = "Accept_已处理的申请不能重复接受")]
+    public void Accept_WhenAlreadyHandled_IsRejected()
     {
         var friendship = TestFriendships.Pending(10001, 10002);
         friendship.Accept(10002, T.Now);
@@ -103,8 +103,8 @@ public class FriendshipAcceptTests
         Assert.Equal("该申请已处理", ex.Message);
     }
 
-    [Fact]
-    public void Accept_失败时不产生事件()
+    [Fact(DisplayName = "Accept_失败时不产生事件")]
+    public void Accept_WhenFailed_RaisesNoEvent()
     {
         var friendship = TestFriendships.Pending(10001, 10002);
 
@@ -113,8 +113,8 @@ public class FriendshipAcceptTests
         Assert.Empty(friendship.DequeueDomainEvents());
     }
 
-    [Fact]
-    public void EnsureCanReject_仅被申请方可拒绝()
+    [Fact(DisplayName = "EnsureCanReject_仅被申请方可拒绝")]
+    public void EnsureCanReject_OnlyTarget_IsAllowed()
     {
         var friendship = TestFriendships.Pending(10001, 10002);
 
@@ -126,29 +126,29 @@ public class FriendshipAcceptTests
 
 public class FriendshipPeerTests
 {
-    [Theory]
+    [Theory(DisplayName = "Involves_判断是否牵涉某人")]
     [InlineData(10001, true)]
     [InlineData(10002, true)]
     [InlineData(10003, false)]
-    public void Involves_判断是否牵涉某人(int userId, bool expected)
+    public void Involves_ReturnsWhetherUserIsInvolved(int userId, bool expected)
     {
         var friendship = TestFriendships.Pending(10001, 10002);
 
         Assert.Equal(expected, friendship.Involves(userId));
     }
 
-    [Theory]
+    [Theory(DisplayName = "PeerOf_双向都能取到对方")]
     [InlineData(10001, 10002)]
     [InlineData(10002, 10001)]
-    public void PeerOf_双向都能取到对方(int me, int expectedPeer)
+    public void PeerOf_BothDirections_ReturnsPeer(int me, int expectedPeer)
     {
         var friendship = TestFriendships.Pending(10001, 10002);
 
         Assert.Equal(expectedPeer, friendship.PeerOf(me));
     }
 
-    [Fact]
-    public void PeerOf_与该关系无关时抛出()
+    [Fact(DisplayName = "PeerOf_与该关系无关时抛出")]
+    public void PeerOf_UnrelatedUser_Throws()
     {
         var friendship = TestFriendships.Pending(10001, 10002);
 
@@ -160,8 +160,8 @@ public class FriendshipPeerTests
 
 public class FriendSettingTests
 {
-    [Fact]
-    public void CreateFor_以设置者视角创建()
+    [Fact(DisplayName = "CreateFor_以设置者视角创建")]
+    public void CreateFor_FromOwnerPerspective_CreatesSetting()
     {
         var setting = FriendSetting.CreateFor(userId: 10001, friendId: 10002, T.Now);
 
@@ -171,8 +171,8 @@ public class FriendSettingTests
         Assert.Null(setting.Category);
     }
 
-    [Fact]
-    public void SetRemark_去空白并推进更新时间()
+    [Fact(DisplayName = "SetRemark_去空白并推进更新时间")]
+    public void SetRemark_TrimsAndUpdatesTimestamp()
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
         var later = T.PlusMinutes(1);
@@ -183,11 +183,11 @@ public class FriendSettingTests
         Assert.Equal(later, setting.UpdatedAt);
     }
 
-    [Theory]
+    [Theory(DisplayName = "SetRemark_空白视为清除")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("    ")]
-    public void SetRemark_空白视为清除(string? input)
+    public void SetRemark_BlankInput_ClearsRemark(string? input)
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
         setting.SetRemark("老王", T.Now);
@@ -197,8 +197,8 @@ public class FriendSettingTests
         Assert.Null(setting.Remark);
     }
 
-    [Fact]
-    public void SetRemark_超长时抛出()
+    [Fact(DisplayName = "SetRemark_超长时抛出")]
+    public void SetRemark_TooLong_Throws()
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
 
@@ -208,8 +208,8 @@ public class FriendSettingTests
         Assert.Equal($"备注长度不能超过 {FriendSetting.MaxRemarkLength} 个字符", ex.Message);
     }
 
-    [Fact]
-    public void SetRemark_恰好达到上限时通过()
+    [Fact(DisplayName = "SetRemark_恰好达到上限时通过")]
+    public void SetRemark_AtMaxLength_IsAccepted()
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
 
@@ -218,8 +218,8 @@ public class FriendSettingTests
         Assert.Equal(FriendSetting.MaxRemarkLength, setting.Remark!.Length);
     }
 
-    [Fact]
-    public void SetCategory_去空白并可清除()
+    [Fact(DisplayName = "SetCategory_去空白并可清除")]
+    public void SetCategory_TrimsAndCanClear()
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
 
@@ -230,8 +230,8 @@ public class FriendSettingTests
         Assert.Null(setting.Category);
     }
 
-    [Fact]
-    public void SetCategory_超长时抛出()
+    [Fact(DisplayName = "SetCategory_超长时抛出")]
+    public void SetCategory_TooLong_Throws()
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
 
@@ -241,8 +241,8 @@ public class FriendSettingTests
         Assert.Equal($"分类名称不能超过 {FriendSetting.MaxCategoryLength} 个字符", ex.Message);
     }
 
-    [Fact]
-    public void 备注与分类互不影响()
+    [Fact(DisplayName = "备注与分类互不影响")]
+    public void SetRemarkAndCategory_AreIndependent()
     {
         var setting = FriendSetting.CreateFor(10001, 10002, T.Now);
 

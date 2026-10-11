@@ -26,8 +26,8 @@ public class HourlyAggregateTests
             .UseAutoSyncStructure(false)
             .Build();
 
-    [Fact]
-    public void 查询失败时返回空结果_并以Warning级别记入日志()
+    [Fact(DisplayName = "查询失败时返回空结果_并以Warning级别记入日志")]
+    public void Query_Failure_ReturnsEmptyAndLogsWarning()
     {
         using var fsql = BuildUnreachableOrm();
         var logger = new RecordingLogger();

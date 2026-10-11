@@ -16,8 +16,8 @@ namespace LHZ.OnlineChat.Infrastructure.Tests.Persistence;
 /// </summary>
 public class MessageQueryOrderingTests
 {
-    [Fact]
-    public void 私聊分页按时间与ID双列排序()
+    [Fact(DisplayName = "私聊分页按时间与ID双列排序")]
+    public void PrivateChat_Paging_OrdersBySentAtThenId()
     {
         using var fsql = BuildOrm();
 
@@ -36,8 +36,8 @@ public class MessageQueryOrderingTests
         Assert.Contains("\"Id\" DESC", sql);
     }
 
-    [Fact]
-    public void 群消息分页按时间与ID双列排序()
+    [Fact(DisplayName = "群消息分页按时间与ID双列排序")]
+    public void GroupMessage_Paging_OrdersBySentAtThenId()
     {
         using var fsql = BuildOrm();
 
@@ -53,8 +53,8 @@ public class MessageQueryOrderingTests
         Assert.Contains("\"Id\" DESC", sql);
     }
 
-    [Fact]
-    public void 群离线补发按时间与ID升序()
+    [Fact(DisplayName = "群离线补发按时间与ID升序")]
+    public void GroupOfflineResend_Query_OrdersBySentAtThenIdAscending()
     {
         using var fsql = BuildOrm();
 

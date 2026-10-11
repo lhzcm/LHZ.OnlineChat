@@ -1,4 +1,22 @@
 <Project>
+  <!--
+    向上再继承一层：仓库根如果放了 Directory.Build.props，必须先导入它。
+
+    非写不可的原因和 tests/Directory.Build.props 里那句一样 —— MSBuild 向上找这个文件时
+    「就近取第一个就停」：本文件存在，backend/** 下的工程就不会再往上找，根级配置会被
+    静默忽略（不报错，只是不生效）。
+
+    起点必须写成 ../（本文件的上一级）；写成 $(MSBuildThisFileDirectory) 会找到本文件自己，
+    变成自导入。
+
+    当前仓库根没有这个文件，条件不成立即跳过，所以现在不改变任何行为；
+    加它只是为了让将来把仓库级配置放到根目录时不会踩上面那个坑。
+  -->
+  <PropertyGroup>
+    <_AboveDirectoryBuildProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</_AboveDirectoryBuildProps>
+  </PropertyGroup>
+  <Import Project="$(_AboveDirectoryBuildProps)" Condition="'$(_AboveDirectoryBuildProps)' != ''" />
+
   <!-- 四层共用的编译设置（Domain / Application / Infrastructure / Server） -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

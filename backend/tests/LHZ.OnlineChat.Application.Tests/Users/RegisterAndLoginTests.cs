@@ -12,8 +12,8 @@ public class SendVerificationCodeTests
     private SendVerificationCodeHandler Handler()
         => new(_ctx.Users, _ctx.Codes, _ctx.Email, _ctx.Env);
 
-    [Fact]
-    public async Task 发送成功并返回冷却秒数()
+    [Fact(DisplayName = "发送成功并返回冷却秒数")]
+    public async Task Send_Succeeds_ReturnsCooldownSeconds()
     {
         var result = await Handler().Handle(
             new SendVerificationCodeCommand { Email = "a@test.local" }, default);
@@ -23,8 +23,8 @@ public class SendVerificationCodeTests
         Assert.Single(_ctx.Email.Sent);
     }
 
-    [Fact]
-    public async Task 验证码为6位数字且按5分钟有效期保存()
+    [Fact(DisplayName = "验证码为6位数字且按5分钟有效期保存")]
+    public async Task Send_CodeIs6Digits_SavedWith5MinuteTtl()
     {
         await Handler().Handle(new SendVerificationCodeCommand { Email = "a@test.local" }, default);
 
@@ -34,8 +34,8 @@ public class SendVerificationCodeTests
         Assert.Equal(TimeSpan.FromMinutes(5), saved.Ttl);
     }
 
-    [Fact]
-    public async Task 开发环境未配置SMTP时回传devCode_保留本地调试体验()
+    [Fact(DisplayName = "开发环境未配置SMTP时回传devCode_保留本地调试体验")]
+    public async Task Send_DevEnvSmtpUnconfigured_ReturnsDevCodeForLocalDebug()
     {
         _ctx.Env.IsDevelopment = true;
         _ctx.Email.IsConfigured = false;
@@ -47,8 +47,8 @@ public class SendVerificationCodeTests
         Assert.Equal(_ctx.Codes.Saved[0].Code, result.Data.DevCode);
     }
 
-    [Fact]
-    public async Task 生产环境未配置SMTP时不回传devCode()
+    [Fact(DisplayName = "生产环境未配置SMTP时不回传devCode")]
+    public async Task Send_ProdEnvWithoutSmtp_OmitsDevCode()
     {
         _ctx.Env.IsDevelopment = false;
         _ctx.Email.IsConfigured = false;
@@ -62,8 +62,8 @@ public class SendVerificationCodeTests
         Assert.Null(result.Data!.DevCode);
     }
 
-    [Fact]
-    public async Task 生产环境未配置SMTP时验证码仍然有效()
+    [Fact(DisplayName = "生产环境未配置SMTP时验证码仍然有效")]
+    public async Task Send_ProdEnvWithoutSmtp_CodeStillValid()
     {
         // 回归测试：曾经把「未配置 SMTP」与「发送失败」当成同一件事，
         // 结果刚存下的验证码被立刻删除 —— 运维按服务器日志里的码去校验，
@@ -81,8 +81,8 @@ public class SendVerificationCodeTests
         Assert.Contains("未配置邮件服务", result.Message);
     }
 
-    [Fact]
-    public async Task 已配置但发送失败时抛错_并作废验证码释放冷却()
+    [Fact(DisplayName = "已配置但发送失败时抛错_并作废验证码释放冷却")]
+    public async Task Send_ConfiguredButSendFails_ThrowsAndReleasesCooldown()
     {
         _ctx.Env.IsDevelopment = false;
         _ctx.Email.IsConfigured = true;
@@ -98,8 +98,8 @@ public class SendVerificationCodeTests
         Assert.False(await _ctx.Codes.HasPendingCodeAsync(Email.Parse("a@test.local")));
     }
 
-    [Fact]
-    public async Task 生产环境SMTP正常时正常返回()
+    [Fact(DisplayName = "生产环境SMTP正常时正常返回")]
+    public async Task Send_ProdEnvWithSmtp_Succeeds()
     {
         _ctx.Env.IsDevelopment = false;
         _ctx.Email.IsConfigured = true;
@@ -113,8 +113,8 @@ public class SendVerificationCodeTests
         Assert.Equal("验证码已发送", result.Message);
     }
 
-    [Fact]
-    public async Task 已配置SMTP时不回传devCode()
+    [Fact(DisplayName = "已配置SMTP时不回传devCode")]
+    public async Task Send_SmtpConfigured_OmitsDevCode()
     {
         _ctx.Email.IsConfigured = true;
 
@@ -124,16 +124,16 @@ public class SendVerificationCodeTests
         Assert.Null(result.Data!.DevCode);
     }
 
-    [Fact]
-    public async Task 邮箱归一化后保存_大小写不影响后续校验()
+    [Fact(DisplayName = "邮箱归一化后保存_大小写不影响后续校验")]
+    public async Task Send_EmailSavedNormalized_CaseDoesNotAffectValidation()
     {
         await Handler().Handle(new SendVerificationCodeCommand { Email = "  A@Test.LOCAL " }, default);
 
         Assert.Equal("a@test.local", _ctx.Codes.Saved[0].Email);
     }
 
-    [Fact]
-    public async Task 冷却期内重复发送被拒()
+    [Fact(DisplayName = "冷却期内重复发送被拒")]
+    public async Task Send_WithinCooldown_IsRejected()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
 
@@ -144,8 +144,8 @@ public class SendVerificationCodeTests
         Assert.Empty(_ctx.Email.Sent);
     }
 
-    [Fact]
-    public async Task 忘记密码场景要求邮箱已注册()
+    [Fact(DisplayName = "忘记密码场景要求邮箱已注册")]
+    public async Task Send_ForgotPasswordUnregisteredEmail_IsRejected()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new SendVerificationCodeCommand
@@ -157,8 +157,8 @@ public class SendVerificationCodeTests
         Assert.Equal("该邮箱未注册", ex.Message);
     }
 
-    [Fact]
-    public async Task 忘记密码场景_邮箱已注册时放行()
+    [Fact(DisplayName = "忘记密码场景_邮箱已注册时放行")]
+    public async Task Send_ForgotPasswordRegisteredEmail_IsAllowed()
     {
         _ctx.GivenUser(email: "a@test.local");
 
@@ -172,8 +172,8 @@ public class SendVerificationCodeTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 注册场景不校验邮箱是否已注册_由注册用例负责()
+    [Fact(DisplayName = "注册场景不校验邮箱是否已注册_由注册用例负责")]
+    public async Task Send_RegisterPurpose_SkipsEmailExistenceCheck()
     {
         // 否则「邮箱已注册」会在发码阶段泄露账号存在性
         _ctx.GivenUser(email: "a@test.local");
@@ -184,8 +184,8 @@ public class SendVerificationCodeTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 邮箱格式非法时抛出()
+    [Fact(DisplayName = "邮箱格式非法时抛出")]
+    public async Task Send_InvalidEmail_Throws()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new SendVerificationCodeCommand { Email = "not-an-email" }, default));
@@ -204,8 +204,8 @@ public class RegisterUserTests
     private static RegisterUserCommand ValidCommand(string email = "a@test.local", string code = "123456")
         => new() { Nickname = "张三", Email = email, Code = code, Password = "pass123456" };
 
-    [Fact]
-    public async Task 注册成功并分配起始10000的账号ID()
+    [Fact(DisplayName = "注册成功并分配起始10000的账号ID")]
+    public async Task Register_Succeeds_AssignsStartingAccountId()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
 
@@ -216,8 +216,8 @@ public class RegisterUserTests
         Assert.Contains("10000", result.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 注册后用户已落库且字段正确()
+    [Fact(DisplayName = "注册后用户已落库且字段正确")]
+    public async Task Register_PersistsUser_WithCorrectFields()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
 
@@ -230,8 +230,8 @@ public class RegisterUserTests
         Assert.Equal(_ctx.Now, user.CreatedAt);
     }
 
-    [Fact]
-    public async Task 口令经哈希器处理后才存储()
+    [Fact(DisplayName = "口令经哈希器处理后才存储")]
+    public async Task Register_PasswordStoredAsHash_NotPlaintext()
     {
         // 这里只验证「用例把口令交给了 IPasswordHasher」；
         // 「哈希串不含明文、加盐、可校验」是 BCrypt 自身的性质，
@@ -246,8 +246,8 @@ public class RegisterUserTests
         Assert.False(_ctx.Hasher.Verify("wrong", user.PasswordHash));
     }
 
-    [Fact]
-    public async Task 注册事件在主键回填之后发出_携带真实账号ID()
+    [Fact(DisplayName = "注册事件在主键回填之后发出_携带真实账号ID")]
+    public async Task Register_RaisesEventAfterIdAssigned_WithRealAccountId()
     {
         // 改造前这里是隐患点：若在 Insert 之前发事件，订阅方拿到的 UserId 是 0
         _ctx.Codes.Seed("a@test.local", "123456");
@@ -259,8 +259,8 @@ public class RegisterUserTests
         Assert.Equal("张三", registered.Nickname);
     }
 
-    [Fact]
-    public async Task 验证码被消费_不能重放()
+    [Fact(DisplayName = "验证码被消费_不能重放")]
+    public async Task Register_CodeConsumed_CannotBeReplayed()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
         await Handler().Handle(ValidCommand(), default);
@@ -271,8 +271,8 @@ public class RegisterUserTests
         Assert.Equal("验证码错误或已过期", ex.Message);
     }
 
-    [Fact]
-    public async Task 验证码错误时抛出且不建用户()
+    [Fact(DisplayName = "验证码错误时抛出且不建用户")]
+    public async Task Register_WrongCode_ThrowsWithoutCreatingUser()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
 
@@ -283,8 +283,8 @@ public class RegisterUserTests
         Assert.Empty(_ctx.Users.All);
     }
 
-    [Fact]
-    public async Task 邮箱已注册时抛出()
+    [Fact(DisplayName = "邮箱已注册时抛出")]
+    public async Task Register_EmailAlreadyRegistered_Throws()
     {
         _ctx.GivenUser(email: "a@test.local");
         _ctx.Codes.Seed("a@test.local", "123456");
@@ -295,8 +295,8 @@ public class RegisterUserTests
         Assert.Equal("该邮箱已注册", ex.Message);
     }
 
-    [Fact]
-    public async Task 校验先于验证码消费_格式错误不浪费验证码()
+    [Fact(DisplayName = "校验先于验证码消费_格式错误不浪费验证码")]
+    public async Task Register_ValidationBeforeCodeConsumption_KeepsCodeUsable()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
 
@@ -310,8 +310,8 @@ public class RegisterUserTests
         Assert.True(await _ctx.Codes.HasPendingCodeAsync(Email.Parse("a@test.local")));
     }
 
-    [Fact]
-    public async Task 昵称与邮箱都被归一化()
+    [Fact(DisplayName = "昵称与邮箱都被归一化")]
+    public async Task Register_NicknameAndEmail_AreNormalized()
     {
         _ctx.Codes.Seed("a@test.local", "123456");
 
@@ -325,8 +325,8 @@ public class RegisterUserTests
         Assert.Equal("a@test.local", user.Email!.Value);
     }
 
-    [Fact]
-    public async Task 连续注册的账号ID递增()
+    [Fact(DisplayName = "连续注册的账号ID递增")]
+    public async Task Register_SequentialRegistrations_IncrementAccountId()
     {
         _ctx.Codes.Seed("a@test.local", "111111");
         _ctx.Codes.Seed("b@test.local", "222222");
@@ -346,8 +346,8 @@ public class LoginTests
     private LoginHandler Handler()
         => new(_ctx.Users, _ctx.Hasher, _ctx.Tokens, _ctx.Sessions, _ctx.Throttle);
 
-    [Fact]
-    public async Task 按账号ID登录成功()
+    [Fact(DisplayName = "按账号ID登录成功")]
+    public async Task Login_ByAccountId_Succeeds()
     {
         var user = _ctx.GivenUser();
 
@@ -364,8 +364,8 @@ public class LoginTests
         Assert.NotEmpty(result.Data.RefreshToken);
     }
 
-    [Fact]
-    public async Task 按邮箱登录成功()
+    [Fact(DisplayName = "按邮箱登录成功")]
+    public async Task Login_ByEmail_Succeeds()
     {
         var user = _ctx.GivenUser(email: "a@test.local");
 
@@ -376,8 +376,8 @@ public class LoginTests
         Assert.Equal(user.Id, result.Data!.User.Id);
     }
 
-    [Fact]
-    public async Task 邮箱大小写不敏感()
+    [Fact(DisplayName = "邮箱大小写不敏感")]
+    public async Task Login_EmailCaseInsensitive_Succeeds()
     {
         _ctx.GivenUser(email: "a@test.local");
 
@@ -387,8 +387,8 @@ public class LoginTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 登录后创建会话并存储刷新令牌()
+    [Fact(DisplayName = "登录后创建会话并存储刷新令牌")]
+    public async Task Login_CreatesSession_StoresRefreshToken()
     {
         var user = _ctx.GivenUser();
 
@@ -407,8 +407,8 @@ public class LoginTests
         Assert.Equal(result.Data!.RefreshToken, current);
     }
 
-    [Fact]
-    public async Task 未传设备名时记为未知设备()
+    [Fact(DisplayName = "未传设备名时记为未知设备")]
+    public async Task Login_MissingDeviceName_RecordsUnknownDevice()
     {
         var user = _ctx.GivenUser();
 
@@ -423,8 +423,8 @@ public class LoginTests
         Assert.Equal("未知设备", session.DeviceName);
     }
 
-    [Fact]
-    public async Task 多端登录各自独立会话()
+    [Fact(DisplayName = "多端登录各自独立会话")]
+    public async Task Login_MultipleDevices_GetIndependentSessions()
     {
         var user = _ctx.GivenUser();
         var command = new LoginCommand
@@ -439,8 +439,8 @@ public class LoginTests
         Assert.Equal(2, (await _ctx.Sessions.ListSessionsAsync(user.Id)).Count);
     }
 
-    [Fact]
-    public async Task 口令错误时统一提示语()
+    [Fact(DisplayName = "口令错误时统一提示语")]
+    public async Task Login_WrongPassword_ShowsGenericMessage()
     {
         var user = _ctx.GivenUser();
 
@@ -453,8 +453,8 @@ public class LoginTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Fact]
-    public async Task 账号不存在时与口令错误同一提示语_不泄露存在性()
+    [Fact(DisplayName = "账号不存在时与口令错误同一提示语_不泄露存在性")]
+    public async Task Login_UnknownAccount_SameMessageAsWrongPassword()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new LoginCommand { Account = "99999999", Password = "pass123456" }, default));
@@ -462,8 +462,8 @@ public class LoginTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Fact]
-    public async Task 邮箱格式非法时也走统一提示语()
+    [Fact(DisplayName = "邮箱格式非法时也走统一提示语")]
+    public async Task Login_MalformedEmail_ShowsGenericMessage()
     {
         // 登录输入既可能是账号也可能是邮箱，不该抛「邮箱格式不正确」
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
@@ -472,12 +472,12 @@ public class LoginTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "账号或口令为空时提示补全")]
     [InlineData("", "pass123456")]
     [InlineData("   ", "pass123456")]
     [InlineData("10000", "")]
     [InlineData("10000", "   ")]
-    public async Task 账号或口令为空时提示补全(string account, string password)
+    public async Task Login_EmptyAccountOrPassword_PromptsForInput(string account, string password)
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new LoginCommand { Account = account, Password = password }, default));
@@ -485,8 +485,8 @@ public class LoginTests
         Assert.Equal("请输入账号和密码", ex.Message);
     }
 
-    [Fact]
-    public async Task 机器人账号无法登录_且提示与口令错误一致不泄露账号类型()
+    [Fact(DisplayName = "机器人账号无法登录_且提示与口令错误一致不泄露账号类型")]
+    public async Task Login_BotAccount_RejectedLikeWrongPassword()
     {
         var (_, botUser) = _ctx.GivenRobot(ownerId: 10001);
 
@@ -502,8 +502,8 @@ public class LoginTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Fact]
-    public async Task 封禁账号登录被拒且提示封禁原因()
+    [Fact(DisplayName = "封禁账号登录被拒且提示封禁原因")]
+    public async Task Login_BannedAccount_RejectedWithBanReason()
     {
         var user = _ctx.GivenUser();
         user.Ban("发布违规内容", _ctx.Now);
@@ -518,8 +518,8 @@ public class LoginTests
         Assert.Equal("发布违规内容", ex.Message);
     }
 
-    [Fact]
-    public async Task 口令错误时不泄露账号是否被封禁()
+    [Fact(DisplayName = "口令错误时不泄露账号是否被封禁")]
+    public async Task Login_WrongPassword_DoesNotRevealBanStatus()
     {
         var user = _ctx.GivenUser();
         user.Ban("封禁中", _ctx.Now);
@@ -536,8 +536,8 @@ public class LoginTests
         Assert.Equal("账号或密码错误", ex.Message);
     }
 
-    [Fact]
-    public async Task 口令错误时记一次限流失败_登录成功后账号维度清零()
+    [Fact(DisplayName = "口令错误时记一次限流失败_登录成功后账号维度清零")]
+    public async Task Login_WrongPassword_RecordsThrottleFailureThenResets()
     {
         var user = _ctx.GivenUser();
 
@@ -559,8 +559,8 @@ public class LoginTests
         Assert.Single(_ctx.Throttle.Resets);
     }
 
-    [Fact]
-    public async Task 限流锁定期内正确口令也被拒绝()
+    [Fact(DisplayName = "限流锁定期内正确口令也被拒绝")]
+    public async Task Login_DuringLockout_CorrectPasswordRejected()
     {
         var user = _ctx.GivenUser();
         _ctx.Throttle.LockoutSeconds = 600;
@@ -575,8 +575,8 @@ public class LoginTests
         Assert.Empty(await _ctx.Sessions.ListSessionIdsAsync(user.Id));
     }
 
-    [Fact]
-    public async Task 登录失败时不创建会话()
+    [Fact(DisplayName = "登录失败时不创建会话")]
+    public async Task Login_Failure_DoesNotCreateSession()
     {
         var user = _ctx.GivenUser();
 
@@ -608,8 +608,8 @@ public class RefreshTokenTests
         return (user, login.Data!.RefreshToken);
     }
 
-    [Fact]
-    public async Task 刷新成功并返回新令牌()
+    [Fact(DisplayName = "刷新成功并返回新令牌")]
+    public async Task Refresh_Succeeds_ReturnsNewToken()
     {
         var (user, refreshToken) = await GivenLoggedInAsync();
 
@@ -621,8 +621,8 @@ public class RefreshTokenTests
         Assert.Equal(user.Id, result.Data.User.Id);
     }
 
-    [Fact]
-    public async Task 刷新令牌被轮换()
+    [Fact(DisplayName = "刷新令牌被轮换")]
+    public async Task Refresh_TokenIsRotated()
     {
         var (_, refreshToken) = await GivenLoggedInAsync();
 
@@ -632,8 +632,8 @@ public class RefreshTokenTests
         Assert.NotEqual(refreshToken, result.Data!.RefreshToken);
     }
 
-    [Fact]
-    public async Task 旧刷新令牌轮换后立即失效_防复用()
+    [Fact(DisplayName = "旧刷新令牌轮换后立即失效_防复用")]
+    public async Task Refresh_OldTokenAfterRotation_IsRejected()
     {
         var (_, refreshToken) = await GivenLoggedInAsync();
         await Handler().Handle(new RefreshTokenCommand { RefreshToken = refreshToken }, default);
@@ -644,8 +644,8 @@ public class RefreshTokenTests
         Assert.Equal("RefreshToken 无效或已过期", ex.Message);
     }
 
-    [Fact]
-    public async Task 刷新不改变会话ID_多端互不影响()
+    [Fact(DisplayName = "刷新不改变会话ID_多端互不影响")]
+    public async Task Refresh_KeepsSessionId_MultiDeviceUnaffected()
     {
         var (user, refreshToken) = await GivenLoggedInAsync();
         var sessionBefore = Assert.Single(await _ctx.Sessions.ListSessionIdsAsync(user.Id));
@@ -656,8 +656,8 @@ public class RefreshTokenTests
         Assert.Equal(sessionBefore, sessionAfter);
     }
 
-    [Fact]
-    public async Task 刷新时更新最后活跃时间()
+    [Fact(DisplayName = "刷新时更新最后活跃时间")]
+    public async Task Refresh_UpdatesLastActiveTime()
     {
         var (user, refreshToken) = await GivenLoggedInAsync();
         var sessionId = Assert.Single(await _ctx.Sessions.ListSessionIdsAsync(user.Id));
@@ -667,10 +667,10 @@ public class RefreshTokenTests
         Assert.Contains(sessionId, _ctx.Sessions.TouchedSessions);
     }
 
-    [Theory]
+    [Theory(DisplayName = "令牌为空时提示不能为空")]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task 令牌为空时提示不能为空(string token)
+    public async Task Refresh_EmptyToken_IsRejected(string token)
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new RefreshTokenCommand { RefreshToken = token }, default));
@@ -678,8 +678,8 @@ public class RefreshTokenTests
         Assert.Equal("RefreshToken 不能为空", ex.Message);
     }
 
-    [Fact]
-    public async Task 未知令牌被拒()
+    [Fact(DisplayName = "未知令牌被拒")]
+    public async Task Refresh_UnknownToken_IsRejected()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new RefreshTokenCommand { RefreshToken = "never-issued" }, default));
@@ -687,8 +687,8 @@ public class RefreshTokenTests
         Assert.Equal("RefreshToken 无效或已过期", ex.Message);
     }
 
-    [Fact]
-    public async Task 用户已被删除时抛出()
+    [Fact(DisplayName = "用户已被删除时抛出")]
+    public async Task Refresh_DeletedUser_Throws()
     {
         var (user, refreshToken) = await GivenLoggedInAsync();
         await _ctx.Users.DeleteAsync(user.Id);

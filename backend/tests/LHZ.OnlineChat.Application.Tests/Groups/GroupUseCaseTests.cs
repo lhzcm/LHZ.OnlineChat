@@ -16,8 +16,8 @@ public class CreateGroupTests
     private CreateGroupHandler Handler()
         => new(_ctx.Groups, _ctx.GroupMembers, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 建群成功_创建者即群主()
+    [Fact(DisplayName = "建群成功_创建者即群主")]
+    public async Task Create_Succeeds_OwnerBecomesGroupOwner()
     {
         var owner = _ctx.GivenUser();
 
@@ -30,8 +30,8 @@ public class CreateGroupTests
         Assert.Equal(1, result.Data.MemberCount);
     }
 
-    [Fact]
-    public async Task 建群后创建者被登记为群主成员()
+    [Fact(DisplayName = "建群后创建者被登记为群主成员")]
+    public async Task Create_RegistersCreatorAsOwnerMember()
     {
         var owner = _ctx.GivenUser();
 
@@ -42,8 +42,8 @@ public class CreateGroupTests
         Assert.Equal(GroupRole.Owner, member.Role);
     }
 
-    [Fact]
-    public async Task 建群发出事件()
+    [Fact(DisplayName = "建群发出事件")]
+    public async Task Create_RaisesGroupCreatedEvent()
     {
         var owner = _ctx.GivenUser();
 
@@ -55,8 +55,8 @@ public class CreateGroupTests
         Assert.NotEqual(0, e.GroupId);
     }
 
-    [Fact]
-    public async Task 群名为空时抛出且不留下半成品()
+    [Fact(DisplayName = "群名为空时抛出且不留下半成品")]
+    public async Task Create_WithEmptyName_ThrowsAndLeavesNoResidue()
     {
         var owner = _ctx.GivenUser();
 
@@ -75,8 +75,8 @@ public class JoinLeaveGroupTests
     private JoinGroupHandler JoinHandler()
         => new(_ctx.Groups, _ctx.GroupMembers, _ctx.GroupMessages, _ctx.Clock);
 
-    [Fact]
-    public async Task 加入群组成功()
+    [Fact(DisplayName = "加入群组成功")]
+    public async Task Join_OpenGroup_Succeeds()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var joiner = _ctx.GivenUser("新人", "j@test.local");
@@ -89,8 +89,8 @@ public class JoinLeaveGroupTests
         Assert.True(await _ctx.GroupMembers.ExistsAsync(group.Id, joiner.Id));
     }
 
-    [Fact]
-    public async Task 默认仅限邀请_不能自行加入()
+    [Fact(DisplayName = "默认仅限邀请_不能自行加入")]
+    public async Task Join_DefaultInviteOnly_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var outsider = _ctx.GivenUser("路人", "x@test.local");
@@ -106,8 +106,8 @@ public class JoinLeaveGroupTests
         Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, outsider.Id));
     }
 
-    [Fact]
-    public async Task 从开放改回仅限邀请后不能再自行加入()
+    [Fact(DisplayName = "从开放改回仅限邀请后不能再自行加入")]
+    public async Task Join_AfterPolicyRevertedToInviteOnly_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var outsider = _ctx.GivenUser("路人", "x@test.local");
@@ -120,8 +120,8 @@ public class JoinLeaveGroupTests
             new JoinGroupCommand { GroupId = group.Id, UserId = outsider.Id }, default));
     }
 
-    [Fact]
-    public async Task 加入时已读游标设为当前最新消息_避免历史被当离线消息补发()
+    [Fact(DisplayName = "加入时已读游标设为当前最新消息_避免历史被当离线消息补发")]
+    public async Task Join_SetsLastReadToLatestMessage()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var joiner = _ctx.GivenUser("新人", "j@test.local");
@@ -136,8 +136,8 @@ public class JoinLeaveGroupTests
         Assert.Equal(latest.Id, member!.LastReadMessageId);
     }
 
-    [Fact]
-    public async Task 空群加入时游标为0()
+    [Fact(DisplayName = "空群加入时游标为0")]
+    public async Task Join_EmptyGroup_SetsCursorToZero()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var joiner = _ctx.GivenUser("新人", "j@test.local");
@@ -149,8 +149,8 @@ public class JoinLeaveGroupTests
         Assert.Equal(0, (await _ctx.GroupMembers.FindAsync(group.Id, joiner.Id))!.LastReadMessageId);
     }
 
-    [Fact]
-    public async Task 重复加入被拒()
+    [Fact(DisplayName = "重复加入被拒")]
+    public async Task Join_AlreadyMember_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -161,8 +161,8 @@ public class JoinLeaveGroupTests
         Assert.Equal("你已经是该群组成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 群不存在时抛出()
+    [Fact(DisplayName = "群不存在时抛出")]
+    public async Task Join_GroupNotFound_Throws()
     {
         var user = _ctx.GivenUser();
 
@@ -170,8 +170,8 @@ public class JoinLeaveGroupTests
             new JoinGroupCommand { GroupId = 99999, UserId = user.Id }, default));
     }
 
-    [Fact]
-    public async Task 普通成员可退群()
+    [Fact(DisplayName = "普通成员可退群")]
+    public async Task Leave_AsMember_Succeeds()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -184,8 +184,8 @@ public class JoinLeaveGroupTests
         Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, member.Id));
     }
 
-    [Fact]
-    public async Task 群主不能直接退群()
+    [Fact(DisplayName = "群主不能直接退群")]
+    public async Task Leave_AsOwner_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -198,8 +198,8 @@ public class JoinLeaveGroupTests
         Assert.True(await _ctx.GroupMembers.ExistsAsync(group.Id, owner.Id));
     }
 
-    [Fact]
-    public async Task 非成员退群时抛出()
+    [Fact(DisplayName = "非成员退群时抛出")]
+    public async Task Leave_NonMember_Throws()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -219,8 +219,8 @@ public class DismissGroupTests
     private DismissGroupHandler Handler()
         => new(_ctx.Groups, _ctx.GroupMembers, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 群主解散成功并清空成员()
+    [Fact(DisplayName = "群主解散成功并清空成员")]
+    public async Task Dismiss_ByOwner_SucceedsAndClearsMembers()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -234,8 +234,8 @@ public class DismissGroupTests
         Assert.Empty(_ctx.GroupMembers.All);
     }
 
-    [Fact]
-    public async Task 非群主不能解散()
+    [Fact(DisplayName = "非群主不能解散")]
+    public async Task Dismiss_ByNonOwner_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -252,8 +252,8 @@ public class DismissGroupTests
     /// 改造前的行为不一致：用户自己解散群不通知在线成员，只有管理后台解散才通知。
     /// 现在两条路径发同一个事件，订阅方统一处理。
     /// </summary>
-    [Fact]
-    public async Task 用户自行解散也会通知在线成员并清理会话设置()
+    [Fact(DisplayName = "用户自行解散也会通知在线成员并清理会话设置")]
+    public async Task Dismiss_ByUser_NotifiesMembersAndClearsSessionSettings()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -273,8 +273,8 @@ public class DismissGroupTests
         Assert.Empty(_ctx.SessionSettings.All);
     }
 
-    [Fact]
-    public async Task 解散事件携带解散前的成员名单()
+    [Fact(DisplayName = "解散事件携带解散前的成员名单")]
+    public async Task Dismiss_EventCarriesMemberListBeforeDissolution()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -296,8 +296,8 @@ public class InviteGroupMembersTests
         => new(_ctx.Groups, _ctx.GroupMembers, _ctx.GroupMessages,
             _ctx.Friendships, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 群主邀请好友成功并逐个通知()
+    [Fact(DisplayName = "群主邀请好友成功并逐个通知")]
+    public async Task Invite_ByOwner_SucceedsAndNotifiesEachFriend()
     {
         var (owner, friend) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(owner.Id);
@@ -314,8 +314,8 @@ public class InviteGroupMembersTests
         Assert.Equal(group.Id, push.ContextId);
     }
 
-    [Fact]
-    public async Task 管理员也可邀请()
+    [Fact(DisplayName = "管理员也可邀请")]
+    public async Task Invite_ByAdmin_Succeeds()
     {
         var (owner, friend) = _ctx.GivenFriends();
         var admin = _ctx.GivenUser("管理员", "adm@test.local");
@@ -333,8 +333,8 @@ public class InviteGroupMembersTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 普通成员不能邀请()
+    [Fact(DisplayName = "普通成员不能邀请")]
+    public async Task Invite_ByMember_IsRejected()
     {
         var (owner, friend) = _ctx.GivenFriends();
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -350,8 +350,8 @@ public class InviteGroupMembersTests
         Assert.Equal("只有群主或管理员可以邀请成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 只能邀请自己的好友()
+    [Fact(DisplayName = "只能邀请自己的好友")]
+    public async Task Invite_NonFriend_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var stranger = _ctx.GivenUser("陌生人", "s@test.local");
@@ -366,8 +366,8 @@ public class InviteGroupMembersTests
         Assert.Equal("只能邀请自己的好友加入群组", ex.Message);
     }
 
-    [Fact]
-    public async Task 全部已在群中时被拒()
+    [Fact(DisplayName = "全部已在群中时被拒")]
+    public async Task Invite_AllAlreadyInGroup_IsRejected()
     {
         var (owner, friend) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(owner.Id, friend.Id);
@@ -381,8 +381,8 @@ public class InviteGroupMembersTests
         Assert.Equal("所选好友都已在该群中", ex.Message);
     }
 
-    [Fact]
-    public async Task 部分已在群中时只邀请其余的()
+    [Fact(DisplayName = "部分已在群中时只邀请其余的")]
+    public async Task Invite_SomeAlreadyInGroup_InvitesOnlyTheRest()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var inGroup = _ctx.GivenUser("已在群", "a@test.local");
@@ -402,8 +402,8 @@ public class InviteGroupMembersTests
         Assert.True(await _ctx.GroupMembers.ExistsAsync(group.Id, newOne.Id));
     }
 
-    [Fact]
-    public async Task 名单为空时被拒()
+    [Fact(DisplayName = "名单为空时被拒")]
+    public async Task Invite_EmptyUserList_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -417,8 +417,8 @@ public class InviteGroupMembersTests
         Assert.Equal("请选择要邀请的好友", ex.Message);
     }
 
-    [Fact]
-    public async Task 名单去重后计数()
+    [Fact(DisplayName = "名单去重后计数")]
+    public async Task Invite_DuplicateUserIds_CountedOnce()
     {
         var (owner, friend) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(owner.Id);
@@ -439,8 +439,8 @@ public class GroupMemberManagementTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 群主踢出普通成员()
+    [Fact(DisplayName = "群主踢出普通成员")]
+    public async Task Kick_ByOwner_RemovesMember()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -456,8 +456,8 @@ public class GroupMemberManagementTests
         Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, member.Id));
     }
 
-    [Fact]
-    public async Task 被踢出群后收到通知_客户端据此退出会话()
+    [Fact(DisplayName = "被踢出群后收到通知_客户端据此退出会话")]
+    public async Task Kick_NotifiesRemovedMember()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -477,8 +477,8 @@ public class GroupMemberManagementTests
         Assert.Equal(group.Id, push.ContextId);
     }
 
-    [Fact]
-    public async Task 踢人被拒时不发通知()
+    [Fact(DisplayName = "踢人被拒时不发通知")]
+    public async Task Kick_WhenRejected_SendsNoNotification()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var admin = _ctx.GivenUser("管理员", "a@test.local");
@@ -499,8 +499,8 @@ public class GroupMemberManagementTests
         Assert.Empty(_ctx.Notifier.OfKind(PushKind.GroupMemberRemoved));
     }
 
-    [Fact]
-    public async Task 不能踢群主()
+    [Fact(DisplayName = "不能踢群主")]
+    public async Task Kick_GroupOwner_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var admin = _ctx.GivenUser("管理员", "a@test.local");
@@ -519,8 +519,8 @@ public class GroupMemberManagementTests
         Assert.Equal("不能踢出群主", ex.Message);
     }
 
-    [Fact]
-    public async Task 管理员不能踢其他管理员()
+    [Fact(DisplayName = "管理员不能踢其他管理员")]
+    public async Task Kick_AdminTargetingAdmin_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var admin1 = _ctx.GivenUser("管理1", "a1@test.local");
@@ -544,8 +544,8 @@ public class GroupMemberManagementTests
         Assert.Equal("管理员不能踢出其他管理员", ex.Message);
     }
 
-    [Fact]
-    public async Task 目标不是群成员时抛出()
+    [Fact(DisplayName = "目标不是群成员时抛出")]
+    public async Task Kick_NonMemberTarget_Throws()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -560,8 +560,8 @@ public class GroupMemberManagementTests
         Assert.Equal("目标用户不是群成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 群主设置与取消管理员()
+    [Fact(DisplayName = "群主设置与取消管理员")]
+    public async Task SetAdmin_GrantThenRevoke_Succeeds()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -583,8 +583,8 @@ public class GroupMemberManagementTests
         Assert.Equal(GroupRole.Member, (await _ctx.GroupMembers.FindAsync(group.Id, member.Id))!.Role);
     }
 
-    [Fact]
-    public async Task 非群主不能设置管理员()
+    [Fact(DisplayName = "非群主不能设置管理员")]
+    public async Task SetAdmin_ByNonOwner_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -600,8 +600,8 @@ public class GroupMemberManagementTests
         Assert.Equal("只有群主可以设置管理员", ex.Message);
     }
 
-    [Fact]
-    public async Task 不能通过设管理员改群主身份()
+    [Fact(DisplayName = "不能通过设管理员改群主身份")]
+    public async Task SetAdmin_OnGroupOwner_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -624,8 +624,8 @@ public class GroupAnnouncementUseCaseTests
     private SetGroupAnnouncementHandler Handler()
         => new(_ctx.Groups, _ctx.GroupMembers, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 群主设置公告成功()
+    [Fact(DisplayName = "群主设置公告成功")]
+    public async Task SetAnnouncement_ByOwner_Succeeds()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -641,8 +641,8 @@ public class GroupAnnouncementUseCaseTests
         Assert.Equal(owner.Id, stored.Announcement.EditedBy);
     }
 
-    [Fact]
-    public async Task 清除公告时三列一并置空()
+    [Fact(DisplayName = "清除公告时三列一并置空")]
+    public async Task SetAnnouncement_WhenCleared_NullsAllThreeColumns()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -663,8 +663,8 @@ public class GroupAnnouncementUseCaseTests
         Assert.Null(stored.AnnouncementBy);
     }
 
-    [Fact]
-    public async Task 普通成员不能设置公告()
+    [Fact(DisplayName = "普通成员不能设置公告")]
+    public async Task SetAnnouncement_ByMember_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -679,8 +679,8 @@ public class GroupAnnouncementUseCaseTests
         Assert.Equal("只有群主或管理员可以设置公告", ex.Message);
     }
 
-    [Fact]
-    public async Task 非成员不能设置公告()
+    [Fact(DisplayName = "非成员不能设置公告")]
+    public async Task SetAnnouncement_ByNonMember_Throws()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -694,8 +694,8 @@ public class GroupAnnouncementUseCaseTests
         Assert.Equal("你不是该群组成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 公告变更发出事件()
+    [Fact(DisplayName = "公告变更发出事件")]
+    public async Task SetAnnouncement_RaisesChangedEvent()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -715,8 +715,8 @@ public class GroupQueryTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 我的群列表含成员数与我的角色()
+    [Fact(DisplayName = "我的群列表含成员数与我的角色")]
+    public async Task GetMyGroups_IncludesMemberCountAndMyRole()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -731,8 +731,8 @@ public class GroupQueryTests
         Assert.Equal(2, info.MyRole);      // 普通成员
     }
 
-    [Fact]
-    public async Task 未加入任何群时返回空列表()
+    [Fact(DisplayName = "未加入任何群时返回空列表")]
+    public async Task GetMyGroups_NoMembership_ReturnsEmpty()
     {
         var user = _ctx.GivenUser();
 
@@ -742,8 +742,8 @@ public class GroupQueryTests
         Assert.Empty(result.Data!);
     }
 
-    [Fact]
-    public async Task 群列表带公告信息()
+    [Fact(DisplayName = "群列表带公告信息")]
+    public async Task GetMyGroups_IncludesAnnouncement()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -758,8 +758,8 @@ public class GroupQueryTests
         Assert.NotNull(info.AnnouncementAt);
     }
 
-    [Fact]
-    public async Task 成员列表按角色排序_群主在前()
+    [Fact(DisplayName = "成员列表按角色排序_群主在前")]
+    public async Task GetGroupMembers_OrderedByRole_OwnerFirst()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -773,8 +773,8 @@ public class GroupQueryTests
         Assert.Equal(owner.Id, result.Data[0].UserId);
     }
 
-    [Fact]
-    public async Task 非成员不能查看群成员名单()
+    [Fact(DisplayName = "非成员不能查看群成员名单")]
+    public async Task GetGroupMembers_ByNonMember_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var outsider = _ctx.GivenUser("路人", "x@test.local");
@@ -788,8 +788,8 @@ public class GroupQueryTests
         Assert.Equal("你不是该群成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 非成员不能查看群内机器人()
+    [Fact(DisplayName = "非成员不能查看群内机器人")]
+    public async Task GetGroupRobots_ByNonMember_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var outsider = _ctx.GivenUser("路人", "x@test.local");
@@ -803,8 +803,8 @@ public class GroupQueryTests
         Assert.Equal("你不是该群成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 群成员可以查看群内机器人()
+    [Fact(DisplayName = "群成员可以查看群内机器人")]
+    public async Task GetGroupRobots_ByMember_Succeeds()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -817,8 +817,8 @@ public class GroupQueryTests
         Assert.Contains(result.Data!, r => r.UserId == robot.UserId);
     }
 
-    [Fact]
-    public async Task 成员列表含在线状态与机器人标记()
+    [Fact(DisplayName = "成员列表含在线状态与机器人标记")]
+    public async Task GetGroupMembers_IncludesOnlineStatusAndBotFlag()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -841,8 +841,8 @@ public class SetGroupJoinPolicyTests
     private SetGroupJoinPolicyHandler Handler()
         => new(_ctx.Groups, _ctx.GroupMembers, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 群主可开放加入()
+    [Fact(DisplayName = "群主可开放加入")]
+    public async Task SetJoinPolicy_ByOwner_CanOpenJoin()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -856,8 +856,8 @@ public class SetGroupJoinPolicyTests
         Assert.True((await _ctx.Groups.GetRequiredAsync(group.Id))!.IsOpenToJoin);
     }
 
-    [Fact]
-    public async Task 管理员可开放加入()
+    [Fact(DisplayName = "管理员可开放加入")]
+    public async Task SetJoinPolicy_ByAdmin_CanOpenJoin()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var admin = _ctx.GivenUser("管理员", "a@test.local");
@@ -875,8 +875,8 @@ public class SetGroupJoinPolicyTests
         Assert.Equal("已允许任何人加入", result.Message);
     }
 
-    [Fact]
-    public async Task 普通成员不能修改入群方式()
+    [Fact(DisplayName = "普通成员不能修改入群方式")]
+    public async Task SetJoinPolicy_ByMember_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -891,8 +891,8 @@ public class SetGroupJoinPolicyTests
         Assert.Equal("只有群主或管理员可以修改入群方式", ex.Message);
     }
 
-    [Fact]
-    public async Task 非成员不能修改入群方式()
+    [Fact(DisplayName = "非成员不能修改入群方式")]
+    public async Task SetJoinPolicy_ByNonMember_Throws()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var outsider = _ctx.GivenUser("路人", "x@test.local");
@@ -905,8 +905,8 @@ public class SetGroupJoinPolicyTests
             }, default));
     }
 
-    [Fact]
-    public async Task 开放后回收仅限邀请()
+    [Fact(DisplayName = "开放后回收仅限邀请")]
+    public async Task SetJoinPolicy_BackToInviteOnly_Succeeds()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenOpenGroup(owner.Id);

@@ -16,8 +16,8 @@ public class CreateRobotTests
     private CreateRobotHandler Handler()
         => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 创建成功_同时建账号建配置建好友()
+    [Fact(DisplayName = "创建成功_同时建账号建配置建好友")]
+    public async Task Create_Succeeds_CreatesAccountConfigAndFriendship()
     {
         var owner = _ctx.GivenUser();
 
@@ -44,8 +44,8 @@ public class CreateRobotTests
         Assert.True(await _ctx.Friendships.AreFriendsAsync(owner.Id, botUser.Id));
     }
 
-    [Fact]
-    public async Task 令牌在主键回填之后生成()
+    [Fact(DisplayName = "令牌在主键回填之后生成")]
+    public async Task Create_Token_GeneratedAfterIdBackfill()
     {
         // 令牌是「加密后的主键」，插入前生成会得到 tok-0
         var owner = _ctx.GivenUser();
@@ -61,8 +61,8 @@ public class CreateRobotTests
         Assert.NotEqual(0, robot.Id);
     }
 
-    [Fact]
-    public async Task Webhook留空即纯推送模式()
+    [Fact(DisplayName = "Webhook留空即纯推送模式")]
+    public async Task Create_EmptyWebhook_EnablesPushOnlyMode()
     {
         var owner = _ctx.GivenUser();
 
@@ -75,8 +75,8 @@ public class CreateRobotTests
         Assert.False(Assert.Single(_ctx.Robots.All).RespondsToMessages);
     }
 
-    [Fact]
-    public async Task 非法Webhook协议被拒且不建任何记录()
+    [Fact(DisplayName = "非法Webhook协议被拒且不建任何记录")]
+    public async Task Create_InvalidWebhookScheme_RejectedWithoutRecords()
     {
         var owner = _ctx.GivenUser();
 
@@ -91,8 +91,8 @@ public class CreateRobotTests
         Assert.DoesNotContain(_ctx.Users.All, u => u.IsBot);
     }
 
-    [Fact]
-    public async Task 名称为空时被拒()
+    [Fact(DisplayName = "名称为空时被拒")]
+    public async Task Create_EmptyName_IsRejected()
     {
         var owner = _ctx.GivenUser();
 
@@ -102,8 +102,8 @@ public class CreateRobotTests
         Assert.Equal("机器人名称不能为空", ex.Message);
     }
 
-    [Fact]
-    public async Task 发出机器人账号创建事件()
+    [Fact(DisplayName = "发出机器人账号创建事件")]
+    public async Task Create_PublishesBotAccountCreatedEvent()
     {
         var owner = _ctx.GivenUser();
 
@@ -134,12 +134,12 @@ public class RobotWebhookTargetTests
     private UpdateRobotHandler UpdateHandler()
         => new(_ctx.Robots, _ctx.Users, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Clock);
 
-    [Theory]
+    [Theory(DisplayName = "创建时拒绝内网回调地址_且不留下半个机器人")]
     [InlineData("http://169.254.169.254/latest/meta-data/")]
     [InlineData("http://127.0.0.1:9000/hook")]
     [InlineData("http://192.168.1.10:9000/hook")]
     [InlineData("http://postgres:5432/hook")]
-    public async Task 创建时拒绝内网回调地址_且不留下半个机器人(string url)
+    public async Task Create_PrivateTarget_RejectedWithoutPersistingRobot(string url)
     {
         var owner = _ctx.GivenUser();
 
@@ -151,8 +151,8 @@ public class RobotWebhookTargetTests
         Assert.DoesNotContain(_ctx.Users.All, u => u.IsBot);
     }
 
-    [Fact]
-    public async Task 更新时拒绝把地址改成内网_原值不变()
+    [Fact(DisplayName = "更新时拒绝把地址改成内网_原值不变")]
+    public async Task Update_PrivateTarget_RejectedKeepingOriginalUrl()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -167,8 +167,8 @@ public class RobotWebhookTargetTests
         Assert.Equal("https://example.com/hook", robot.WebhookUrlValue);
     }
 
-    [Fact]
-    public async Task 配置显式开启后允许内网地址()
+    [Fact(DisplayName = "配置显式开启后允许内网地址")]
+    public async Task Create_AllowPrivateTargetsEnabled_AcceptsPrivateUrl()
     {
         // 自建 Webhook 部署在内网是合理需求，由部署方用开关显式放行
         _ctx.WebhookTargets.AllowPrivateTargets = true;
@@ -191,8 +191,8 @@ public class UpdateDeleteRobotTests
     private UpdateRobotHandler UpdateHandler()
         => new(_ctx.Robots, _ctx.Users, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Clock);
 
-    [Fact]
-    public async Task 改名时同步机器人账号昵称()
+    [Fact(DisplayName = "改名时同步机器人账号昵称")]
+    public async Task Update_Rename_SyncsBotAccountNickname()
     {
         var owner = _ctx.GivenUser();
         var (robot, botUser) = _ctx.GivenRobot(owner.Id, name: "原名");
@@ -206,8 +206,8 @@ public class UpdateDeleteRobotTests
         Assert.Equal("新名", (await _ctx.Users.FindByIdAsync(botUser.Id))!.Nickname);
     }
 
-    [Fact]
-    public async Task 未改名时不动账号昵称()
+    [Fact(DisplayName = "未改名时不动账号昵称")]
+    public async Task Update_WithoutRename_KeepsBotNickname()
     {
         var owner = _ctx.GivenUser();
         var (robot, botUser) = _ctx.GivenRobot(owner.Id, name: "原名");
@@ -222,8 +222,8 @@ public class UpdateDeleteRobotTests
         Assert.Equal("原名", (await _ctx.Users.FindByIdAsync(botUser.Id))!.Nickname);
     }
 
-    [Fact]
-    public async Task 非创建者更新时报不存在_不泄露存在性()
+    [Fact(DisplayName = "非创建者更新时报不存在_不泄露存在性")]
+    public async Task Update_ByNonOwner_ReportsNotFoundWithoutLeaking()
     {
         var owner = _ctx.GivenUser("创建者", "o@test.local");
         var other = _ctx.GivenUser("别人", "x@test.local");
@@ -236,8 +236,8 @@ public class UpdateDeleteRobotTests
         Assert.Equal("机器人不存在", ex.Message);
     }
 
-    [Fact]
-    public async Task 机器人不存在时抛出()
+    [Fact(DisplayName = "机器人不存在时抛出")]
+    public async Task Update_UnknownRobot_ThrowsEntityNotFound()
     {
         var owner = _ctx.GivenUser();
 
@@ -245,8 +245,8 @@ public class UpdateDeleteRobotTests
             new UpdateRobotCommand { OwnerId = owner.Id, RobotId = 99999, Name = "x" }, default));
     }
 
-    [Fact]
-    public async Task 历史数据缺令牌时自动补齐()
+    [Fact(DisplayName = "历史数据缺令牌时自动补齐")]
+    public async Task Update_MissingTokenOnLegacyRobot_Backfills()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -263,8 +263,8 @@ public class UpdateDeleteRobotTests
         Assert.Equal(_ctx.Cipher.Encode(robot.Id), result.Data!.Token);
     }
 
-    [Fact]
-    public async Task 删除机器人时级联清理账号好友与群成员()
+    [Fact(DisplayName = "删除机器人时级联清理账号好友与群成员")]
+    public async Task Delete_CascadesAccountFriendshipAndGroupMember()
     {
         var owner = _ctx.GivenUser();
         var (robot, botUser) = _ctx.GivenRobot(owner.Id);
@@ -281,8 +281,8 @@ public class UpdateDeleteRobotTests
         Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, botUser.Id));
     }
 
-    [Fact]
-    public async Task 非创建者不能删除()
+    [Fact(DisplayName = "非创建者不能删除")]
+    public async Task Delete_ByNonOwner_IsRejected()
     {
         var owner = _ctx.GivenUser("创建者", "o@test.local");
         var other = _ctx.GivenUser("别人", "x@test.local");
@@ -295,8 +295,8 @@ public class UpdateDeleteRobotTests
         Assert.Single(_ctx.Robots.All);
     }
 
-    [Fact]
-    public async Task 管理后台删除时绕过创建者校验()
+    [Fact(DisplayName = "管理后台删除时绕过创建者校验")]
+    public async Task Delete_ByAdmin_BypassesOwnerCheck()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -309,8 +309,8 @@ public class UpdateDeleteRobotTests
         Assert.Empty(_ctx.Robots.All);
     }
 
-    [Fact]
-    public async Task 我的机器人列表只含自己创建的()
+    [Fact(DisplayName = "我的机器人列表只含自己创建的")]
+    public async Task GetMyRobots_ReturnsOnlyOwnedRobots()
     {
         var owner = _ctx.GivenUser("我", "o@test.local");
         var other = _ctx.GivenUser("别人", "x@test.local");
@@ -331,8 +331,8 @@ public class GroupRobotTests
     private AddGroupRobotHandler AddHandler()
         => new(_ctx.GroupMembers, _ctx.GroupMessages, _ctx.Robots, _ctx.Clock);
 
-    [Fact]
-    public async Task 群主可拉自己的机器人进群()
+    [Fact(DisplayName = "群主可拉自己的机器人进群")]
+    public async Task Add_ByGroupOwner_AddsOwnRobot()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id, name: "助理");
@@ -347,8 +347,8 @@ public class GroupRobotTests
         Assert.True(await _ctx.GroupMembers.ExistsAsync(group.Id, botUser.Id));
     }
 
-    [Fact]
-    public async Task 只能拉自己创建的机器人()
+    [Fact(DisplayName = "只能拉自己创建的机器人")]
+    public async Task Add_OtherOwnersRobot_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var other = _ctx.GivenUser("别人", "x@test.local");
@@ -364,8 +364,8 @@ public class GroupRobotTests
         Assert.Equal("只能添加自己创建的机器人", ex.Message);
     }
 
-    [Fact]
-    public async Task 普通成员不能拉机器人()
+    [Fact(DisplayName = "普通成员不能拉机器人")]
+    public async Task Add_ByRegularMember_IsRejected()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -381,8 +381,8 @@ public class GroupRobotTests
         Assert.Equal("只有群主或管理员可以添加机器人", ex.Message);
     }
 
-    [Fact]
-    public async Task 重复拉入被拒()
+    [Fact(DisplayName = "重复拉入被拒")]
+    public async Task Add_AlreadyInGroup_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -397,8 +397,8 @@ public class GroupRobotTests
         Assert.Equal("该机器人已在群中", ex.Message);
     }
 
-    [Fact]
-    public async Task 机器人入群时已读游标设为最新_不补发历史()
+    [Fact(DisplayName = "机器人入群时已读游标设为最新_不补发历史")]
+    public async Task Add_SetsLastReadToLatest_NoHistoryBackfill()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -414,8 +414,8 @@ public class GroupRobotTests
             (await _ctx.GroupMembers.FindAsync(group.Id, botUser.Id))!.LastReadMessageId);
     }
 
-    [Fact]
-    public async Task 移除群机器人()
+    [Fact(DisplayName = "移除群机器人")]
+    public async Task Remove_GroupRobot_Succeeds()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -431,8 +431,8 @@ public class GroupRobotTests
         Assert.False(await _ctx.GroupMembers.ExistsAsync(group.Id, botUser.Id));
     }
 
-    [Fact]
-    public async Task 移除不在群的机器人时被拒()
+    [Fact(DisplayName = "移除不在群的机器人时被拒")]
+    public async Task Remove_RobotNotInGroup_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -448,8 +448,8 @@ public class GroupRobotTests
         Assert.Equal("该机器人不在群中", ex.Message);
     }
 
-    [Fact]
-    public async Task 群内机器人列表只含机器人()
+    [Fact(DisplayName = "群内机器人列表只含机器人")]
+    public async Task GetGroupRobots_ReturnsOnlyRobots()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -470,8 +470,8 @@ public class RobotReplyTests
         => new(_ctx.Robots, _ctx.Users, _ctx.PrivateMessages, _ctx.GroupMessages,
             _ctx.GroupMembers, _ctx.Cache, _ctx.Notifier, _ctx.Clock);
 
-    [Fact]
-    public async Task 机器人私聊回复走统一消息通道()
+    [Fact(DisplayName = "机器人私聊回复走统一消息通道")]
+    public async Task Send_PrivateReply_UsesUnifiedMessageChannel()
     {
         var owner = _ctx.GivenUser();
         var (robot, botUser) = _ctx.GivenRobot(owner.Id);
@@ -494,8 +494,8 @@ public class RobotReplyTests
         Assert.Single(_ctx.Notifier.OfKind(PushKind.PrivateMessage));
     }
 
-    [Fact]
-    public async Task 机器人回复累计推送次数()
+    [Fact(DisplayName = "机器人回复累计推送次数")]
+    public async Task Send_Reply_IncrementsPushCount()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -513,8 +513,8 @@ public class RobotReplyTests
         Assert.Equal(2, (await _ctx.Robots.FindByIdAsync(robot.Id))!.PushCount);
     }
 
-    [Fact]
-    public async Task 机器人群回复广播给全部成员()
+    [Fact(DisplayName = "机器人群回复广播给全部成员")]
+    public async Task Send_GroupReply_BroadcastsToAllMembers()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -533,8 +533,8 @@ public class RobotReplyTests
         Assert.Single(_ctx.GroupMessages.All);
     }
 
-    [Fact]
-    public async Task 机器人回复可携带引用()
+    [Fact(DisplayName = "机器人回复可携带引用")]
+    public async Task Send_Reply_CarriesQuote()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -609,8 +609,8 @@ public class HandleRobotReplyTests
             _ctx.Friendships, _ctx.GroupMembers, sender), sender);
     }
 
-    [Fact]
-    public async Task 第三方私聊推送成功()
+    [Fact(DisplayName = "第三方私聊推送成功")]
+    public async Task Handle_PrivatePush_Succeeds()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -631,8 +631,8 @@ public class HandleRobotReplyTests
         Assert.Equal("推送内容", Assert.Single(_ctx.PrivateMessages.All).Content);
     }
 
-    [Fact]
-    public async Task 令牌无效时被拒()
+    [Fact(DisplayName = "令牌无效时被拒")]
+    public async Task Handle_InvalidToken_IsRejected()
     {
         var (handler, _) = Build();
 
@@ -646,8 +646,8 @@ public class HandleRobotReplyTests
         Assert.Equal("无效的机器人标识", ex.Message);
     }
 
-    [Fact]
-    public async Task 请求体为空时被拒()
+    [Fact(DisplayName = "请求体为空时被拒")]
+    public async Task Handle_EmptyRawBody_IsRejected()
     {
         var (handler, _) = Build();
 
@@ -657,8 +657,8 @@ public class HandleRobotReplyTests
         Assert.Equal("请求体不能为空", ex.Message);
     }
 
-    [Fact]
-    public async Task 配了密钥时验签失败被拒()
+    [Fact(DisplayName = "配了密钥时验签失败被拒")]
+    public async Task Handle_WithSecretAndBadSignature_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id, secret: "s3cret");
@@ -678,8 +678,8 @@ public class HandleRobotReplyTests
         Assert.Equal("签名验证失败", ex.Message);
     }
 
-    [Fact]
-    public async Task 未配密钥时免验签()
+    [Fact(DisplayName = "未配密钥时免验签")]
+    public async Task Handle_WithoutSecret_SkipsSignatureVerification()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id, secret: null);
@@ -698,8 +698,8 @@ public class HandleRobotReplyTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 私聊目标非好友时被拒_防骚扰()
+    [Fact(DisplayName = "私聊目标非好友时被拒_防骚扰")]
+    public async Task Handle_PrivateTargetNotFriend_RejectedAsAntiSpam()
     {
         var owner = _ctx.GivenUser("创建者", "o@test.local");
         var stranger = _ctx.GivenUser("陌生人", "s@test.local");
@@ -720,8 +720,8 @@ public class HandleRobotReplyTests
         Assert.Empty(_ctx.PrivateMessages.All);
     }
 
-    [Fact]
-    public async Task 群推送时机器人须在群中()
+    [Fact(DisplayName = "群推送时机器人须在群中")]
+    public async Task Handle_GroupPush_RobotMustBeInGroup()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -741,10 +741,10 @@ public class HandleRobotReplyTests
         Assert.Equal("机器人不在该群中", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "回复内容为空时被拒")]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task 回复内容为空时被拒(string content)
+    public async Task Handle_EmptyContent_IsRejected(string content)
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -763,8 +763,8 @@ public class HandleRobotReplyTests
         Assert.Equal("回复内容不能为空", ex.Message);
     }
 
-    [Fact]
-    public async Task 无效会话类型被拒()
+    [Fact(DisplayName = "无效会话类型被拒")]
+    public async Task Handle_InvalidSessionType_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -783,8 +783,8 @@ public class HandleRobotReplyTests
         Assert.Equal("无效的会话类型", ex.Message);
     }
 
-    [Fact]
-    public async Task 请求体解析失败时被拒()
+    [Fact(DisplayName = "请求体解析失败时被拒")]
+    public async Task Handle_UnparsableBody_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -807,8 +807,8 @@ public class TestRobotTests
     private TestRobotHandler Handler()
         => new(_ctx.Robots, _ctx.Users, _ctx.Webhooks, _ctx.Clock);
 
-    [Fact]
-    public async Task 测试触发返回同步回复()
+    [Fact(DisplayName = "测试触发返回同步回复")]
+    public async Task Test_ReturnsSynchronousReply()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -827,8 +827,8 @@ public class TestRobotTests
         Assert.Single(_ctx.Webhooks.Dispatched);
     }
 
-    [Fact]
-    public async Task 事件载荷以创建者为发送者()
+    [Fact(DisplayName = "事件载荷以创建者为发送者")]
+    public async Task Test_EventPayload_UsesOwnerAsSender()
     {
         var owner = _ctx.GivenUser(nickname: "创建者");
         var (robot, botUser) = _ctx.GivenRobot(owner.Id);
@@ -846,8 +846,8 @@ public class TestRobotTests
         Assert.Equal("测试内容", payload.Message.Content);
     }
 
-    [Fact]
-    public async Task 内容为空时用默认问候语()
+    [Fact(DisplayName = "内容为空时用默认问候语")]
+    public async Task Test_EmptyContent_UsesDefaultGreeting()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -860,8 +860,8 @@ public class TestRobotTests
         Assert.Equal("你好", Assert.Single(_ctx.Webhooks.Dispatched).Message.Content);
     }
 
-    [Fact]
-    public async Task 纯推送机器人不支持测试触发()
+    [Fact(DisplayName = "纯推送机器人不支持测试触发")]
+    public async Task Test_PushOnlyRobot_IsNotSupported()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id, webhook: "");
@@ -873,8 +873,8 @@ public class TestRobotTests
         Assert.Empty(_ctx.Webhooks.Dispatched);
     }
 
-    [Fact]
-    public async Task 非创建者不能测试()
+    [Fact(DisplayName = "非创建者不能测试")]
+    public async Task Test_ByNonOwner_IsRejected()
     {
         var owner = _ctx.GivenUser("创建者", "o@test.local");
         var other = _ctx.GivenUser("别人", "x@test.local");
@@ -884,8 +884,8 @@ public class TestRobotTests
             new TestRobotCommand { OwnerId = other.Id, RobotId = robot.Id }, default));
     }
 
-    [Fact]
-    public async Task 调用失败时返回失败信息()
+    [Fact(DisplayName = "调用失败时返回失败信息")]
+    public async Task Test_DispatchFailure_ReturnsFailureMessage()
     {
         var owner = _ctx.GivenUser();
         var (robot, _) = _ctx.GivenRobot(owner.Id);
@@ -920,8 +920,8 @@ public class RobotTriggerTests
         => new(_ctx.Robots, _ctx.Users, _ctx.Groups, _ctx.GroupMessages,
             _ctx.RobotConversations, NullLogger<TriggerRobotOnGroupMessage>.Instance);
 
-    [Fact]
-    public async Task 私聊给机器人时触发调度()
+    [Fact(DisplayName = "私聊给机器人时触发调度")]
+    public async Task Trigger_PrivateMessageToRobot_Dispatches()
     {
         var owner = _ctx.GivenUser();
         var (robot, botUser) = _ctx.GivenRobot(owner.Id);
@@ -940,8 +940,8 @@ public class RobotTriggerTests
         Assert.Equal(owner.Id, dispatched.Target.SessionId);
     }
 
-    [Fact]
-    public async Task 收件人不是机器人时不触发()
+    [Fact(DisplayName = "收件人不是机器人时不触发")]
+    public async Task Trigger_RecipientNotRobot_DoesNotDispatch()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id);
@@ -955,8 +955,8 @@ public class RobotTriggerTests
         Assert.Empty(_ctx.RobotConversations.Dispatched);
     }
 
-    [Fact]
-    public async Task 纯推送模式的机器人不被消息触发()
+    [Fact(DisplayName = "纯推送模式的机器人不被消息触发")]
+    public async Task Trigger_PushOnlyRobot_DoesNotDispatch()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id, webhook: "");
@@ -971,8 +971,8 @@ public class RobotTriggerTests
         Assert.Empty(_ctx.RobotConversations.Dispatched);
     }
 
-    [Fact]
-    public async Task 已停用的机器人不被触发()
+    [Fact(DisplayName = "已停用的机器人不被触发")]
+    public async Task Trigger_DisabledRobot_DoesNotDispatch()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id, enabled: false);
@@ -987,8 +987,8 @@ public class RobotTriggerTests
         Assert.Empty(_ctx.RobotConversations.Dispatched);
     }
 
-    [Fact]
-    public async Task 机器人之间互不触发_防死循环()
+    [Fact(DisplayName = "机器人之间互不触发_防死循环")]
+    public async Task Trigger_BotToBotMessage_DoesNotDispatch()
     {
         var owner = _ctx.GivenUser();
         var (_, botA) = _ctx.GivenRobot(owner.Id, name: "甲");
@@ -1004,8 +1004,8 @@ public class RobotTriggerTests
         Assert.Empty(_ctx.RobotConversations.Dispatched);
     }
 
-    [Fact]
-    public async Task 群里被At时触发()
+    [Fact(DisplayName = "群里被At时触发")]
+    public async Task Trigger_GroupMessageMentioningBot_Dispatches()
     {
         var owner = _ctx.GivenUser();
         var (robot, botUser) = _ctx.GivenRobot(owner.Id);
@@ -1029,8 +1029,8 @@ public class RobotTriggerTests
         Assert.Contains(botUser.Id, dispatched.Payload.Mentions);
     }
 
-    [Fact]
-    public async Task 群消息未At机器人时不触发()
+    [Fact(DisplayName = "群消息未At机器人时不触发")]
+    public async Task Trigger_GroupMessageWithoutMention_DoesNotDispatch()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -1046,8 +1046,8 @@ public class RobotTriggerTests
         Assert.Empty(_ctx.RobotConversations.Dispatched);
     }
 
-    [Fact]
-    public async Task At了多个机器人时逐个触发()
+    [Fact(DisplayName = "At了多个机器人时逐个触发")]
+    public async Task Trigger_MultipleMentionedBots_DispatchesEach()
     {
         var owner = _ctx.GivenUser();
         var (_, botA) = _ctx.GivenRobot(owner.Id, name: "甲");
@@ -1068,8 +1068,8 @@ public class RobotTriggerTests
         Assert.Equal(2, _ctx.RobotConversations.Dispatched.Count);
     }
 
-    [Fact]
-    public async Task At的是普通成员时不触发()
+    [Fact(DisplayName = "At的是普通成员时不触发")]
+    public async Task Trigger_MentionedRegularMember_DoesNotDispatch()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -1102,11 +1102,11 @@ public class RobotNameValidationOrderTests
     private CreateRobotHandler Handler()
         => new(_ctx.Robots, _ctx.Users, _ctx.Friendships, _ctx.Cipher, _ctx.WebhookTargets, _ctx.Events, _ctx.Clock);
 
-    [Theory]
+    [Theory(DisplayName = "名称为空时用机器人语境的提示语")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task 名称为空时用机器人语境的提示语(string? name)
+    public async Task Validate_EmptyName_UsesRobotContextMessage(string? name)
     {
         var owner = _ctx.GivenUser();
 
@@ -1116,8 +1116,8 @@ public class RobotNameValidationOrderTests
         Assert.Equal("机器人名称不能为空", ex.Message);
     }
 
-    [Fact]
-    public async Task 名称超长时用机器人语境的提示语()
+    [Fact(DisplayName = "名称超长时用机器人语境的提示语")]
+    public async Task Validate_TooLongName_UsesRobotContextMessage()
     {
         var owner = _ctx.GivenUser();
 
@@ -1132,8 +1132,8 @@ public class RobotNameValidationOrderTests
         Assert.Equal($"机器人名称不能超过 {Domain.Robots.Robot.MaxNameLength} 个字符", ex.Message);
     }
 
-    [Fact]
-    public async Task 校验失败时不留下机器人账号()
+    [Fact(DisplayName = "校验失败时不留下机器人账号")]
+    public async Task Validate_FailedValidation_LeavesNoBotAccount()
     {
         var owner = _ctx.GivenUser();
 
@@ -1144,8 +1144,8 @@ public class RobotNameValidationOrderTests
         Assert.Empty(_ctx.Robots.All);
     }
 
-    [Fact]
-    public async Task 名称首尾空白被去除后同时用于账号与配置()
+    [Fact(DisplayName = "名称首尾空白被去除后同时用于账号与配置")]
+    public async Task Validate_TrimmedName_UsedForAccountAndConfig()
     {
         var owner = _ctx.GivenUser();
 

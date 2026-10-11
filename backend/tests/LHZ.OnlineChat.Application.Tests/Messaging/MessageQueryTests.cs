@@ -13,8 +13,8 @@ public class PrivateHistoryTests
     private GetPrivateHistoryHandler Handler()
         => new(_ctx.PrivateMessages, _ctx.Friendships, _ctx.Users, _ctx.Cache);
 
-    [Fact]
-    public async Task 历史按时间正序返回()
+    [Fact(DisplayName = "历史按时间正序返回")]
+    public async Task History_ReturnsInChronologicalOrder()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "第一条", _ctx.Now.AddMinutes(-2));
@@ -28,8 +28,8 @@ public class PrivateHistoryTests
         Assert.Equal("第二条", result.Data.Items[1].Content);
     }
 
-    [Fact]
-    public async Task 没有客户端消息ID的历史消息也返回可用的MessageId()
+    [Fact(DisplayName = "没有客户端消息ID的历史消息也返回可用的MessageId")]
+    public async Task History_MessageWithoutClientId_StillHasMessageId()
     {
         var (a, b) = _ctx.GivenFriends();
         // GivenPrivateMessage 不带客户端 ID —— 与机器人推送的消息同一形态
@@ -47,8 +47,8 @@ public class PrivateHistoryTests
             item.MessageId);
     }
 
-    [Fact]
-    public async Task 历史携带发送者信息()
+    [Fact(DisplayName = "历史携带发送者信息")]
+    public async Task History_IncludesSenderInfo()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "你好");
@@ -59,8 +59,8 @@ public class PrivateHistoryTests
         Assert.Equal("张三", Assert.Single(result.Data!.Items).SenderName);
     }
 
-    [Fact]
-    public async Task 非好友读历史被拒()
+    [Fact(DisplayName = "非好友读历史被拒")]
+    public async Task History_NonFriend_IsRejected()
     {
         var a = _ctx.GivenUser("张三", "a@test.local");
         var b = _ctx.GivenUser("李四", "b@test.local");
@@ -71,8 +71,8 @@ public class PrivateHistoryTests
         Assert.Equal("不是好友关系", ex.Message);
     }
 
-    [Fact]
-    public async Task 分页返回正确总数()
+    [Fact(DisplayName = "分页返回正确总数")]
+    public async Task History_Pagination_ReturnsCorrectTotal()
     {
         var (a, b) = _ctx.GivenFriends();
         for (var i = 0; i < 5; i++)
@@ -89,8 +89,8 @@ public class PrivateHistoryTests
         Assert.Equal(2, result.Data.PageSize);
     }
 
-    [Fact]
-    public async Task 只返回双方之间的消息()
+    [Fact(DisplayName = "只返回双方之间的消息")]
+    public async Task History_ReturnsOnlyMessagesBetweenBothParties()
     {
         var (a, b) = _ctx.GivenFriends();
         var c = _ctx.GivenUser("王五", "c@test.local");
@@ -103,8 +103,8 @@ public class PrivateHistoryTests
         Assert.Equal("给乙", Assert.Single(result.Data!.Items).Content);
     }
 
-    [Fact]
-    public async Task 页长上限被夹紧()
+    [Fact(DisplayName = "页长上限被夹紧")]
+    public async Task History_PageSizeAboveLimit_IsClamped()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -124,8 +124,8 @@ public class GroupHistoryTests
     private GetGroupHistoryHandler Handler()
         => new(_ctx.GroupMessages, _ctx.GroupMembers, _ctx.Users);
 
-    [Fact]
-    public async Task 群成员可读历史()
+    [Fact(DisplayName = "群成员可读历史")]
+    public async Task GroupHistory_Member_CanRead()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -137,8 +137,8 @@ public class GroupHistoryTests
         Assert.Equal("群消息", Assert.Single(result.Data!.Items).Content);
     }
 
-    [Fact]
-    public async Task 非群成员被拒()
+    [Fact(DisplayName = "非群成员被拒")]
+    public async Task GroupHistory_NonMember_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -149,8 +149,8 @@ public class GroupHistoryTests
         Assert.Equal("你不是该群成员", ex.Message);
     }
 
-    [Fact]
-    public async Task 历史携带提及列表()
+    [Fact(DisplayName = "历史携带提及列表")]
+    public async Task GroupHistory_IncludesMentions()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -178,8 +178,8 @@ public class UnreadAndOfflineTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 未读数只统计发给我的未读()
+    [Fact(DisplayName = "未读数只统计发给我的未读")]
+    public async Task UnreadCount_CountsOnlyMessagesSentToMe()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "给乙1");
@@ -192,8 +192,8 @@ public class UnreadAndOfflineTests
         Assert.Equal(2, result.Data!.PrivateUnread);
     }
 
-    [Fact]
-    public async Task 离线消息按时间正序()
+    [Fact(DisplayName = "离线消息按时间正序")]
+    public async Task OfflineMessages_AreInChronologicalOrder()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "早", _ctx.Now.AddMinutes(-5));
@@ -206,8 +206,8 @@ public class UnreadAndOfflineTests
         Assert.Equal("早", result.Data[0].Content);
     }
 
-    [Fact]
-    public async Task 已读消息不算离线消息()
+    [Fact(DisplayName = "已读消息不算离线消息")]
+    public async Task OfflineMessages_ExcludeAlreadyRead()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, "已读");
@@ -220,8 +220,8 @@ public class UnreadAndOfflineTests
         Assert.Empty(result.Data!);
     }
 
-    [Fact]
-    public async Task 标记单条已读()
+    [Fact(DisplayName = "标记单条已读")]
+    public async Task MarkMessageRead_MarksSingleMessage()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id);
@@ -233,8 +233,8 @@ public class UnreadAndOfflineTests
         Assert.True((await _ctx.PrivateMessages.FindByIdAsync(message.Id))!.IsRead);
     }
 
-    [Fact]
-    public async Task 非接收方不能标记已读()
+    [Fact(DisplayName = "非接收方不能标记已读")]
+    public async Task MarkMessageRead_NonRecipient_IsRejected()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id);
@@ -246,16 +246,16 @@ public class UnreadAndOfflineTests
         Assert.Equal("消息不存在或无权操作", ex.Message);
     }
 
-    [Fact]
-    public async Task 消息不存在时抛出()
+    [Fact(DisplayName = "消息不存在时抛出")]
+    public async Task MarkMessageRead_MessageNotFound_Throws()
     {
         await Assert.ThrowsAsync<EntityNotFoundException>(
             () => new MarkMessageReadHandler(_ctx.PrivateMessages).Handle(
                 new MarkMessageReadCommand { MessageId = 99999, UserId = 10001 }, default));
     }
 
-    [Fact]
-    public async Task 批量标记某人发来的消息已读()
+    [Fact(DisplayName = "批量标记某人发来的消息已读")]
+    public async Task MarkConversationRead_MarksAllFromSender()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "1");
@@ -268,8 +268,8 @@ public class UnreadAndOfflineTests
         Assert.Equal(0, await _ctx.PrivateMessages.CountUnreadForAsync(b.Id));
     }
 
-    [Fact]
-    public async Task 标记群已读推进游标到最新()
+    [Fact(DisplayName = "标记群已读推进游标到最新")]
+    public async Task MarkGroupRead_AdvancesCursorToLatest()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -284,8 +284,8 @@ public class UnreadAndOfflineTests
         Assert.Equal(latest.Id, (await _ctx.GroupMembers.FindAsync(group.Id, member.Id))!.LastReadMessageId);
     }
 
-    [Fact]
-    public async Task 非群成员不能标记群已读()
+    [Fact(DisplayName = "非群成员不能标记群已读")]
+    public async Task MarkGroupRead_NonMember_Throws()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -295,8 +295,8 @@ public class UnreadAndOfflineTests
                 new MarkGroupReadCommand { GroupId = group.Id, UserId = 99999 }, default));
     }
 
-    [Fact]
-    public async Task 已读回执标记已读并转发给被读方()
+    [Fact(DisplayName = "已读回执标记已读并转发给被读方")]
+    public async Task SendReadReceipt_MarksReadAndForwardsToSender()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id);
@@ -314,8 +314,8 @@ public class UnreadAndOfflineTests
         Assert.Equal(a.Id, push.ToUserId);
     }
 
-    [Fact]
-    public async Task 已读回执_消息ID无法解析时只转发不落库()
+    [Fact(DisplayName = "已读回执_消息ID无法解析时只转发不落库")]
+    public async Task SendReadReceipt_UnparsableMessageId_ForwardsWithoutSaving()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -328,8 +328,8 @@ public class UnreadAndOfflineTests
         Assert.Single(_ctx.Notifier.OfKind(PushKind.ReadReceipt));
     }
 
-    [Fact]
-    public async Task 已读回执_未指定被读方时不转发()
+    [Fact(DisplayName = "已读回执_未指定被读方时不转发")]
+    public async Task SendReadReceipt_NoTargetUser_DoesNotForward()
     {
         await new SendReadReceiptHandler(_ctx.PrivateMessages, _ctx.Notifier).Handle(
             new SendReadReceiptCommand { ReaderId = 10002, TargetUserId = 0, MessageId = null },
@@ -338,8 +338,8 @@ public class UnreadAndOfflineTests
         Assert.Empty(_ctx.Notifier.Pushes);
     }
 
-    [Fact]
-    public async Task 已读回执_不是接收方时不改动已读状态()
+    [Fact(DisplayName = "已读回执_不是接收方时不改动已读状态")]
+    public async Task SendReadReceipt_NotRecipient_DoesNotMarkRead()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id);
@@ -356,8 +356,8 @@ public class UnreadAndOfflineTests
         Assert.False((await _ctx.PrivateMessages.FindByIdAsync(message.Id))!.IsRead);
     }
 
-    [Fact]
-    public async Task 正在输入转发给对方()
+    [Fact(DisplayName = "正在输入转发给对方")]
+    public async Task SendTyping_ForwardsToTarget()
     {
         await new SendTypingHandler(_ctx.Notifier).Handle(
             new SendTypingCommand { FromUserId = 10001, ToUserId = 10002 }, default);
@@ -367,8 +367,8 @@ public class UnreadAndOfflineTests
         Assert.Equal(10001, push.ContextId);
     }
 
-    [Fact]
-    public async Task 正在输入_目标无效时不转发()
+    [Fact(DisplayName = "正在输入_目标无效时不转发")]
+    public async Task SendTyping_InvalidTarget_DoesNotForward()
     {
         await new SendTypingHandler(_ctx.Notifier).Handle(
             new SendTypingCommand { FromUserId = 10001, ToUserId = 0 }, default);
@@ -385,8 +385,8 @@ public class SearchMessagesTests
         => new(_ctx.PrivateMessages, _ctx.GroupMessages, _ctx.Friendships,
             _ctx.GroupMembers, _ctx.Groups, _ctx.Users);
 
-    [Fact]
-    public async Task 空关键词被拒()
+    [Fact(DisplayName = "空关键词被拒")]
+    public async Task SearchMessages_EmptyKeyword_IsRejected()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new SearchMessagesQuery { UserId = 10001, Keyword = "   " }, default));
@@ -394,8 +394,8 @@ public class SearchMessagesTests
         Assert.Equal("请输入搜索关键词", ex.Message);
     }
 
-    [Fact]
-    public async Task 全局搜索合并私聊与群聊结果_按时间倒序()
+    [Fact(DisplayName = "全局搜索合并私聊与群聊结果_按时间倒序")]
+    public async Task SearchMessages_Global_MergesPrivateAndGroupNewestFirst()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var friend = _ctx.GivenUser("好友", "f@test.local");
@@ -414,8 +414,8 @@ public class SearchMessagesTests
         Assert.Equal("关键词私聊", result.Data.Items[1].Content);
     }
 
-    [Fact]
-    public async Task 没有客户端消息ID的搜索结果也带可用MessageId()
+    [Fact(DisplayName = "没有客户端消息ID的搜索结果也带可用MessageId")]
+    public async Task SearchMessages_ResultWithoutClientId_StillHasMessageId()
     {
         var (a, b) = _ctx.GivenFriends();
         // 机器人推送的消息 ClientMessageId 为 null（RobotTriggerHandlers 显式传 null），
@@ -435,8 +435,8 @@ public class SearchMessagesTests
             item.MessageId);
     }
 
-    [Fact]
-    public async Task 已撤回的消息不出现在搜索结果()
+    [Fact(DisplayName = "已撤回的消息不出现在搜索结果")]
+    public async Task SearchMessages_RecalledMessages_AreExcluded()
     {
         var (a, b) = _ctx.GivenFriends();
         var message = _ctx.GivenPrivateMessage(a.Id, b.Id, "关键词内容");
@@ -449,8 +449,8 @@ public class SearchMessagesTests
         Assert.Empty(result.Data!.Items);
     }
 
-    [Fact]
-    public async Task 会话内搜索_私聊需好友关系()
+    [Fact(DisplayName = "会话内搜索_私聊需好友关系")]
+    public async Task SearchMessages_ScopedPrivate_RequiresFriendship()
     {
         var a = _ctx.GivenUser("张三", "a@test.local");
         var b = _ctx.GivenUser("李四", "b@test.local");
@@ -465,8 +465,8 @@ public class SearchMessagesTests
         Assert.Equal("不是好友关系", ex.Message);
     }
 
-    [Fact]
-    public async Task 会话内搜索_私聊只返回该会话消息()
+    [Fact(DisplayName = "会话内搜索_私聊只返回该会话消息")]
+    public async Task SearchMessages_ScopedPrivate_ReturnsOnlyThatConversation()
     {
         var (a, b) = _ctx.GivenFriends();
         var c = _ctx.GivenUser("王五", "c@test.local");
@@ -484,8 +484,8 @@ public class SearchMessagesTests
         Assert.Equal("关键词给乙", Assert.Single(result.Data!.Items).Content);
     }
 
-    [Fact]
-    public async Task 会话内搜索_群聊需群成员身份()
+    [Fact(DisplayName = "会话内搜索_群聊需群成员身份")]
+    public async Task SearchMessages_ScopedGroup_RequiresMembership()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -500,10 +500,10 @@ public class SearchMessagesTests
         Assert.Equal("你不是该群成员", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "会话ID非法时被拒")]
     [InlineData(ChatSessionTypeNames.Private)]
     [InlineData(ChatSessionTypeNames.Group)]
-    public async Task 会话ID非法时被拒(string scopeType)
+    public async Task SearchMessages_InvalidScopeId_IsRejected(string scopeType)
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new SearchMessagesQuery
@@ -514,8 +514,8 @@ public class SearchMessagesTests
         Assert.Equal("无效的会话", ex.Message);
     }
 
-    [Fact]
-    public async Task 无效scopeType退化为全局搜索()
+    [Fact(DisplayName = "无效scopeType退化为全局搜索")]
+    public async Task SearchMessages_UnknownScopeType_FallsBackToGlobal()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "关键词");
@@ -528,8 +528,8 @@ public class SearchMessagesTests
         Assert.Single(result.Data!.Items);
     }
 
-    [Fact]
-    public async Task 超长关键词被截断而非报错()
+    [Fact(DisplayName = "超长关键词被截断而非报错")]
+    public async Task SearchMessages_OverlongKeyword_IsTruncatedNotRejected()
     {
         var (a, b) = _ctx.GivenFriends();
 
@@ -541,8 +541,8 @@ public class SearchMessagesTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 搜索结果里自己发的消息标注为我()
+    [Fact(DisplayName = "搜索结果里自己发的消息标注为我")]
+    public async Task SearchMessages_OwnMessages_AreLabeledAsMe()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(a.Id, b.Id, "关键词");
@@ -562,8 +562,8 @@ public class ChatSessionsTests
         => new(_ctx.PrivateMessages, _ctx.GroupMessages, _ctx.GroupMembers,
             _ctx.Groups, _ctx.Users, _ctx.FriendSettings, _ctx.SessionSettings);
 
-    [Fact]
-    public async Task 会话列表聚合私聊与群聊()
+    [Fact(DisplayName = "会话列表聚合私聊与群聊")]
+    public async Task ChatSessions_AggregatePrivateAndGroup()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id);
@@ -577,8 +577,8 @@ public class ChatSessionsTests
         Assert.Contains(result.Data, s => s.Type == "group" && s.Id == group.Id);
     }
 
-    [Fact]
-    public async Task 私聊会话名优先显示我设的备注()
+    [Fact(DisplayName = "私聊会话名优先显示我设的备注")]
+    public async Task ChatSessions_PrivateName_PrefersMyRemark()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(b.Id, a.Id, "消息");
@@ -591,8 +591,8 @@ public class ChatSessionsTests
         Assert.Equal("老王", Assert.Single(result.Data!).Name);
     }
 
-    [Fact]
-    public async Task 无备注时显示对方昵称()
+    [Fact(DisplayName = "无备注时显示对方昵称")]
+    public async Task ChatSessions_NoRemark_FallsBackToNickname()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(b.Id, a.Id, "消息");
@@ -602,8 +602,8 @@ public class ChatSessionsTests
         Assert.Equal("李四", Assert.Single(result.Data!).Name);
     }
 
-    [Fact]
-    public async Task 会话带未读数与最后消息()
+    [Fact(DisplayName = "会话带未读数与最后消息")]
+    public async Task ChatSessions_IncludeUnreadCountAndLastMessage()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(b.Id, a.Id, "旧消息", _ctx.Now.AddMinutes(-5));
@@ -616,8 +616,8 @@ public class ChatSessionsTests
         Assert.Equal(2, session.UnreadCount);
     }
 
-    [Fact]
-    public async Task 置顶会话排在前面()
+    [Fact(DisplayName = "置顶会话排在前面")]
+    public async Task ChatSessions_Pinned_ComesFirst()
     {
         var (a, b) = _ctx.GivenFriends();
         var group = _ctx.GivenGroup(a.Id);
@@ -633,8 +633,8 @@ public class ChatSessionsTests
         Assert.True(result.Data[0].IsPinned);
     }
 
-    [Fact]
-    public async Task 免打扰标记被带出()
+    [Fact(DisplayName = "免打扰标记被带出")]
+    public async Task ChatSessions_MutedFlag_IsReturned()
     {
         var (a, b) = _ctx.GivenFriends();
         _ctx.GivenPrivateMessage(b.Id, a.Id, "消息");
@@ -646,8 +646,8 @@ public class ChatSessionsTests
         Assert.True(Assert.Single(result.Data!).Muted);
     }
 
-    [Fact]
-    public async Task 机器人会话被标记IsBot()
+    [Fact(DisplayName = "机器人会话被标记IsBot")]
+    public async Task ChatSessions_BotSession_IsFlaggedAsBot()
     {
         var owner = _ctx.GivenUser();
         var (_, botUser) = _ctx.GivenRobot(owner.Id);
@@ -658,8 +658,8 @@ public class ChatSessionsTests
         Assert.True(Assert.Single(result.Data!).IsBot);
     }
 
-    [Fact]
-    public async Task 群会话未读按已读游标计算()
+    [Fact(DisplayName = "群会话未读按已读游标计算")]
+    public async Task ChatSessions_GroupUnread_CountedByReadCursor()
     {
         var owner = _ctx.GivenUser("群主", "o@test.local");
         var member = _ctx.GivenUser("成员", "m@test.local");
@@ -677,8 +677,8 @@ public class ChatSessionsTests
         Assert.Equal(2, Assert.Single(result.Data!).UnreadCount);
     }
 
-    [Fact]
-    public async Task 无消息的群仍出现在会话列表()
+    [Fact(DisplayName = "无消息的群仍出现在会话列表")]
+    public async Task ChatSessions_GroupWithoutMessages_StillListed()
     {
         var owner = _ctx.GivenUser();
         var group = _ctx.GivenGroup(owner.Id);
@@ -690,8 +690,8 @@ public class ChatSessionsTests
         Assert.Equal(string.Empty, session.LastMessage);
     }
 
-    [Fact]
-    public async Task 无任何会话时返回空列表()
+    [Fact(DisplayName = "无任何会话时返回空列表")]
+    public async Task ChatSessions_NoSessions_ReturnsEmpty()
     {
         var user = _ctx.GivenUser();
 
@@ -708,8 +708,8 @@ public class SessionSettingUseCaseTests
     private UpdateSessionSettingHandler Handler()
         => new(_ctx.SessionSettings, _ctx.Clock);
 
-    [Fact]
-    public async Task 首次设置时创建记录()
+    [Fact(DisplayName = "首次设置时创建记录")]
+    public async Task UpdateSessionSetting_FirstTime_CreatesRecord()
     {
         var result = await Handler().Handle(new UpdateSessionSettingCommand
         {
@@ -722,8 +722,8 @@ public class SessionSettingUseCaseTests
         Assert.False(setting.Muted);
     }
 
-    [Fact]
-    public async Task 再次设置时更新同一条记录且只改传入项()
+    [Fact(DisplayName = "再次设置时更新同一条记录且只改传入项")]
+    public async Task UpdateSessionSetting_Again_UpdatesSameRecordAndGivenFields()
     {
         await Handler().Handle(new UpdateSessionSettingCommand
         {
@@ -740,8 +740,8 @@ public class SessionSettingUseCaseTests
         Assert.True(setting.Muted);        // 未传的项保持原值
     }
 
-    [Fact]
-    public async Task 无效会话类型被拒()
+    [Fact(DisplayName = "无效会话类型被拒")]
+    public async Task UpdateSessionSetting_InvalidType_IsRejected()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new UpdateSessionSettingCommand
@@ -752,10 +752,10 @@ public class SessionSettingUseCaseTests
         Assert.Equal("无效的会话类型", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "无效会话ID被拒")]
     [InlineData(0)]
     [InlineData(-1)]
-    public async Task 无效会话ID被拒(long sessionId)
+    public async Task UpdateSessionSetting_InvalidSessionId_IsRejected(long sessionId)
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new UpdateSessionSettingCommand
@@ -766,8 +766,8 @@ public class SessionSettingUseCaseTests
         Assert.Equal("无效的会话 ID", ex.Message);
     }
 
-    [Fact]
-    public async Task 两项都不传时被拒()
+    [Fact(DisplayName = "两项都不传时被拒")]
+    public async Task UpdateSessionSetting_NoFieldsProvided_IsRejected()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new UpdateSessionSettingCommand { UserId = 10001, Type = "group", Id = 5 }, default));
@@ -775,8 +775,8 @@ public class SessionSettingUseCaseTests
         Assert.Equal("没有需要更新的设置", ex.Message);
     }
 
-    [Fact]
-    public async Task 不同用户对同一会话的设置互相独立()
+    [Fact(DisplayName = "不同用户对同一会话的设置互相独立")]
+    public async Task UpdateSessionSetting_DifferentUsers_AreIndependent()
     {
         await Handler().Handle(new UpdateSessionSettingCommand
         {

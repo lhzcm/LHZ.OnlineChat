@@ -19,16 +19,16 @@ public class RecentMessageCacheMatchTests
         {"from":"10001","content":{{System.Text.Json.JsonSerializer.Serialize(content)}},"messageType":0,"messageId":"{{messageId}}","senderName":"张三","senderAvatar":null,"timestamp":1700000000000}
         """;
 
-    [Fact]
-    public void 客户端消息号命中时判定为要删除()
+    [Fact(DisplayName = "客户端消息号命中时判定为要删除")]
+    public void IsTargetMessage_ClientMessageIdMatches_ReturnsTrue()
     {
         var json = Payload("普通内容", "cmid-1");
 
         Assert.True(RecentMessageCache.IsTargetMessage(json, "cmid-1", "77"));
     }
 
-    [Fact]
-    public void 数据库ID作为消息号时同样命中()
+    [Fact(DisplayName = "数据库ID作为消息号时同样命中")]
+    public void IsTargetMessage_DatabaseIdMatches_ReturnsTrue()
     {
         // 没有客户端 ID 的消息，其 messageId 就是数据库 ID 的字符串形式
         var json = Payload("普通内容", "77");
@@ -36,16 +36,16 @@ public class RecentMessageCacheMatchTests
         Assert.True(RecentMessageCache.IsTargetMessage(json, "cmid-1", "77"));
     }
 
-    [Fact]
-    public void 不相关的消息不命中()
+    [Fact(DisplayName = "不相关的消息不命中")]
+    public void IsTargetMessage_UnrelatedMessage_ReturnsFalse()
     {
         var json = Payload("普通内容", "cmid-2");
 
         Assert.False(RecentMessageCache.IsTargetMessage(json, "cmid-1", "77"));
     }
 
-    [Fact]
-    public void 正文里出现同样的messageId片段时不误删()
+    [Fact(DisplayName = "正文里出现同样的messageId片段时不误删")]
+    public void IsTargetMessage_ContentHasMessageIdFragment_ReturnsFalse()
     {
         // 回归测试：用户手打一段 JSON 作为消息内容
         var json = Payload("""看看这段 {"messageId":"cmid-1"} 是什么""", "cmid-999");
@@ -53,23 +53,23 @@ public class RecentMessageCacheMatchTests
         Assert.False(RecentMessageCache.IsTargetMessage(json, "cmid-1", "77"));
     }
 
-    [Fact]
-    public void 正文里出现数据库ID片段时不误删()
+    [Fact(DisplayName = "正文里出现数据库ID片段时不误删")]
+    public void IsTargetMessage_ContentHasDatabaseIdFragment_ReturnsFalse()
     {
         var json = Payload("""引用 {"messageId":"77"} 这条""", "cmid-999");
 
         Assert.False(RecentMessageCache.IsTargetMessage(json, "cmid-1", "77"));
     }
 
-    [Fact]
-    public void 解析失败时按不匹配处理_宁可留着也不误删()
+    [Fact(DisplayName = "解析失败时按不匹配处理_宁可留着也不误删")]
+    public void IsTargetMessage_UnparsableJson_ReturnsFalse()
     {
         Assert.False(RecentMessageCache.IsTargetMessage("这不是 JSON", "cmid-1", "77"));
         Assert.False(RecentMessageCache.IsTargetMessage(string.Empty, "cmid-1", "77"));
     }
 
-    [Fact]
-    public void 缓存里没有消息号时不匹配()
+    [Fact(DisplayName = "缓存里没有消息号时不匹配")]
+    public void IsTargetMessage_MissingMessageId_ReturnsFalse()
     {
         var json = Payload("内容", string.Empty);
 

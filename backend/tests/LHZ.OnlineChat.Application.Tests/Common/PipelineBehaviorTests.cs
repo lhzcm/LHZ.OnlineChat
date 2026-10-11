@@ -24,8 +24,8 @@ public class DomainExceptionBehaviorTests
         where TRequest : notnull
         => new(NullLogger<DomainExceptionBehavior<TRequest, TResponse>>.Instance);
 
-    [Fact]
-    public async Task 正常路径原样透传()
+    [Fact(DisplayName = "正常路径原样透传")]
+    public async Task Handle_NormalPath_PassesThroughUnchanged()
     {
         var expected = ApiResponse.Ok("成功了");
 
@@ -35,8 +35,8 @@ public class DomainExceptionBehaviorTests
         Assert.Same(expected, actual);
     }
 
-    [Fact]
-    public async Task 非泛型响应_领域异常转为Fail且保留提示语()
+    [Fact(DisplayName = "非泛型响应_领域异常转为Fail且保留提示语")]
+    public async Task Handle_NonGenericResponse_ConvertsToFailWithMessage()
     {
         var result = await Behavior<PlainCommand, ApiResponse>().Handle(
             new PlainCommand(),
@@ -47,8 +47,8 @@ public class DomainExceptionBehaviorTests
         Assert.Equal("昵称不能为空", result.Message);
     }
 
-    [Fact]
-    public async Task 泛型响应_领域异常转为Fail且Data为null()
+    [Fact(DisplayName = "泛型响应_领域异常转为Fail且Data为null")]
+    public async Task Handle_GenericResponse_ConvertsToFailWithNullData()
     {
         var result = await Behavior<TypedCommand, ApiResponse<string>>().Handle(
             new TypedCommand(),
@@ -60,8 +60,8 @@ public class DomainExceptionBehaviorTests
         Assert.Null(result.Data);
     }
 
-    [Fact]
-    public async Task 派生的EntityNotFound也被转换()
+    [Fact(DisplayName = "派生的EntityNotFound也被转换")]
+    public async Task Handle_DerivedEntityNotFound_IsConverted()
     {
         var result = await Behavior<PlainCommand, ApiResponse>().Handle(
             new PlainCommand(),
@@ -72,8 +72,8 @@ public class DomainExceptionBehaviorTests
         Assert.Equal("用户不存在", result.Message);
     }
 
-    [Fact]
-    public async Task 派生的ForbiddenOperation也被转换()
+    [Fact(DisplayName = "派生的ForbiddenOperation也被转换")]
+    public async Task Handle_DerivedForbiddenOperation_IsConverted()
     {
         var result = await Behavior<PlainCommand, ApiResponse>().Handle(
             new PlainCommand(),
@@ -84,8 +84,8 @@ public class DomainExceptionBehaviorTests
         Assert.Equal("无权操作", result.Message);
     }
 
-    [Fact]
-    public async Task 禁言异常也被转换_携带原提示语()
+    [Fact(DisplayName = "禁言异常也被转换_携带原提示语")]
+    public async Task Handle_MemberMutedException_IsConvertedWithOriginalMessage()
     {
         var result = await Behavior<PlainCommand, ApiResponse>().Handle(
             new PlainCommand(),
@@ -97,8 +97,8 @@ public class DomainExceptionBehaviorTests
         Assert.Contains("禁言", result.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 非领域异常原样抛出_不被误吞成业务失败()
+    [Fact(DisplayName = "非领域异常原样抛出_不被误吞成业务失败")]
+    public async Task Handle_NonDomainException_IsNotSwallowedAsFailure()
     {
         // 基础设施故障（连不上库等）必须继续冒泡成 500，不能伪装为业务驳回
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -108,8 +108,8 @@ public class DomainExceptionBehaviorTests
                 default));
     }
 
-    [Fact]
-    public async Task 非ApiResponse返回类型时原样抛出()
+    [Fact(DisplayName = "非ApiResponse返回类型时原样抛出")]
+    public async Task Handle_NonApiResponseReturnType_PropagatesUnchanged()
     {
         // WS 路径的用例返回内部结果（如 SendMessageResult / bool），
         // 无法转成 ApiResponse，应让异常继续冒泡由调用方处理
@@ -128,8 +128,8 @@ public class LoggingBehaviorTests
     private static LoggingBehavior<ProbeCommand, ApiResponse> Behavior()
         => new(NullLogger<LoggingBehavior<ProbeCommand, ApiResponse>>.Instance);
 
-    [Fact]
-    public async Task 正常路径透传响应()
+    [Fact(DisplayName = "正常路径透传响应")]
+    public async Task Handle_NormalPath_PassesThroughResponse()
     {
         var expected = ApiResponse.Ok();
 
@@ -139,22 +139,22 @@ public class LoggingBehaviorTests
         Assert.Same(expected, actual);
     }
 
-    [Fact]
-    public async Task 领域异常原样抛出_交给下游行为转换()
+    [Fact(DisplayName = "领域异常原样抛出_交给下游行为转换")]
+    public async Task Handle_DomainException_PropagatesToDownstreamBehavior()
     {
         await Assert.ThrowsAsync<DomainException>(() => Behavior().Handle(
             new ProbeCommand(), _ => throw new DomainException("业务驳回"), default));
     }
 
-    [Fact]
-    public async Task 其他异常原样抛出()
+    [Fact(DisplayName = "其他异常原样抛出")]
+    public async Task Handle_OtherException_PropagatesUnchanged()
     {
         await Assert.ThrowsAsync<TimeoutException>(() => Behavior().Handle(
             new ProbeCommand(), _ => throw new TimeoutException(), default));
     }
 
-    [Fact]
-    public async Task 取消令牌传递到下游()
+    [Fact(DisplayName = "取消令牌传递到下游")]
+    public async Task Handle_CancellationToken_ForwardsToDownstreamHandler()
     {
         using var cts = new CancellationTokenSource();
         CancellationToken received = default;
@@ -171,8 +171,8 @@ public class LoggingBehaviorTests
 
 public class ApiResponseTests
 {
-    [Fact]
-    public void Ok_默认消息为success()
+    [Fact(DisplayName = "Ok_默认消息为success")]
+    public void Ok_DefaultMessage_IsSuccess()
     {
         var response = ApiResponse.Ok();
 
@@ -180,8 +180,8 @@ public class ApiResponseTests
         Assert.Equal("success", response.Message);
     }
 
-    [Fact]
-    public void 泛型Ok_携带数据()
+    [Fact(DisplayName = "泛型Ok_携带数据")]
+    public void Ok_GenericWithData_CarriesDataAndMessage()
     {
         var response = ApiResponse<string>.Ok("载荷", "完成");
 
@@ -190,8 +190,8 @@ public class ApiResponseTests
         Assert.Equal("载荷", response.Data);
     }
 
-    [Fact]
-    public void Fail_不携带数据()
+    [Fact(DisplayName = "Fail_不携带数据")]
+    public void Fail_WithoutData_LeavesDataNull()
     {
         var response = ApiResponse<string>.Fail("出错了");
 
@@ -200,8 +200,8 @@ public class ApiResponseTests
         Assert.Null(response.Data);
     }
 
-    [Fact]
-    public void 非泛型继承自泛型object版本_保持既有响应形状()
+    [Fact(DisplayName = "非泛型继承自泛型object版本_保持既有响应形状")]
+    public void Fail_NonGenericInheritsFromGenericObject_KeepsResponseShape()
     {
         // 前端依赖 { success, message, data } 这一形状，改造后必须不变
         Assert.IsAssignableFrom<ApiResponse<object>>(ApiResponse.Ok());
@@ -209,8 +209,8 @@ public class ApiResponseTests
         Assert.IsAssignableFrom<IApiResponse>(ApiResponse<string>.Ok("x"));
     }
 
-    [Fact]
-    public void PagedResult_Create带上分页参数()
+    [Fact(DisplayName = "PagedResult_Create带上分页参数")]
+    public void PagedResult_Create_PreservesPaginationParameters()
     {
         var page = new PageRequest(2, 20);
 
@@ -222,8 +222,8 @@ public class ApiResponseTests
         Assert.Equal(20, result.PageSize);
     }
 
-    [Fact]
-    public void PagedResult_Empty保留分页参数()
+    [Fact(DisplayName = "PagedResult_Empty保留分页参数")]
+    public void PagedResult_Empty_PreservesPaginationParameters()
     {
         var result = PagedResult<int>.Empty(new PageRequest(3, 10));
 
@@ -236,8 +236,8 @@ public class ApiResponseTests
 
 public class DomainEventDispatcherExtensionsTests
 {
-    [Fact]
-    public async Task DispatchEventsOf_取出聚合事件并派发()
+    [Fact(DisplayName = "DispatchEventsOf_取出聚合事件并派发")]
+    public async Task DispatchEventsOf_RetrievesAndDispatchesAggregateEvents()
     {
         var dispatcher = new RecordingEventDispatcher();
         var user = User.Register(
@@ -253,8 +253,8 @@ public class DomainEventDispatcherExtensionsTests
         Assert.Empty(user.DequeueDomainEvents());
     }
 
-    [Fact]
-    public async Task DispatchAsync_单个事件()
+    [Fact(DisplayName = "DispatchAsync_单个事件")]
+    public async Task DispatchAsync_SingleEvent_DispatchesToRegisteredHandler()
     {
         var dispatcher = new RecordingEventDispatcher();
 
@@ -264,8 +264,8 @@ public class DomainEventDispatcherExtensionsTests
         Assert.Single(dispatcher.EventsOf<UserRegistered>());
     }
 
-    [Fact]
-    public async Task 无事件时不派发()
+    [Fact(DisplayName = "无事件时不派发")]
+    public async Task DispatchEventsOf_NoEvents_DispatchesNothing()
     {
         var dispatcher = new RecordingEventDispatcher();
         var user = User.Register(
@@ -277,8 +277,8 @@ public class DomainEventDispatcherExtensionsTests
         Assert.Empty(dispatcher.Dispatched);
     }
 
-    [Fact]
-    public void DomainEventNotification_包装事件供MediatR发布()
+    [Fact(DisplayName = "DomainEventNotification_包装事件供MediatR发布")]
+    public void DomainEventNotification_WrapsEventForMediatRPublishing()
     {
         var domainEvent = new UserRegistered(10001, "张三", FakeClock.Default);
 

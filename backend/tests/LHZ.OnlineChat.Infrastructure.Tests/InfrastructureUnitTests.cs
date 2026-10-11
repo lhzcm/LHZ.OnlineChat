@@ -13,52 +13,52 @@ namespace LHZ.OnlineChat.Infrastructure.Tests;
 /// </summary>
 public class RedisKeysTests
 {
-    [Fact]
-    public void 邮箱验证码键()
+    [Fact(DisplayName = "邮箱验证码键")]
+    public void EmailCode_Build_ProducesExpectedKey()
         => Assert.Equal("email:code:a@test.local", RedisKeys.EmailCode("a@test.local"));
 
-    [Fact]
-    public void 刷新令牌键按会话()
+    [Fact(DisplayName = "刷新令牌键按会话")]
+    public void RefreshToken_Build_ProducesSessionScopedKey()
         => Assert.Equal("token:refresh:abc123", RedisKeys.RefreshToken("abc123"));
 
-    [Fact]
-    public void 刷新令牌反查键含哈希()
+    [Fact(DisplayName = "刷新令牌反查键含哈希")]
+    public void RefreshLookup_ContainsTokenHash()
         => Assert.Equal("token:refresh:lookup:deadbeef", RedisKeys.RefreshLookup("deadbeef"));
 
-    [Fact]
-    public void 会话元数据键()
+    [Fact(DisplayName = "会话元数据键")]
+    public void SessionMeta_Build_ProducesExpectedKey()
         => Assert.Equal("sess:meta:abc123", RedisKeys.SessionMeta("abc123"));
 
-    [Fact]
-    public void 用户会话集合键()
+    [Fact(DisplayName = "用户会话集合键")]
+    public void UserSessions_Build_ProducesExpectedKey()
         => Assert.Equal("sess:10001", RedisKeys.UserSessions(10001));
 
-    [Fact]
-    public void 在线状态键()
+    [Fact(DisplayName = "在线状态键")]
+    public void OnlineStatus_Build_ProducesExpectedKey()
         => Assert.Equal("ws:online:10001", RedisKeys.Online(10001));
 
-    [Fact]
-    public void 群聊缓存键()
+    [Fact(DisplayName = "群聊缓存键")]
+    public void GroupChatCache_Build_ProducesExpectedKey()
         => Assert.Equal("chat:group:42", RedisKeys.GroupChat(42));
 
-    [Theory]
+    [Theory(DisplayName = "私聊缓存键按小大ID归一化_双向命中同一键")]
     [InlineData(10001, 10002)]
     [InlineData(10002, 10001)]
-    public void 私聊缓存键按小大ID归一化_双向命中同一键(int a, int b)
+    public void PrivateChatCache_NormalizesIdOrder_HitsSameKeyBothWays(int a, int b)
     {
         // 这是改造前就存在的约定：不归一化的话两人各写一份缓存，历史会不一致
         Assert.Equal("chat:private:10001:10002", RedisKeys.PrivateChat(a, b));
     }
 
-    [Fact]
-    public void 私聊缓存键_与自己对话时两端相同()
+    [Fact(DisplayName = "私聊缓存键_与自己对话时两端相同")]
+    public void PrivateChatCache_SelfConversation_UsesSameKeyOnBothEnds()
         => Assert.Equal("chat:private:10001:10001", RedisKeys.PrivateChat(10001, 10001));
 }
 
 public class SystemClockTests
 {
-    [Fact]
-    public void 返回UTC时间()
+    [Fact(DisplayName = "返回UTC时间")]
+    public void UtcNow_ReturnsTimestamp_WithUtcKind()
     {
         var now = new SystemClock().UtcNow;
 
@@ -77,8 +77,8 @@ public class MuteMessageFormatterTests
     private readonly MuteMessageFormatter _formatter =
         new(NullLogger<MuteMessageFormatter>.Instance);
 
-    [Fact]
-    public void 按东八区渲染截止时间()
+    [Fact(DisplayName = "按东八区渲染截止时间")]
+    public void Format_RendersDeadlineInChinaStandardTime()
     {
         var utc = new DateTime(2026, 3, 14, 4, 30, 0, DateTimeKind.Utc);
 
@@ -88,8 +88,8 @@ public class MuteMessageFormatterTests
         Assert.Equal("你已被禁言至 03-14 12:30，期间无法在群里发言", message);
     }
 
-    [Fact]
-    public void 跨日边界正确()
+    [Fact(DisplayName = "跨日边界正确")]
+    public void Format_AcrossDayBoundary_KeepsCorrectDate()
     {
         var utc = new DateTime(2026, 3, 14, 20, 0, 0, DateTimeKind.Utc);
 
@@ -99,8 +99,8 @@ public class MuteMessageFormatterTests
         Assert.Contains("03-15 04:00", message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void 数据库读出的Unspecified时间也按UTC处理()
+    [Fact(DisplayName = "数据库读出的Unspecified时间也按UTC处理")]
+    public void Format_UnspecifiedKindFromDatabase_TreatedAsUtc()
     {
         var unspecified = new DateTime(2026, 3, 14, 4, 30, 0, DateTimeKind.Unspecified);
 
@@ -126,8 +126,8 @@ public class LocalFileStorageTests : IDisposable
             Content = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content))
         };
 
-    [Fact]
-    public async Task 保存到根目录并返回公开地址()
+    [Fact(DisplayName = "保存到根目录并返回公开地址")]
+    public async Task Save_ToRoot_ReturnsPublicUrl()
     {
         var url = await Storage().SaveAsync(Upload("avatar.png"), string.Empty);
 
@@ -135,16 +135,16 @@ public class LocalFileStorageTests : IDisposable
         Assert.EndsWith(".png", url, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 保存到子目录时地址含子目录()
+    [Fact(DisplayName = "保存到子目录时地址含子目录")]
+    public async Task Save_ToSubdirectory_UrlIncludesSubdirectory()
     {
         var url = await Storage().SaveAsync(Upload("chat.jpg"), "images");
 
         Assert.StartsWith("/uploads/images/", url, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 文件实际写入磁盘且内容一致()
+    [Fact(DisplayName = "文件实际写入磁盘且内容一致")]
+    public async Task Save_WritesFileToDisk_WithSameContent()
     {
         var url = await Storage().SaveAsync(Upload("a.png", "hello"), string.Empty);
 
@@ -152,8 +152,8 @@ public class LocalFileStorageTests : IDisposable
         Assert.Equal("hello", await File.ReadAllTextAsync(Path.Combine(_root, fileName)));
     }
 
-    [Fact]
-    public async Task 文件名用GUID重新生成_不使用客户端文件名()
+    [Fact(DisplayName = "文件名用GUID重新生成_不使用客户端文件名")]
+    public async Task Save_RegeneratesFileNameWithGuid_IgnoresClientName()
     {
         // 直接用客户端文件名会带来路径穿越与互相覆盖的风险
         var url = await Storage().SaveAsync(Upload("../../etc/passwd.png"), string.Empty);
@@ -162,8 +162,8 @@ public class LocalFileStorageTests : IDisposable
         Assert.DoesNotContain("passwd", url, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task 同名文件不互相覆盖()
+    [Fact(DisplayName = "同名文件不互相覆盖")]
+    public async Task Save_SameFileName_DoesNotOverwrite()
     {
         var storage = Storage();
 
@@ -174,24 +174,24 @@ public class LocalFileStorageTests : IDisposable
         Assert.Equal(2, Directory.GetFiles(_root).Length);
     }
 
-    [Fact]
-    public async Task 子目录不存在时自动创建()
+    [Fact(DisplayName = "子目录不存在时自动创建")]
+    public async Task Save_MissingSubdirectory_CreatesItAutomatically()
     {
         await Storage().SaveAsync(Upload("a.png"), "deep");
 
         Assert.True(Directory.Exists(Path.Combine(_root, "deep")));
     }
 
-    [Fact]
-    public async Task 返回的地址一律用正斜杠_不受平台路径分隔符影响()
+    [Fact(DisplayName = "返回的地址一律用正斜杠_不受平台路径分隔符影响")]
+    public async Task Save_ReturnedUrl_UsesForwardSlashesOnAllPlatforms()
     {
         var url = await Storage().SaveAsync(Upload("a.png"), "images");
 
         Assert.DoesNotContain('\\', url);
     }
 
-    [Fact]
-    public async Task 保留原始扩展名()
+    [Fact(DisplayName = "保留原始扩展名")]
+    public async Task Save_PreservesOriginalExtension()
     {
         foreach (var ext in new[] { ".png", ".jpg", ".gif", ".webp" })
         {
@@ -212,32 +212,32 @@ public class UploadRulesTests
     private static FileUpload Upload(string fileName, long length)
         => new() { FileName = fileName, Length = length, Content = new MemoryStream() };
 
-    [Theory]
+    [Theory(DisplayName = "白名单扩展名通过")]
     [InlineData(".jpg")]
     [InlineData(".jpeg")]
     [InlineData(".png")]
     [InlineData(".gif")]
     [InlineData(".webp")]
-    public void 白名单扩展名通过(string ext)
+    public void EnsureValidImage_WhitelistedExtension_IsAccepted(string ext)
     {
         UploadRules.EnsureValidImage(Upload($"a{ext}", 1024), UploadRules.MaxAvatarBytes, "2MB");
     }
 
-    [Theory]
+    [Theory(DisplayName = "扩展名大小写不敏感")]
     [InlineData(".JPG")]
     [InlineData(".PNG")]
-    public void 扩展名大小写不敏感(string ext)
+    public void EnsureValidImage_ExtensionCase_IsIgnored(string ext)
     {
         UploadRules.EnsureValidImage(Upload($"a{ext}", 1024), UploadRules.MaxAvatarBytes, "2MB");
     }
 
-    [Theory]
+    [Theory(DisplayName = "非白名单扩展名被拒")]
     [InlineData(".bmp")]
     [InlineData(".svg")]
     [InlineData(".exe")]
     [InlineData(".php")]
     [InlineData("")]
-    public void 非白名单扩展名被拒(string ext)
+    public void EnsureValidImage_NonWhitelistedExtension_IsRejected(string ext)
     {
         var ex = Assert.Throws<Domain.Common.DomainException>(() => UploadRules.EnsureValidImage(
             Upload($"a{ext}", 1024), UploadRules.MaxAvatarBytes, "2MB"));
@@ -245,8 +245,8 @@ public class UploadRulesTests
         Assert.Equal("仅支持 jpg / png / gif / webp 格式图片", ex.Message);
     }
 
-    [Fact]
-    public void 未选文件被拒()
+    [Fact(DisplayName = "未选文件被拒")]
+    public void EnsureValidImage_NullFile_IsRejected()
     {
         var ex = Assert.Throws<Domain.Common.DomainException>(
             () => UploadRules.EnsureValidImage(null, UploadRules.MaxAvatarBytes, "2MB"));
@@ -254,8 +254,8 @@ public class UploadRulesTests
         Assert.Equal("请选择图片文件", ex.Message);
     }
 
-    [Fact]
-    public void 空文件被拒()
+    [Fact(DisplayName = "空文件被拒")]
+    public void EnsureValidImage_EmptyFile_IsRejected()
     {
         var ex = Assert.Throws<Domain.Common.DomainException>(() => UploadRules.EnsureValidImage(
             Upload("a.png", 0), UploadRules.MaxAvatarBytes, "2MB"));
@@ -263,8 +263,8 @@ public class UploadRulesTests
         Assert.Equal("请选择图片文件", ex.Message);
     }
 
-    [Fact]
-    public void 超出大小上限被拒_提示语带可读上限()
+    [Fact(DisplayName = "超出大小上限被拒_提示语带可读上限")]
+    public void EnsureValidImage_OverSizeLimit_RejectedWithReadableLimit()
     {
         var ex = Assert.Throws<Domain.Common.DomainException>(() => UploadRules.EnsureValidImage(
             Upload("a.png", UploadRules.MaxAvatarBytes + 1), UploadRules.MaxAvatarBytes, "2MB"));
@@ -272,15 +272,15 @@ public class UploadRulesTests
         Assert.Equal("图片大小不能超过 2MB", ex.Message);
     }
 
-    [Fact]
-    public void 恰好达到上限时通过()
+    [Fact(DisplayName = "恰好达到上限时通过")]
+    public void EnsureValidImage_ExactlyAtLimit_IsAccepted()
     {
         UploadRules.EnsureValidImage(
             Upload("a.png", UploadRules.MaxAvatarBytes), UploadRules.MaxAvatarBytes, "2MB");
     }
 
-    [Fact]
-    public void 头像与聊天图片的上限不同()
+    [Fact(DisplayName = "头像与聊天图片的上限不同")]
+    public void Limits_AvatarAndChatImage_Differ()
     {
         Assert.Equal(2 * 1024 * 1024, UploadRules.MaxAvatarBytes);
         Assert.Equal(5 * 1024 * 1024, UploadRules.MaxChatImageBytes);

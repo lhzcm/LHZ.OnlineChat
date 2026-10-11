@@ -1,5 +1,10 @@
 <Project>
-  <!-- 先继承仓库根的公共设置（TargetFramework / Nullable / 分析器 / NoWarn） -->
+  <!--
+    先继承上一级（backend/Directory.Build.props）的公共设置：
+    TargetFramework / ImplicitUsings / Nullable / 分析器 / NoWarn / TreatWarningsAsErrors。
+    必须显式导入 —— MSBuild 找 Directory.Build.props 是「就近取第一个就停」，
+    tests/ 这一份会挡住上一级，不写这句就只剩测试自己的设置。
+  -->
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
   <PropertyGroup>
@@ -9,6 +14,7 @@
     <!--
       测试工程额外放开的分析器规则（都是「测试代码的惯例与产品代码不同」，不是降低要求）：
         CA1707 标识符不应含下划线 —— 测试方法名用 方法_场景_预期 三段式，可读性远胜驼峰
+                                      （英文标识符 + 中文说明放 [Fact(DisplayName = "…")]）
         CA1034 不应嵌套公开类型     —— 用嵌套类给测试分组（Theory 数据、场景固定装置）
         CA1812 未实例化的内部类     —— 测试替身与 Theory 数据类由反射/xUnit 实例化
         CA1051 不应有可见实例字段   —— 测试替身用公开字段记录调用，比属性更省事

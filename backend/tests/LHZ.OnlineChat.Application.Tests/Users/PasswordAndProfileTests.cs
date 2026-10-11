@@ -16,8 +16,8 @@ public class ChangePasswordTests
     private ChangePasswordHandler Handler()
         => new(_ctx.Users, _ctx.Hasher, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 改密成功并提示其他设备已下线()
+    [Fact(DisplayName = "改密成功并提示其他设备已下线")]
+    public async Task ChangePassword_Succeeds_NotifiesOtherDevicesOffline()
     {
         var user = _ctx.GivenUser();
 
@@ -30,8 +30,8 @@ public class ChangePasswordTests
         Assert.Equal("密码修改成功，其他设备已下线，请重新登录", result.Message);
     }
 
-    [Fact]
-    public async Task 新口令生效_旧口令失效()
+    [Fact(DisplayName = "新口令生效_旧口令失效")]
+    public async Task ChangePassword_NewPasswordWorks_OldPasswordRejected()
     {
         var user = _ctx.GivenUser();
 
@@ -45,8 +45,8 @@ public class ChangePasswordTests
         Assert.False(_ctx.Hasher.Verify("pass123456", stored.PasswordHash));
     }
 
-    [Fact]
-    public async Task 发出自助改密事件()
+    [Fact(DisplayName = "发出自助改密事件")]
+    public async Task ChangePassword_EmitsSelfServiceChangedEvent()
     {
         var user = _ctx.GivenUser();
 
@@ -60,8 +60,8 @@ public class ChangePasswordTests
         Assert.Equal(user.Id, e.UserId);
     }
 
-    [Fact]
-    public async Task 原口令错误时抛出且不改动()
+    [Fact(DisplayName = "原口令错误时抛出且不改动")]
+    public async Task ChangePassword_WrongOldPassword_ThrowsWithoutChanges()
     {
         var user = _ctx.GivenUser();
 
@@ -77,8 +77,8 @@ public class ChangePasswordTests
         Assert.Empty(_ctx.Events.Dispatched);
     }
 
-    [Fact]
-    public async Task 新口令过短时抛出且不触碰仓储()
+    [Fact(DisplayName = "新口令过短时抛出且不触碰仓储")]
+    public async Task ChangePassword_TooShortNewPassword_ThrowsAndSkipsRepository()
     {
         var user = _ctx.GivenUser();
         var updatesBefore = _ctx.Users.UpdateCount;
@@ -93,8 +93,8 @@ public class ChangePasswordTests
         Assert.Equal(updatesBefore, _ctx.Users.UpdateCount);
     }
 
-    [Fact]
-    public async Task 用户不存在时抛出EntityNotFound()
+    [Fact(DisplayName = "用户不存在时抛出EntityNotFound")]
+    public async Task ChangePassword_UserNotFound_ThrowsEntityNotFound()
     {
         await Assert.ThrowsAsync<EntityNotFoundException>(() => Handler().Handle(
             new ChangePasswordCommand
@@ -111,8 +111,8 @@ public class ForgotPasswordTests
     private ForgotPasswordHandler Handler()
         => new(_ctx.Users, _ctx.Codes, _ctx.Hasher, _ctx.Events, _ctx.Clock);
 
-    [Fact]
-    public async Task 重置成功()
+    [Fact(DisplayName = "重置成功")]
+    public async Task ForgotPassword_ValidCode_ResetsPassword()
     {
         var user = _ctx.GivenUser(email: "a@test.local");
         _ctx.Codes.Seed("a@test.local", "123456");
@@ -129,8 +129,8 @@ public class ForgotPasswordTests
         Assert.True(_ctx.Hasher.Verify("reset123456", stored!.PasswordHash));
     }
 
-    [Fact]
-    public async Task 发出忘记密码原因的事件()
+    [Fact(DisplayName = "发出忘记密码原因的事件")]
+    public async Task ForgotPassword_EmitsForgotPasswordReasonEvent()
     {
         _ctx.GivenUser(email: "a@test.local");
         _ctx.Codes.Seed("a@test.local", "123456");
@@ -145,8 +145,8 @@ public class ForgotPasswordTests
             _ctx.Events.SingleEvent<UserPasswordChanged>().Reason);
     }
 
-    [Fact]
-    public async Task 邮箱未注册时抛出()
+    [Fact(DisplayName = "邮箱未注册时抛出")]
+    public async Task ForgotPassword_UnregisteredEmail_Throws()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => Handler().Handle(
             new ForgotPasswordCommand
@@ -157,8 +157,8 @@ public class ForgotPasswordTests
         Assert.Equal("该邮箱未注册", ex.Message);
     }
 
-    [Fact]
-    public async Task 验证码错误时抛出()
+    [Fact(DisplayName = "验证码错误时抛出")]
+    public async Task ForgotPassword_WrongCode_Throws()
     {
         _ctx.GivenUser(email: "a@test.local");
         _ctx.Codes.Seed("a@test.local", "123456");
@@ -172,8 +172,8 @@ public class ForgotPasswordTests
         Assert.Equal("验证码错误或已过期", ex.Message);
     }
 
-    [Fact]
-    public async Task 验证码一次性()
+    [Fact(DisplayName = "验证码一次性")]
+    public async Task ForgotPassword_Code_IsSingleUse()
     {
         _ctx.GivenUser(email: "a@test.local");
         _ctx.Codes.Seed("a@test.local", "123456");
@@ -203,8 +203,8 @@ public class PasswordChangeTerminatesSessionsTests
         return _ctx;
     }
 
-    [Fact]
-    public async Task 自助改密后全部会话被终止()
+    [Fact(DisplayName = "自助改密后全部会话被终止")]
+    public async Task ChangePassword_TerminatesAllSessions()
     {
         WithSubscriber();
         var user = _ctx.GivenUser();
@@ -221,8 +221,8 @@ public class PasswordChangeTerminatesSessionsTests
         Assert.Empty(await _ctx.Sessions.ListSessionIdsAsync(user.Id));
     }
 
-    [Fact]
-    public async Task 忘记密码重置后全部会话被终止()
+    [Fact(DisplayName = "忘记密码重置后全部会话被终止")]
+    public async Task ForgotPassword_TerminatesAllSessions()
     {
         WithSubscriber();
         var user = _ctx.GivenUser(email: "a@test.local");
@@ -238,8 +238,8 @@ public class PasswordChangeTerminatesSessionsTests
         Assert.Contains(user.Id, _ctx.Terminator.TerminatedAllFor);
     }
 
-    [Fact]
-    public async Task 管理员重置后全部会话被终止()
+    [Fact(DisplayName = "管理员重置后全部会话被终止")]
+    public async Task AdminReset_TerminatesAllSessions()
     {
         // 第三条路径走的是管理后台用例，但事件与订阅方完全相同
         WithSubscriber();
@@ -264,8 +264,8 @@ public class UpdateProfileTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 改昵称成功()
+    [Fact(DisplayName = "改昵称成功")]
+    public async Task UpdateNickname_Succeeds()
     {
         var user = _ctx.GivenUser();
 
@@ -277,8 +277,8 @@ public class UpdateProfileTests
         Assert.Equal("新名字", (await _ctx.Users.FindByIdAsync(user.Id))!.Nickname);
     }
 
-    [Fact]
-    public async Task 昵称为空时抛出()
+    [Fact(DisplayName = "昵称为空时抛出")]
+    public async Task UpdateNickname_EmptyNickname_Throws()
     {
         var user = _ctx.GivenUser();
 
@@ -289,8 +289,8 @@ public class UpdateProfileTests
         Assert.Equal("昵称不能为空", ex.Message);
     }
 
-    [Fact]
-    public async Task 换绑邮箱成功并发出事件()
+    [Fact(DisplayName = "换绑邮箱成功并发出事件")]
+    public async Task ChangeEmail_Succeeds_EmitsEvent()
     {
         var user = _ctx.GivenUser(email: "old@test.local");
         _ctx.Codes.Seed("new@test.local", "123456");
@@ -306,8 +306,8 @@ public class UpdateProfileTests
         Assert.Equal("new@test.local", _ctx.Events.SingleEvent<UserEmailChanged>().NewEmail);
     }
 
-    [Fact]
-    public async Task 换绑到已被占用的邮箱时抛出()
+    [Fact(DisplayName = "换绑到已被占用的邮箱时抛出")]
+    public async Task ChangeEmail_EmailTaken_Throws()
     {
         _ctx.GivenUser(nickname: "别人", email: "taken@test.local");
         var user = _ctx.GivenUser(email: "old@test.local");
@@ -323,8 +323,8 @@ public class UpdateProfileTests
         Assert.Equal("该邮箱已被其他账号绑定", ex.Message);
     }
 
-    [Fact]
-    public async Task 换绑到自己当前邮箱时允许_排除自身占用()
+    [Fact(DisplayName = "换绑到自己当前邮箱时允许_排除自身占用")]
+    public async Task ChangeEmail_OwnCurrentEmail_IsAllowed()
     {
         var user = _ctx.GivenUser(email: "same@test.local");
         _ctx.Codes.Seed("same@test.local", "123456");
@@ -338,8 +338,8 @@ public class UpdateProfileTests
         Assert.True(result.Success);
     }
 
-    [Fact]
-    public async Task 换绑验证码错误时抛出()
+    [Fact(DisplayName = "换绑验证码错误时抛出")]
+    public async Task ChangeEmail_WrongCode_Throws()
     {
         var user = _ctx.GivenUser();
         _ctx.Codes.Seed("new@test.local", "123456");
@@ -354,8 +354,8 @@ public class UpdateProfileTests
         Assert.Equal("验证码错误或已过期", ex.Message);
     }
 
-    [Fact]
-    public async Task 上传头像成功并更新用户()
+    [Fact(DisplayName = "上传头像成功并更新用户")]
+    public async Task UploadAvatar_Succeeds_UpdatesUser()
     {
         var user = _ctx.GivenUser();
 
@@ -367,8 +367,8 @@ public class UpdateProfileTests
         Assert.Equal("/uploads/stored.png", (await _ctx.Users.FindByIdAsync(user.Id))!.Avatar);
     }
 
-    [Fact]
-    public async Task 头像超过2MB时被拒()
+    [Fact(DisplayName = "头像超过2MB时被拒")]
+    public async Task UploadAvatar_Exceeds2Mb_IsRejected()
     {
         var user = _ctx.GivenUser();
 
@@ -383,12 +383,12 @@ public class UpdateProfileTests
         Assert.Empty(_ctx.Files.Saved);
     }
 
-    [Theory]
+    [Theory(DisplayName = "非白名单扩展名被拒")]
     [InlineData("a.bmp")]
     [InlineData("a.svg")]
     [InlineData("a.exe")]
     [InlineData("a")]
-    public async Task 非白名单扩展名被拒(string fileName)
+    public async Task UploadAvatar_NonWhitelistedExtension_IsRejected(string fileName)
     {
         var user = _ctx.GivenUser();
 
@@ -399,8 +399,8 @@ public class UpdateProfileTests
         Assert.Equal("仅支持 jpg / png / gif / webp 格式图片", ex.Message);
     }
 
-    [Fact]
-    public async Task 未选文件时被拒()
+    [Fact(DisplayName = "未选文件时被拒")]
+    public async Task UploadAvatar_NoFile_IsRejected()
     {
         var user = _ctx.GivenUser();
 
@@ -411,8 +411,8 @@ public class UpdateProfileTests
         Assert.Equal("请选择图片文件", ex.Message);
     }
 
-    [Fact]
-    public async Task 聊天图片上限为5MB且存到images子目录()
+    [Fact(DisplayName = "聊天图片上限为5MB且存到images子目录")]
+    public async Task UploadChatImage_UpTo5Mb_StoredInImagesSubdirectory()
     {
         var result = await new UploadChatImageHandler(_ctx.Files).Handle(
             new UploadChatImageCommand { File = Upload("chat.jpg", 4 * 1024 * 1024) }, default);
@@ -422,8 +422,8 @@ public class UpdateProfileTests
         Assert.Equal("images", _ctx.Files.Saved[0].Subdirectory);
     }
 
-    [Fact]
-    public async Task 聊天图片超过5MB被拒()
+    [Fact(DisplayName = "聊天图片超过5MB被拒")]
+    public async Task UploadChatImage_Exceeds5Mb_IsRejected()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(
             () => new UploadChatImageHandler(_ctx.Files).Handle(
@@ -443,8 +443,8 @@ public class UserQueryTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 取当前用户信息()
+    [Fact(DisplayName = "取当前用户信息")]
+    public async Task GetCurrentUser_ReturnsProfile()
     {
         var user = _ctx.GivenUser(nickname: "张三", email: "a@test.local");
 
@@ -457,8 +457,8 @@ public class UserQueryTests
         Assert.Equal("a@test.local", result.Data.Email);
     }
 
-    [Fact]
-    public async Task 无效Token时抛出()
+    [Fact(DisplayName = "无效Token时抛出")]
+    public async Task GetCurrentUser_InvalidToken_Throws()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(
             () => new GetCurrentUserHandler(_ctx.Users).Handle(
@@ -467,16 +467,16 @@ public class UserQueryTests
         Assert.Equal("无效的 Token", ex.Message);
     }
 
-    [Fact]
-    public async Task 用户不存在时抛出()
+    [Fact(DisplayName = "用户不存在时抛出")]
+    public async Task GetCurrentUser_UserNotFound_Throws()
     {
         await Assert.ThrowsAsync<EntityNotFoundException>(
             () => new GetCurrentUserHandler(_ctx.Users).Handle(
                 new GetCurrentUserQuery { UserId = 99999 }, default));
     }
 
-    [Fact]
-    public async Task 机器人账号的邮箱为null()
+    [Fact(DisplayName = "机器人账号的邮箱为null")]
+    public async Task GetCurrentUser_BotAccount_EmailIsNull()
     {
         var (_, botUser) = _ctx.GivenRobot(ownerId: 10001);
 
@@ -486,8 +486,8 @@ public class UserQueryTests
         Assert.Null(result.Data!.Email);
     }
 
-    [Fact]
-    public async Task 设备列表按最后活跃倒序并标记当前设备()
+    [Fact(DisplayName = "设备列表按最后活跃倒序并标记当前设备")]
+    public async Task GetLoginSessions_OrderedByLastActiveDesc_MarksCurrent()
     {
         var user = _ctx.GivenUser();
         await _ctx.Sessions.SeedSessionAsync(user.Id, "s1", "手机");
@@ -501,8 +501,8 @@ public class UserQueryTests
         Assert.Equal("s2", result.Data.Single(s => s.IsCurrent).SessionId);
     }
 
-    [Fact]
-    public async Task 无会话时返回空列表()
+    [Fact(DisplayName = "无会话时返回空列表")]
+    public async Task GetLoginSessions_NoSessions_ReturnsEmptyList()
     {
         var result = await new GetLoginSessionsHandler(_ctx.Sessions).Handle(
             new GetLoginSessionsQuery { UserId = 10001, CurrentSessionId = "x" }, default);
@@ -516,8 +516,8 @@ public class ManageSessionsTests
 {
     private readonly ApplicationTestContext _ctx = new();
 
-    [Fact]
-    public async Task 踢下线指定设备()
+    [Fact(DisplayName = "踢下线指定设备")]
+    public async Task KickSession_KicksTargetDevice()
     {
         var user = _ctx.GivenUser();
         await _ctx.Sessions.SeedSessionAsync(user.Id, "s1");
@@ -529,8 +529,8 @@ public class ManageSessionsTests
         Assert.Contains((user.Id, "s1"), _ctx.Terminator.Terminated);
     }
 
-    [Fact]
-    public async Task 不能踢别人的会话()
+    [Fact(DisplayName = "不能踢别人的会话")]
+    public async Task KickSession_OtherUsersSession_IsRejected()
     {
         var owner = _ctx.GivenUser();
         var other = _ctx.GivenUser(nickname: "别人", email: "b@test.local");
@@ -544,8 +544,8 @@ public class ManageSessionsTests
         Assert.Empty(_ctx.Terminator.Terminated);
     }
 
-    [Fact]
-    public async Task 退出其他设备_保留当前设备()
+    [Fact(DisplayName = "退出其他设备_保留当前设备")]
+    public async Task LogoutOtherSessions_KeepsCurrentSession()
     {
         var user = _ctx.GivenUser();
         await _ctx.Sessions.SeedSessionAsync(user.Id, "current");
@@ -560,8 +560,8 @@ public class ManageSessionsTests
         Assert.Equal(new[] { "current" }, await _ctx.Sessions.ListSessionIdsAsync(user.Id));
     }
 
-    [Fact]
-    public async Task 没有其他设备时给出相应提示()
+    [Fact(DisplayName = "没有其他设备时给出相应提示")]
+    public async Task LogoutOtherSessions_NoOtherDevices_ReturnsNotice()
     {
         var user = _ctx.GivenUser();
         await _ctx.Sessions.SeedSessionAsync(user.Id, "current");

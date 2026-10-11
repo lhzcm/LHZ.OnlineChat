@@ -5,8 +5,8 @@ namespace LHZ.OnlineChat.Domain.Tests.Groups;
 
 public class GroupCreationTests
 {
-    [Fact]
-    public void Create_去空白并记录群主()
+    [Fact(DisplayName = "Create_去空白并记录群主")]
+    public void Create_TrimsName_SetsOwner()
     {
         var group = Group.Create("  技术交流群 ", "/uploads/g.png", ownerId: 10001, T.Now);
 
@@ -17,19 +17,19 @@ public class GroupCreationTests
         Assert.Equal(T.Now, group.CreatedAt);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Create_群名为空时抛出")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Create_群名为空时抛出(string? name)
+    public void Create_EmptyName_Throws(string? name)
     {
         var ex = Assert.Throws<DomainException>(() => Group.Create(name!, null, 10001, T.Now));
 
         Assert.Equal("群组名称不能为空", ex.Message);
     }
 
-    [Fact]
-    public void Create_群名超长时抛出()
+    [Fact(DisplayName = "Create_群名超长时抛出")]
+    public void Create_NameTooLong_Throws()
     {
         var ex = Assert.Throws<DomainException>(
             () => Group.Create(new string('x', Group.MaxNameLength + 1), null, 10001, T.Now));
@@ -37,18 +37,18 @@ public class GroupCreationTests
         Assert.Equal($"群组名称不能超过 {Group.MaxNameLength} 个字符", ex.Message);
     }
 
-    [Theory]
+    [Theory(DisplayName = "IsOwnedBy_判定群主")]
     [InlineData(10001, true)]
     [InlineData(10002, false)]
-    public void IsOwnedBy_判定群主(int userId, bool expected)
+    public void IsOwnedBy_OwnerId_ReturnsExpected(int userId, bool expected)
     {
         var group = TestGroups.Create(ownerId: 10001);
 
         Assert.Equal(expected, group.IsOwnedBy(userId));
     }
 
-    [Fact]
-    public void EnsureCanBeDismissedBy_非群主被拒()
+    [Fact(DisplayName = "EnsureCanBeDismissedBy_非群主被拒")]
+    public void EnsureCanBeDismissedBy_NonOwner_Throws()
     {
         var group = TestGroups.Create(ownerId: 10001);
 
@@ -57,8 +57,8 @@ public class GroupCreationTests
             Assert.Throws<DomainException>(() => group.EnsureCanBeDismissedBy(10002)).Message);
     }
 
-    [Fact]
-    public void Dissolve_发出携带解散前成员名单的事件()
+    [Fact(DisplayName = "Dissolve_发出携带解散前成员名单的事件")]
+    public void Dissolve_RaisesEvent_WithPreDissolveMemberIds()
     {
         // 成员名单必须在删除前抓取，否则事件订阅方无从通知谁
         var group = TestGroups.Create();
@@ -75,8 +75,8 @@ public class GroupCreationTests
 
 public class GroupAnnouncementTests
 {
-    [Fact]
-    public void SetAnnouncement_三列同时写入()
+    [Fact(DisplayName = "SetAnnouncement_三列同时写入")]
+    public void SetAnnouncement_UpdatesAllThreeFields()
     {
         var group = TestGroups.Create();
 
@@ -87,8 +87,8 @@ public class GroupAnnouncementTests
         Assert.Equal(10001, group.AnnouncementBy);
     }
 
-    [Fact]
-    public void SetAnnouncement_聚合成值对象对外暴露()
+    [Fact(DisplayName = "SetAnnouncement_聚合成值对象对外暴露")]
+    public void SetAnnouncement_ExposesValueObject()
     {
         var group = TestGroups.Create();
 
@@ -101,11 +101,11 @@ public class GroupAnnouncementTests
         Assert.Equal(10001, announcement.EditedBy);
     }
 
-    [Theory]
+    [Theory(DisplayName = "SetAnnouncement_空白时三列一并置空")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("    ")]
-    public void SetAnnouncement_空白时三列一并置空(string? text)
+    public void SetAnnouncement_BlankText_ClearsAllThreeFields(string? text)
     {
         // 改造前是三个各自可空的散列字段，清除公告要记得同时清三处，漏一处就留下脏数据
         var group = TestGroups.Create();
@@ -119,8 +119,8 @@ public class GroupAnnouncementTests
         Assert.Null(group.Announcement);
     }
 
-    [Fact]
-    public void SetAnnouncement_超长时抛出()
+    [Fact(DisplayName = "SetAnnouncement_超长时抛出")]
+    public void SetAnnouncement_TooLong_Throws()
     {
         var group = TestGroups.Create();
 
@@ -130,8 +130,8 @@ public class GroupAnnouncementTests
         Assert.Equal($"公告内容过长（最多 {GroupAnnouncement.MaxLength} 字）", ex.Message);
     }
 
-    [Fact]
-    public void SetAnnouncement_发出事件并标明是否仍有公告()
+    [Fact(DisplayName = "SetAnnouncement_发出事件并标明是否仍有公告")]
+    public void SetAnnouncement_RaisesEvent_WithHasAnnouncementFlag()
     {
         var group = TestGroups.Create();
 
@@ -144,8 +144,8 @@ public class GroupAnnouncementTests
         Assert.False(cleared.HasAnnouncement);
     }
 
-    [Fact]
-    public void Restore_从历史数据还原_缺时间与编辑者也不崩()
+    [Fact(DisplayName = "Restore_从历史数据还原_缺时间与编辑者也不崩")]
+    public void Restore_FromLegacyData_MissingTimeAndEditorIsSafe()
     {
         // 早期数据可能只有正文而没有时间/编辑者
         var announcement = GroupAnnouncement.Restore("旧公告", null, null);
@@ -156,17 +156,17 @@ public class GroupAnnouncementTests
         Assert.Equal(0, announcement.EditedBy);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Restore_正文为空时返回null")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Restore_正文为空时返回null(string? text)
+    public void Restore_EmptyText_ReturnsNull(string? text)
     {
         Assert.Null(GroupAnnouncement.Restore(text, T.Now, 10001));
     }
 
-    [Fact]
-    public void 值相等语义()
+    [Fact(DisplayName = "值相等语义")]
+    public void ValueEquality_SameContent_AreEqual()
     {
         var a = GroupAnnouncement.Create("同样的内容", 10001, T.Now);
         var b = GroupAnnouncement.Create("同样的内容", 10001, T.Now);
@@ -177,8 +177,8 @@ public class GroupAnnouncementTests
 
 public class GroupOwnershipTests
 {
-    [Fact]
-    public void TransferOwnership_更新群主并发出事件()
+    [Fact(DisplayName = "TransferOwnership_更新群主并发出事件")]
+    public void TransferOwnership_UpdatesOwner_RaisesEvent()
     {
         var group = TestGroups.Create(ownerId: 10001);
 
@@ -191,8 +191,8 @@ public class GroupOwnershipTests
         Assert.Equal(10002, transferred.NewOwnerId);
     }
 
-    [Fact]
-    public void TransferOwnership_转给当前群主时抛出()
+    [Fact(DisplayName = "TransferOwnership_转给当前群主时抛出")]
+    public void TransferOwnership_ToCurrentOwner_Throws()
     {
         var group = TestGroups.Create(ownerId: 10001);
 
@@ -201,8 +201,8 @@ public class GroupOwnershipTests
         Assert.Equal("新群主不能是当前群主", ex.Message);
     }
 
-    [Fact]
-    public void TransferOwnership_失败时群主不变且无事件()
+    [Fact(DisplayName = "TransferOwnership_失败时群主不变且无事件")]
+    public void TransferOwnership_Failure_KeepsOwnerWithoutEvent()
     {
         var group = TestGroups.Create(ownerId: 10001);
 
