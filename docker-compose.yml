@@ -1,7 +1,7 @@
 services:
   # ==================== PostgreSQL ====================
   postgres:
-    image: docker.m.daocloud.io/library/postgres:16-alpine
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -20,7 +20,7 @@ services:
 
   # ==================== Redis ====================
   redis:
-    image: docker.m.daocloud.io/library/redis:7-alpine
+    image: redis:7-alpine
     restart: unless-stopped
     environment:
       # 供下面的健康检查在容器内读取,无需把密码硬编码进探针命令
