@@ -105,7 +105,9 @@ LHZ.OnlineChat/
 ├── .env.example                        # 部署配置模板
 ├── nuget.config
 ├── README.md
+├── AGENTS.md                           # 给 AI 的编码红线 + 提交前自检清单(每轮自动加载)
 ├── docs/
+│   ├── CODING_STANDARDS.md             # 编码规范细则(分层/用例/数据访问/测试/前端…)
 │   └── DEPLOY.md                       # 线上部署手册(HTTPS/备份/运维)
 │
 ├── backend/                            # ===== 后端(DDD 四层)=====
@@ -185,6 +187,7 @@ dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 
 几点约定:
 
+- **方法名用英文、中文进 `DisplayName`**:标识符统一 `方法_场景_预期` 三段式(英文),中文说明放 `[Fact(DisplayName = "…")]`,测试报告仍是中文可读(见 [CODING_STANDARDS.md](docs/CODING_STANDARDS.md) §5)。
 - **不用 mock 框架**,一律手写内存测试替身([TestDoubles/](backend/tests/LHZ.OnlineChat.Application.Tests/TestDoubles/))。内存仓储会真的分配自增主键,因此"忘了回填 Id 就发事件"这类顺序错误测得出来;mock 测不出。
 - **领域层零依赖的直接收益**:348 个领域测试不需要数据库、不需要容器,全部跑完约 550 毫秒。
 - **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
