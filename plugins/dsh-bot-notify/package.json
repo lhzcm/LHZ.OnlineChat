@@ -1,14 +1,26 @@
 {
   "name": "dsh-bot-notify",
-  "version": "0.1.0",
-  "description": "Push DeepSeek Harness execution progress and results to an OnlineChat robot (dsh plugin)",
+  "version": "0.2.0",
+  "description": "Push DeepSeek Harness execution progress and results to an OnlineChat robot (dsh bundle)",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
-    ".": "./lib/index.js"
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js"
+    "lib/index.js",
+    "cordis.patch.yml",
+    "README.md"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
 }
