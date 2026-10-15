@@ -207,6 +207,25 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * 按 messageId 跨会话把一条消息标成发送失败。
+   *
+   * 服务端的「发送被拒」回执（message_failed）只带 messageId、不带会话类型，而回执到达时
+   * 用户可能已经切到别的会话，所以这里在**全部已加载会话**里找一次（会话数量有上限，
+   * 事件也只在内容被拒时发生）。返回是否命中，便于调用方决定提示语。
+   */
+  function markMessageFailedById(messageId: string | undefined): boolean {
+    if (!messageId) return false
+    for (const list of messages.value.values()) {
+      const msg = list.find(m => m.messageId === messageId)
+      if (msg) {
+        msg.status = 'failed'
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
    * 打开会话：清空未读；私聊同步服务端已读标记，群聊推进已读游标。
    * 按会话串行执行：新消息会连续触发标记，串行可避免多个 mark-all-read 请求乱序到达
    * （后发先至会让服务端把已读游标回退，未读数再次出现）。
@@ -417,7 +436,7 @@ export const useChatStore = defineStore('chat', () => {
   return {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages, historyMeta,
     sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled, removeMessage,
-    setMessageStatus, markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
+    setMessageStatus, markMessageFailedById, markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
     setCurrentSession, loadHistory, loadMoreHistory, loadOfflineMessages, clearAll
   }
 })

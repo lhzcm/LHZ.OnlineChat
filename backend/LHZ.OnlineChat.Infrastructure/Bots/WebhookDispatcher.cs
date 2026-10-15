@@ -23,10 +23,11 @@ internal sealed class WebhookDispatcher : IWebhookDispatcher
     private const int MaxAttempts = 2;
 
     /// <summary>
-    /// 读取响应体的大小上限。对端可能是任意地址，不设上限时一个超大响应就能把内存拉满；
-    /// 正常用法只需要 {"content":"..."}，截断不会影响它。
+    /// 读取响应体的大小上限。对端可能是任意地址，不设上限时一个超大响应就能把内存拉满。
+    /// 内容上限 50000 字（中文 UTF-8 约 150KB，若对端把非 ASCII 转义成 \uXXXX 则约 300KB），
+    /// 小了会把长回复截成半截 JSON、直接解析失败，所以留到 1MiB。
     /// </summary>
-    private const int MaxResponseBytes = 64 * 1024;
+    private const int MaxResponseBytes = 1024 * 1024;
 
     /// <summary>HttpClient 命名</summary>
     internal const string HttpClientName = "bot";
@@ -98,7 +99,8 @@ internal sealed class WebhookDispatcher : IWebhookDispatcher
                 return new WebhookDispatchResult
                 {
                     Success = true,
-                    Reply = string.IsNullOrEmpty(content) ? null : content
+                    Reply = string.IsNullOrEmpty(content) ? null : content,
+                    Kind = (MessageKind)(parsed?.MessageType ?? 0)
                 };
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -274,11 +276,15 @@ internal sealed class WebhookMessagePayload
     public long Timestamp { get; set; }
 }
 
-/// <summary>Webhook 同步响应：200 + {"content":"回复文本"}</summary>
+/// <summary>Webhook 同步响应：200 + {"content":"回复文本","messageType":0}</summary>
 internal sealed class WebhookReply
 {
     [JsonProperty("content")]
     public string? Content { get; set; }
+
+    /// <summary>可选：0 文字 / 3 Markdown；缺省 0（合法性由用例统一校验）</summary>
+    [JsonProperty("messageType")]
+    public int MessageType { get; set; }
 }
 
 /// <summary>第三方主动推送的请求体（入站，camelCase）</summary>

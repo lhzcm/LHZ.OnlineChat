@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chat'
 import { messageApi } from '@/api/message'
 import { formatMsgTime, pad } from '@/utils/format'
 import { copyText } from '@/utils/clipboard'
+import { stripMarkdown } from '@/utils/markdown'
 import type { FriendInfo, SessionInfo, ChatType, MessageSearchResult } from '@/types'
 
 defineProps<{
@@ -105,7 +106,9 @@ function lastMessageFor(type: ChatType, id: number): string {
   const last = list && list.length ? list[list.length - 1] : null
   if (!last) return ''
   const prefix = type === 'group' && Number(last.from) !== auth.user?.id ? `${last.senderName}: ` : ''
-  return prefix + (last.content || '')
+  const content = last.content || ''
+  // Markdown 消息的预览抹掉语法，否则列表里会看到 ** / # / 反引号这些标记
+  return prefix + (last.messageType === 3 ? stripMarkdown(content) : content)
 }
 
 function unreadOf(type: ChatType, id: number): number {
@@ -273,7 +276,7 @@ function openSearchResult(r: MessageSearchResult) {
             <span class="search-result-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
           </div>
           <div class="search-result-content">
-            <span class="search-result-sender">{{ r.senderName }}：</span>{{ r.content }}
+            <span class="search-result-sender">{{ r.senderName }}：</span>{{ r.messageType === 3 ? stripMarkdown(r.content) : r.content }}
           </div>
         </div>
         <button v-if="searchHasMore" class="search-more" @click="loadMoreSearch" :disabled="searchLoading">

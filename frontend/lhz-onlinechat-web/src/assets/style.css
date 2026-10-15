@@ -24,6 +24,11 @@
   --mine-bubble: linear-gradient(135deg, #5b6cff 0%, #7c5cff 100%);
   --active-bg: #eef1ff;
   --chat-bg: linear-gradient(180deg, #f2f4f9 0%, #e9edf5 100%);
+  /* Markdown 代码块/行内码（深色代码面板在两种主题下都成立） */
+  --code-bg: #1f2430;
+  --code-fg: #e7eaf2;
+  --code-inline-bg: #eef0f5;
+  --code-inline-fg: #c0392b;
 }
 
 /* ==================== 深色模式 ==================== */
@@ -43,6 +48,10 @@ html[data-theme='dark'] {
   --mine-bubble: linear-gradient(135deg, #5b6cff 0%, #7c5cff 100%);
   --active-bg: #262d44;
   --chat-bg: linear-gradient(180deg, #161a22 0%, #12151c 100%);
+  --code-bg: #0e1117;
+  --code-fg: #d8dee9;
+  --code-inline-bg: #2a3040;
+  --code-inline-fg: #ff9e8a;
 }
 
 body {

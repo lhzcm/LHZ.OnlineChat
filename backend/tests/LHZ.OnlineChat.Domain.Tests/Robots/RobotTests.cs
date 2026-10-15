@@ -1,4 +1,5 @@
 using LHZ.OnlineChat.Domain.Common;
+using LHZ.OnlineChat.Domain.Messaging;
 using LHZ.OnlineChat.Domain.Robots;
 
 namespace LHZ.OnlineChat.Domain.Tests.Robots;
@@ -303,7 +304,8 @@ public class RobotStateTests
     [InlineData("   ")]
     public void EnsureReplyContentValid_EmptyContent_IsRejected(string? content)
     {
-        var ex = Assert.Throws<DomainException>(() => Robot.EnsureReplyContentValid(content));
+        var ex = Assert.Throws<DomainException>(
+            () => Robot.EnsureReplyContentValid(content, MessageKind.Text));
 
         Assert.Equal("回复内容不能为空", ex.Message);
     }
@@ -312,7 +314,7 @@ public class RobotStateTests
     public void EnsureReplyContentValid_TooLongContent_IsRejected()
     {
         var ex = Assert.Throws<DomainException>(
-            () => Robot.EnsureReplyContentValid(new string('x', Robot.MaxReplyLength + 1)));
+            () => Robot.EnsureReplyContentValid(new string('x', Robot.MaxReplyLength + 1), MessageKind.Text));
 
         Assert.Equal("回复内容过长", ex.Message);
     }
@@ -320,7 +322,27 @@ public class RobotStateTests
     [Fact(DisplayName = "EnsureReplyContentValid_恰好达到上限时通过")]
     public void EnsureReplyContentValid_AtMaxLength_Succeeds()
     {
-        Robot.EnsureReplyContentValid(new string('x', Robot.MaxReplyLength));
+        Robot.EnsureReplyContentValid(new string('x', Robot.MaxReplyLength), MessageKind.Text);
+    }
+
+    [Theory(DisplayName = "EnsureReplyContentValid_文字与Markdown类型通过")]
+    [InlineData(MessageKind.Text)]
+    [InlineData(MessageKind.Markdown)]
+    public void EnsureReplyContentValid_TextOrMarkdownKind_Succeeds(MessageKind kind)
+    {
+        Robot.EnsureReplyContentValid("内容", kind);
+    }
+
+    [Theory(DisplayName = "EnsureReplyContentValid_非文字或Markdown类型被拒")]
+    [InlineData(MessageKind.Image)]
+    [InlineData(MessageKind.File)]
+    [InlineData((MessageKind)99)]
+    public void EnsureReplyContentValid_OtherKinds_AreRejected(MessageKind kind)
+    {
+        // 图片/文件的内容是 URL，机器人没有上传通道，放开等于允许塞任意外链
+        var ex = Assert.Throws<DomainException>(() => Robot.EnsureReplyContentValid("内容", kind));
+
+        Assert.Equal("机器人只能发送文字或 Markdown 消息", ex.Message);
     }
 }
 

@@ -408,6 +408,21 @@ function handleWsMessage(msg: WsMessage) {
     return
   }
 
+  // 服务端因内容问题拒收了自己刚发的消息（超长/为空/类型非法）：
+  // 保留气泡并标成「发送失败」（可重试），原因用服务端给的那句 —— 不能静默，
+  // 否则消息就这么消失了（5000 字上限那次的教训）。
+  if (msg.type === 'message_failed') {
+    const matched = chatStore.markMessageFailedById(msg.messageId)
+    const reason = msg.content || '消息被服务端拒绝'
+    if (matched) {
+      chatAreaRef.value?.setHint(reason)
+    } else {
+      // 消息已不在内存里（例如刚刷新过）：至少把原因告诉用户
+      toast(reason)
+    }
+    return
+  }
+
   // 群消息被拒绝（禁言中）：移除乐观消息并提示
   if (msg.type === 'muted') {
     if (msg.messageId) {

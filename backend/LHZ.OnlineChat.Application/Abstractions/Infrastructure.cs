@@ -182,6 +182,9 @@ public sealed class WebhookDispatchResult
     /// <summary>同步回复内容（200 + {"content":"..."}）；无回复为 null</summary>
     public string? Reply { get; init; }
 
+    /// <summary>同步回复的消息类型（回包里的 messageType，缺省 0 = 纯文本）</summary>
+    public MessageKind Kind { get; init; } = MessageKind.Text;
+
     public string Message { get; init; } = string.Empty;
 }
 

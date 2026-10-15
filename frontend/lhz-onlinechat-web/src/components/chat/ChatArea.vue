@@ -9,9 +9,11 @@ import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { messageApi } from '@/api/message'
+import { MAX_MESSAGE_LENGTH } from '@/constants/limits'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime } from '@/utils/format'
 import { compressChatImage } from '@/utils/image'
+import { stripMarkdown } from '@/utils/markdown'
 import type { WsMessage, ChatType, GroupMemberInfo, MessageSearchResult } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
@@ -28,8 +30,22 @@ const chatStore = useChatStore()
 const ws = useWebSocketStore()
 const { toast } = useToast()
 
+/**
+ * 两套输入暂存：普通文本与 Markdown 各存各的草稿，切换模式时互不带内容、也不清空对方。
+ * 输入框、表情/@ 插入、发送按钮都只作用于 activeText（当前模式对应的那一个）。
+ */
 const inputText = ref('')
-const inputEl = ref<HTMLInputElement | null>(null)
+const markdownInputText = ref('')
+/** Markdown 模式：输入框换成多行，发出去的是 messageType=3 的 Markdown 消息 */
+const markdownMode = ref(false)
+const activeText = computed({
+  get: () => (markdownMode.value ? markdownInputText.value : inputText.value),
+  set: (value: string) => {
+    if (markdownMode.value) markdownInputText.value = value
+    else inputText.value = value
+  }
+})
+const inputEl = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
 const sendHint = ref('')
 const lightboxUrl = ref('')
@@ -276,10 +292,10 @@ function toggleEmojiPanel() {
 function insertEmoji(emoji: string) {
   const el = inputEl.value
   if (!el) return
-  const start = el.selectionStart ?? inputText.value.length
-  const end = el.selectionEnd ?? inputText.value.length
-  const text = inputText.value
-  inputText.value = text.slice(0, start) + emoji + text.slice(end)
+  const start = el.selectionStart ?? activeText.value.length
+  const end = el.selectionEnd ?? activeText.value.length
+  const text = activeText.value
+  activeText.value = text.slice(0, start) + emoji + text.slice(end)
   nextTick(() => {
     const pos = start + emoji.length
     el.focus()
@@ -306,13 +322,24 @@ const mentionFiltered = computed(() => {
   return list.slice(0, 8)
 })
 
-const inputPlaceholder = computed(() =>
-  props.chat?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
-)
+const inputPlaceholder = computed(() => {
+  if (markdownMode.value) return 'Markdown：支持 # 标题、**粗体**、`代码`、- 列表（Ctrl+Enter 发送）'
+  return props.chat?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
+})
 
-/** 输入框按键：@ 键直接打开成员面板（双保险，避免 input 事件异常），Enter 发送 */
+/** 接近上限才显示字数：平时不打扰，快满了才有存在感 */
+const showLengthHint = computed(() => activeText.value.length >= MAX_MESSAGE_LENGTH * 0.8)
+
+/** 超限就禁止发送（服务端同样会拒，这里是为了不让人白等一下） */
+const isOverLengthLimit = computed(() => activeText.value.length > MAX_MESSAGE_LENGTH)
+
+/**
+ * 输入框按键：@ 键直接打开成员面板（双保险，避免 input 事件异常）。
+ * 普通模式 Enter 发送；Markdown 模式 Enter 是换行（多行语法得能敲出来），Ctrl/Cmd+Enter 才发送。
+ */
 function onInputKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter') {
+    if (markdownMode.value && !(e.ctrlKey || e.metaKey)) return
     send()
     return
   }
@@ -361,7 +388,7 @@ function pickMention(m: GroupMemberInfo) {
   const atIdx = Math.max(text.lastIndexOf('@', caret - 1), text.lastIndexOf('＠', caret - 1))
   const insert = `@${m.nickname} `
   const start = atIdx >= 0 ? atIdx : caret
-  inputText.value = text.slice(0, start) + insert + text.slice(caret)
+  activeText.value = text.slice(0, start) + insert + text.slice(caret)
   nextTick(() => {
     const pos = start + insert.length
     el.focus()
@@ -376,9 +403,9 @@ function openMentionPicker() {
   mentionOpen.value = true
   mentionQuery.value = ''
   if (el) {
-    const caret = el.selectionStart ?? inputText.value.length
+    const caret = el.selectionStart ?? activeText.value.length
     const end = el.selectionEnd ?? caret
-    inputText.value = `${inputText.value.slice(0, caret)}@${inputText.value.slice(end)}`
+    activeText.value = `${activeText.value.slice(0, caret)}@${activeText.value.slice(end)}`
     nextTick(() => {
       const pos = caret + 1
       el.focus()
@@ -435,8 +462,14 @@ function sendWs(msg: ChatMessage): boolean {
 
 function send() {
   if (!props.chat || !auth.user) return
-  const text = inputText.value.trim()
+  // 只取当前模式那一份草稿（普通文本 / Markdown 各自独立暂存）
+  const text = activeText.value.trim()
   if (!text) return
+  // 超长不发出去：服务端会拒（回 message_failed），但没必要让用户等那一下，草稿也留着
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    toast(`消息内容不能超过 ${MAX_MESSAGE_LENGTH} 字（当前 ${text.length} 字）`)
+    return
+  }
   // 断线时不再直接丢弃消息：照常乐观上屏，由 sendMessage 的返回值决定是否标记"发送失败"（可重试）
   sendHint.value = ws.connected
     ? ''
@@ -449,7 +482,7 @@ function send() {
     content: text,
     timestamp: Date.now(),
     messageId: genId(),
-    messageType: 0,
+    messageType: markdownMode.value ? 3 : 0,
     senderName: auth.user.nickname,
     senderAvatar: auth.user.avatar,
     mentions: parseMentions(text),
@@ -460,7 +493,8 @@ function send() {
   }
   chatStore.addMessage(msg, auth.user.id)
   if (!sendWs(msg)) chatStore.setMessageStatus(key, msg.messageId, 'failed')
-  inputText.value = ''
+  // 只清当前模式的草稿：另一种模式的输入留着，切回来还在
+  activeText.value = ''
   replyTarget.value = null
   scrollToBottom()
 }
@@ -471,6 +505,11 @@ function send() {
  */
 function retryMessage(msg: ChatMessage) {
   if (!props.chat || !auth.user) return
+  // 重发不会让超长内容变合法：直接说清楚，别让它再被服务端拒一次
+  if ((msg.content || '').length > MAX_MESSAGE_LENGTH) {
+    toast(`这条消息超过 ${MAX_MESSAGE_LENGTH} 字，无法重发（请精简后重新发送）`)
+    return
+  }
   const key = chatStore.sessionKey(props.chat.type, props.chat.id)
   if (sendWs(msg)) {
     chatStore.setMessageStatus(key, msg.messageId, 'sending')
@@ -597,7 +636,7 @@ function openLightbox(url: string) {
         <button v-for="r in searchResults" :key="r.messageId || `${r.sessionId}-${r.sentAt}`"
           class="search-result-item" @click="locateSearchResult(r)">
           <span class="contact-name">{{ r.senderName }}</span>
-          <span class="search-content">{{ r.content }}</span>
+          <span class="search-content">{{ r.messageType === 3 ? stripMarkdown(r.content) : r.content }}</span>
           <span class="search-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
         </button>
         <div class="search-state" v-if="searching">搜索中…</div>
@@ -645,6 +684,10 @@ function openLightbox(url: string) {
             </div>
           </div>
         </div>
+        <button class="emoji-btn md-btn" :class="{ active: markdownMode }" @click.stop="markdownMode = !markdownMode"
+          :title="markdownMode ? '退出 Markdown 模式' : 'Markdown 模式（Ctrl+Enter 发送）'">
+          <span class="md-symbol">MD</span>
+        </button>
         <button v-if="chat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionPicker" title="提及成员">
           <span class="at-symbol">@</span>
         </button>
@@ -664,8 +707,13 @@ function openLightbox(url: string) {
             <line x1="15" y1="9" x2="15.01" y2="9" />
           </svg>
         </button>
-        <input ref="inputEl" v-model="inputText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
-        <button class="send-btn" @click="send" :disabled="!inputText.trim()">发送</button>
+        <input ref="inputEl" v-if="!markdownMode" v-model="activeText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
+        <textarea v-else ref="inputEl" v-model="activeText" class="input md-input" :placeholder="inputPlaceholder"
+          rows="3" @keydown="onInputKeydown" @input="onInputChange"></textarea>
+        <span class="input-counter" v-if="showLengthHint" :class="{ over: isOverLengthLimit }">
+          {{ activeText.length }} / {{ MAX_MESSAGE_LENGTH }}
+        </span>
+        <button class="send-btn" @click="send" :disabled="!activeText.trim() || isOverLengthLimit">发送</button>
       </div>
       <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
     </template>
@@ -1015,6 +1063,45 @@ function openLightbox(url: string) {
 .mention-btn {
   color: var(--primary);
   font-weight: 700;
+}
+
+/* Markdown 模式开关：开启后输入框换多行、消息按 Markdown 渲染 */
+.md-btn.active {
+  background: var(--active-bg);
+  color: var(--primary);
+}
+
+.md-symbol {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+/* 字数提示：接近上限才出现，超限变红（此时发送按钮同时禁用） */
+.input-counter {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.input-counter.over {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* 多行输入：Enter 换行，Ctrl/Cmd+Enter 发送 */
+.md-input {
+  resize: none;
+  min-height: 62px;
+  max-height: 160px;
+  line-height: 1.5;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  overflow-y: auto;
 }
 
 .at-symbol {

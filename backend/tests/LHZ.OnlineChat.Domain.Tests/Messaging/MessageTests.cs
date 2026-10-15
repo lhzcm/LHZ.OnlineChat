@@ -261,6 +261,7 @@ public class GroupMessageTests
     [InlineData(MessageKind.Text)]
     [InlineData(MessageKind.Image)]
     [InlineData(MessageKind.File)]
+    [InlineData(MessageKind.Markdown)]
     public void Send_SupportsAllMessageKinds(MessageKind kind)
     {
         var message = GroupMessage.Send(5, 10001, "x", kind, null, MentionList.Empty, null, T.Now);

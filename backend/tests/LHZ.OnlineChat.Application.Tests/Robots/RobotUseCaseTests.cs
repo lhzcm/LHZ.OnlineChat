@@ -631,6 +631,54 @@ public class HandleRobotReplyTests
         Assert.Equal("推送内容", Assert.Single(_ctx.PrivateMessages.All).Content);
     }
 
+    [Fact(DisplayName = "第三方推送Markdown时按Markdown落库")]
+    public async Task Handle_MarkdownPush_StoresMarkdownKind()
+    {
+        var owner = _ctx.GivenUser();
+        var (robot, _) = _ctx.GivenRobot(owner.Id);
+        var (handler, sender) = Build();
+
+        await handler.Handle(new HandleRobotReplyCommand
+        {
+            Token = _ctx.Cipher.Encode(robot.Id),
+            RawBody = "{}",
+            Payload = new RobotReplyPayload
+            {
+                SessionType = "private", SessionId = owner.Id,
+                Content = "# 标题\n\n- 列表", MessageType = (int)MessageKind.Markdown
+            }
+        }, default);
+
+        Assert.Equal(MessageKind.Markdown, Assert.Single(sender.Sent).Kind);
+        Assert.Equal(MessageKind.Markdown, Assert.Single(_ctx.PrivateMessages.All).Kind);
+    }
+
+    [Theory(DisplayName = "第三方推送图片或文件类型被拒")]
+    [InlineData((int)MessageKind.Image)]
+    [InlineData((int)MessageKind.File)]
+    [InlineData(99)]
+    public async Task Handle_NonTextOrMarkdownPush_IsRejected(int messageType)
+    {
+        var owner = _ctx.GivenUser();
+        var (robot, _) = _ctx.GivenRobot(owner.Id);
+        var (handler, sender) = Build();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => handler.Handle(
+            new HandleRobotReplyCommand
+            {
+                Token = _ctx.Cipher.Encode(robot.Id), RawBody = "{}",
+                Payload = new RobotReplyPayload
+                {
+                    SessionType = "private", SessionId = owner.Id,
+                    Content = "https://evil.example/x.png", MessageType = messageType
+                }
+            }, default));
+
+        Assert.Equal("机器人只能发送文字或 Markdown 消息", ex.Message);
+        Assert.Empty(sender.Sent);
+        Assert.Empty(_ctx.PrivateMessages.All);
+    }
+
     [Fact(DisplayName = "令牌无效时被拒")]
     public async Task Handle_InvalidToken_IsRejected()
     {

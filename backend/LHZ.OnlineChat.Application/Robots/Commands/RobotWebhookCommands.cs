@@ -73,7 +73,8 @@ internal sealed class HandleRobotReplyHandler : IRequestHandler<HandleRobotReply
         }
 
         var payload = command.Payload ?? throw new DomainException("请求格式错误");
-        Robot.EnsureReplyContentValid(payload.Content);
+        var kind = (MessageKind)payload.MessageType;
+        Robot.EnsureReplyContentValid(payload.Content, kind);
 
         var sessionType = ChatSessionTypeNames.TryParse(payload.SessionType)
                           ?? throw new DomainException("无效的会话类型");
@@ -101,6 +102,7 @@ internal sealed class HandleRobotReplyHandler : IRequestHandler<HandleRobotReply
             SessionType = sessionType,
             SessionId = payload.SessionId,
             Content = payload.Content,
+            Kind = kind,
             QuotedMessageId = payload.ReplyTo
         }, ct).ConfigureAwait(false);
 

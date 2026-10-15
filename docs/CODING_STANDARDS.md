@@ -116,7 +116,10 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - 推送一律经 `IRealtimeNotifier` 端口，**不要在业务代码里直接摸 socket**。
 - 对外协议是**公开契约**：`WsMessage` 的字段名（camelCase）、事件类型字符串（`friend_request` / `group_removed` / `kicked` …）改名等于破坏客户端。要加字段可以，改名/删字段必须同步 `README.md` 的 WS 协议表 + 前端。
 - 入站报文在 `Infrastructure/Realtime/WsInboundDispatcher.cs` 解析后**只做路由**，业务逻辑一行都不留在这里。
-- 入站失败不能崩连接：解析失败/处理失败各自 `try/catch` + `ILogger`，按既有风格只回执发送者或静默丢弃（**不回错误帧以免探测信息**，例如"你不是群成员"这种事不能回给发送者）。
+- 入站失败不能崩连接：解析失败/处理失败各自 `try/catch` + `ILogger`，**不回错误帧以免探测信息**（例如"你不是群成员"这种事不能回给发送者）。
+  - 例外：**发送方自己输入**引发的内容校验失败（超长/为空/类型未定义）可以明确回执（`message_failed`，见 `WsContentGuard`）——
+    这类失败不含任何他人信息，不回反而会让消息静默消失（2026-10 长文本被 5000 字上限拦掉、用户只看到"未读"就是这么来的）。
+    判定标准：这句话会不会透露"别人/别的群"的存在或关系；会，就静默。
 - 心跳路径（`heartbeat`）不要开 DI 作用域、不要查库；在线状态是带 TTL 的 Redis 键，靠心跳续期。
 - 多端语义：消息推给用户**全部在线设备**；踢下线要清 Redis 会话 + refresh 反查索引 + WS 连接三件套。
 

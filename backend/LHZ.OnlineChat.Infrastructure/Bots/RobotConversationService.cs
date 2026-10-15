@@ -74,6 +74,7 @@ internal sealed class RobotConversationService : IRobotConversationService
             SessionType = replyTarget.SessionType,
             SessionId = replyTarget.SessionId,
             Content = result.Reply,
+            Kind = result.Kind,
             QuotedMessageId = replyTarget.QuotedMessageId,
             QuotedContent = replyTarget.QuotedContent,
             QuotedSenderName = replyTarget.QuotedSenderName

@@ -1,0 +1,26 @@
+# dsh-bot-notify 的组合包层：`dsh plugin --profile <name> add file:<本目录>` 之后，
+# dsh 会把本包记进 profile 的 dsh.profile.bundles，这一行插件随之启用。
+#
+# 要填 pushUrl / sessionId 等配置，**不要改本文件**（升级会覆盖），
+# 而是在 $DSH_HOME/profiles/<name>/cordis.patch.yml 里写一行相同 id 的覆盖行
+# —— 后应用的层按 id 整行覆盖，config 是整体替换而不是深合并，所以下面这些键
+# 想留默认值就不必写（插件自身带默认值）：
+#
+# - insert:
+#     - id: bot-notify
+#       name: dsh-bot-notify
+#       config:
+#         pushUrl: 'https://chat.example.com/api/robots/你的机器人令牌/reply'
+#         pushSecret: ''            # 机器人的签名密钥，配了才带 X-Bot-Signature
+#         sessionType: private      # private=发给创建者本人 / group=发到群
+#         sessionId: 10001          # 接收方账号 ID（或群 ID）
+#         notifyStart: true
+#         notifyResult: true
+#         notifyError: true
+#         notifyTools: false
+#         toolMinIntervalMs: 5000
+#         maxText: 4000
+#         pushTimeoutMs: 8000
+- insert:
+    - id: bot-notify
+      name: dsh-bot-notify

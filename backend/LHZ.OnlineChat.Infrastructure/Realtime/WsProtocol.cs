@@ -87,4 +87,11 @@ internal static class WsMessageType
 
     /// <summary>被移出群，to 为群 ID（客户端据此退出该会话）</summary>
     public const string GroupMemberRemoved = "group_removed";
+
+    /// <summary>
+    /// 自己发出的消息因**内容**校验被拒（超长、为空、类型未定义）：
+    /// content 为原因，messageId 为客户端消息 ID，客户端据此把该气泡标成「发送失败」。
+    /// 只在内容类失败时回 —— 权限/关系类失败仍静默（回了就是探测工具，见 CODING_STANDARDS §4）。
+    /// </summary>
+    public const string MessageFailed = "message_failed";
 }

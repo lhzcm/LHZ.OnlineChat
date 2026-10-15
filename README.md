@@ -10,7 +10,7 @@
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
 - JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
-- 测试:946 个单元测试(xUnit),全量约 6 秒
+- 测试:1004 个单元测试(xUnit),全量约 6 秒
 
 ## ✨ 功能总览
 
@@ -175,21 +175,21 @@ LHZ.OnlineChat/
 
 ```bash
 cd backend
-dotnet test                                       # 全部 946 个用例，约 6 秒
+dotnet test                                       # 全部 1004 个用例，约 6 秒
 dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ```
 
 | 测试工程 | 用例数 | 耗时 | 覆盖内容 | 外部依赖 |
 |---|---:|---:|---|---|
-| `Domain.Tests` | 348 | 550ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
-| `Application.Tests` | 447 | 660ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
-| `Infrastructure.Tests` | 151 | 5s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储 | 无 |
+| `Domain.Tests` | 382 | 550ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
+| `Application.Tests` | 459 | 660ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
+| `Infrastructure.Tests` | 163 | 5s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储、WS 入站内容预校验 | 无 |
 
 几点约定:
 
 - **方法名用英文、中文进 `DisplayName`**:标识符统一 `方法_场景_预期` 三段式(英文),中文说明放 `[Fact(DisplayName = "…")]`,测试报告仍是中文可读(见 [CODING_STANDARDS.md](docs/CODING_STANDARDS.md) §5)。
 - **不用 mock 框架**,一律手写内存测试替身([TestDoubles/](backend/tests/LHZ.OnlineChat.Application.Tests/TestDoubles/))。内存仓储会真的分配自增主键,因此"忘了回填 Id 就发事件"这类顺序错误测得出来;mock 测不出。
-- **领域层零依赖的直接收益**:348 个领域测试不需要数据库、不需要容器,全部跑完约 550 毫秒。
+- **领域层零依赖的直接收益**:382 个领域测试不需要数据库、不需要容器,全部跑完约 550 毫秒。
 - **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
 - **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](backend/tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
 - **需要真实 PostgreSQL / Redis / SMTP 的部分不在单元测试里糊弄**(那只会测出替身自己的行为),仓储查询与会话存储属于集成测试范畴。
@@ -281,12 +281,13 @@ docker compose up -d --build
 |---|---|---|
 | `sessionType` | string | `private` 私聊 / `group` 群聊 |
 | `sessionId` | number | 私聊:接收方账号 ID;群聊:群 ID(机器人需已加入该群) |
-| `content` | string | 消息内容(≤ 5000 字) |
+| `content` | string | 消息内容(≤ 50000 字) |
+| `messageType` | number? | 可选,`0` 文字 / `3` Markdown(客户端渲染),缺省 `0` |
 | `replyTo` | string? | 可选,被引用消息的 messageId |
 
 **鉴权(可选)**:机器人在设置里配置了「签名密钥」后,推送必须携带 `X-Bot-Signature` 请求头,值为对**请求体原始字节**计算的 `HMAC-SHA256(密钥, body)` 十六进制小写;未配置密钥则仅靠令牌鉴权,直接调用即可。
 
-**限制**:私聊推送要求目标用户与机器人是好友关系(机器人创建时自动与创建者互为好友,即默认只能推送给创建者本人)。
+**限制**:私聊推送要求目标用户与机器人是好友关系(机器人创建时自动与创建者互为好友,即默认只能推送给创建者本人);`messageType` 只接受 `0`(文字)与 `3`(Markdown),图片/文件的内容是 URL 而机器人没有上传通道,传其它值会被拒(`400`)。
 
 **响应**:`200 {"success":true,"message":"已发送"}`;失败返回 `400 {"success":false,"message":"原因"}`。
 
@@ -379,7 +380,7 @@ print(r.json())  # {'success': True, 'message': '已发送'}
 ```
 
 - 请求头携带 `X-Bot-Signature: HMAC-SHA256(签名密钥, rawBody)`(配置了密钥时),用于你校验事件真实性
-- **同步回复**:返回 `200 {"content":"回复文本"}`,系统自动以机器人身份回复(10s 超时,失败重试 1 次,自动带回复引用);不返回 `content` 则不回复
+- **同步回复**:返回 `200 {"content":"回复文本"}`(`content` ≤ 50000 字),系统自动以机器人身份回复(10s 超时,失败重试 1 次,自动带回复引用);不返回 `content` 则不回复。回包可选带 `messageType`(`0` 文字 / `3` Markdown,缺省 `0`),与主动推送同一口径
 - 触发规则:私聊对方是机器人即触发;群聊仅被 `@` 时触发;机器人之间互不触发
 
 ### 3. 快速验证
@@ -422,15 +423,18 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `group_dissolved` | 服务端→客户端 | 所在群被解散(`to` 为群 ID),客户端自动退出该会话 |
 | `group_removed` | 服务端→客户端 | 被移出群(`to` 为群 ID),客户端自动退出该会话 |
 | `muted` | 服务端→客户端 | 群发言被拒(禁言中),`content` 含禁言截止时间说明 |
+| `message_failed` | 服务端→客户端 | 自己发出的消息被**内容**校验拒收(超长/为空/类型非法),`content` 为原因、`messageId` 为客户端消息 ID,客户端据此把该气泡标成「发送失败」可重试;权限/关系类失败(不是好友、不在群里、被拉黑)仍静默,不回错误帧 |
 | `blocked` | 服务端→客户端 | 被对方拉黑,或私聊消息因对方拉黑而未送达 |
 | `kicked` | 服务端→客户端 | 该登录会话被踢下线(设备管理踢出/改密/重置/封禁),随后连接关闭 |
 
-**字段**:`from`(发送者ID)、`to`(接收者ID/群ID)、`content`、`messageId`(客户端生成则保留用于去重,否则用数据库 ID)、`messageType`(0文字/1图片/2文件)、`timestamp`(毫秒)、`senderName`、`senderAvatar`、`mentions`(群聊 @ 的成员 ID 列表)。
+**字段**:`from`(发送者ID)、`to`(接收者ID/群ID)、`content`(单条 ≤ 50000 字,超出由服务端拒收并回 `message_failed`)、`messageId`(客户端生成则保留用于去重,否则用数据库 ID)、`messageType`(0文字/1图片/2文件/3Markdown)、`timestamp`(毫秒)、`senderName`、`senderAvatar`、`mentions`(群聊 @ 的成员 ID 列表)。
 
 **补充机制**
 - **消息去重**:历史/离线/群补发接口与 WS 推送返回同一个 `messageId` —— 有客户端 ID 时用它,否则回落到数据库 ID(领域侧的 `PublicMessageId`),前端按此去重,不会出现重复消息
 - **群离线补发**:`GroupMember.LastReadMessageId` 已读游标,上线推送游标之后的消息(每群 ≤100 条),打开群聊推进游标
 - **会话列表**:`GET /api/messages/sessions` 聚合私聊 + 群聊(最后消息/时间/未读数;私聊名优先显示我的备注)
+- **Markdown 消息**:`messageType=3` 时 `content` 是 Markdown **源文本**(不存渲染后的 HTML),客户端用 marked 解析、DOMPurify 消毒后渲染;外链强制新窗口打开,图片语法会被剥掉(防跟踪像素,要发图请用图片消息)。输入框的「MD」开关与机器人主动推送 / Webhook 同步回复都能发这种消息
+- **发送被拒回执**:内容校验失败(超长/为空/类型非法)时服务端回 `message_failed`,`messageId` 是客户端消息 ID、`content` 是原因,前端把那条气泡标成「发送失败」(可重试)并提示原因 —— 改造前这类消息会被静默丢弃,气泡永远停在「未读」、刷新后连痕迹都没有。不含内容问题的失败(不是好友/不在群里/被拉黑)仍按 `blocked`/`muted` 语义处理或静默
 
 ## 🗄️ 数据表
 
