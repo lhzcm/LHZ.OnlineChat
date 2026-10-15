@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { formatMsgTime } from '@/utils/format'
+import { renderMarkdownMessage } from '@/utils/markdown'
 import type { WsMessage, ChatType } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
@@ -22,6 +24,12 @@ const chatStore = useChatStore()
 const ws = useWebSocketStore()
 
 const mine = Number(props.msg.from) === auth.user?.id
+
+/**
+ * Markdown 消息（messageType = 3）：内容存的是源文本，渲染前一律消毒。
+ * 高亮（@提及 / 搜索关键词）在消毒后的 DOM 上做，见 utils/markdown.ts。
+ */
+const renderedMarkdown = computed(() => renderMarkdownMessage(props.msg.content || '', props.highlight))
 
 /** 转义 HTML（防 XSS） */
 function escapeHtml(s: string): string {
@@ -103,7 +111,7 @@ function recallMessage(msg: WsMessage) {
 </script>
 
 <template>
-  <div class="msg-row" :class="{ mine }" :data-mid="msg.messageId">
+  <div class="msg-row" :class="{ mine, 'is-markdown-msg': msg.messageType === 3 && !msg.isDeleted }" :data-mid="msg.messageId">
     <Avatar class="msg-avatar" :name="msg.senderName || chatName" :url="msg.senderAvatar" size="sm" />
     <div class="msg-body">
       <span class="msg-sender" v-if="chatType === 'group' && !mine">
@@ -113,10 +121,11 @@ function recallMessage(msg: WsMessage) {
         <span class="reply-sender">{{ msg.replySender || '引用' }}</span>
         <span class="reply-text">{{ msg.replyContent }}</span>
       </div>
-      <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, recalled: msg.isDeleted }">
+      <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, recalled: msg.isDeleted }">
         <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
         <img v-else-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
           loading="lazy" @click.stop="emit('image-click', msg.content)" />
+        <div v-else-if="msg.messageType === 3" class="msg-markdown" v-html="renderedMarkdown"></div>
         <span v-else v-html="renderContent(msg.content)"></span>
       </div>
       <div class="msg-actions">
@@ -355,20 +364,313 @@ function recallMessage(msg: WsMessage) {
   cursor: pointer;
 }
 
-.mention {
-  color: var(--primary);
-  font-weight: 500;
+/* ==================== Markdown 消息（文档块，不是聊天气泡） ==================== */
+/* Markdown 按「文档」渲染：整行铺开的面板，收发方只靠左侧色条区分。
+   气泡那套渐变底色 / 内边距 / 圆角 / 阴影在这里全部清掉，代码块另有深色面板。
+
+   ⚠ 文档内容是 v-html 注入的，**不带 scoped 属性**，所以下面所有后代选择器
+   必须包 :deep()。否则 Vue 会把 [data-v-x] 缀在最后一段选择器上
+   （`.msg-markdown pre[data-v-x]`），而 v-html 里的 <pre>/<table>/<code>
+   没有这个属性 —— 标题、表格、代码块的样式会整段静默失效。
+   面板自身（.msg-markdown 这一层）是模板渲染的，不需要 :deep()。 */
+.msg-row.is-markdown-msg {
+  max-width: 100%;
+  width: 100%;
 }
 
-/* 搜索关键词高亮 */
-.search-mark {
+.msg-row.is-markdown-msg .msg-body {
+  /* 给 .msg-body 一个确定宽度，下面气泡的 100% 才有意义 */
+  flex: 1;
+  min-width: 0;
+}
+
+.msg-row .msg-bubble.is-markdown:not(.recalled) {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 被 @ 的描边落到文档面板上（气泡本身已经没有背景） */
+.msg-row .msg-bubble.is-markdown.mentioned .msg-markdown {
+  border-color: var(--primary-light);
+  box-shadow: 0 0 0 1.5px var(--primary-light);
+}
+
+/* 回复/撤回按钮：文档行占满整行，按钮改为浮在面板右上角 */
+.msg-row.is-markdown-msg .msg-body .msg-actions {
+  top: 10px;
+  right: 10px;
+  left: auto;
+  transform: none;
+}
+
+.msg-markdown {
+  width: 100%;
+  padding: 14px 18px;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+/* 自己发出的文档：左侧主色条（不给整块染渐变，读起来正式些） */
+.msg-row.mine .msg-markdown {
+  border-left-color: var(--primary);
+}
+
+.msg-markdown :deep(> :first-child) { margin-top: 0; }
+.msg-markdown :deep(> :last-child) { margin-bottom: 0; }
+
+.msg-markdown :deep(p) {
+  margin: 0 0 9px;
+}
+
+.msg-markdown :deep(strong) {
+  font-weight: 600;
+}
+
+.msg-markdown :deep(del) {
+  color: var(--text-secondary);
+}
+
+.msg-markdown :deep(h1),
+.msg-markdown :deep(h2),
+.msg-markdown :deep(h3),
+.msg-markdown :deep(h4),
+.msg-markdown :deep(h5),
+.msg-markdown :deep(h6) {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* 文档式层级：h1/h2 带分隔线，而不是把字号粗暴放大 */
+.msg-markdown :deep(h1) {
+  font-size: 20px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.msg-markdown :deep(h2) {
+  font-size: 17.5px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.msg-markdown :deep(h3) {
+  font-size: 15.5px;
+}
+
+.msg-markdown :deep(h4),
+.msg-markdown :deep(h5),
+.msg-markdown :deep(h6) {
+  font-size: 14.5px;
+  color: var(--text-secondary);
+}
+
+.msg-markdown :deep(ul),
+.msg-markdown :deep(ol) {
+  margin: 6px 0 10px;
+  padding-left: 22px;
+}
+
+.msg-markdown :deep(li) {
+  margin: 3px 0;
+}
+
+.msg-markdown :deep(li)::marker {
+  color: var(--text-secondary);
+}
+
+.msg-markdown :deep(blockquote) {
+  margin: 9px 0;
+  padding: 7px 12px;
+  border-left: 3px solid var(--primary-light);
+  background: var(--bg-hover);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+
+/* 行内代码：浅色小色块，与代码块区分开 */
+.msg-markdown :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+  padding: 1.5px 5px;
+  border-radius: 5px;
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+}
+
+/* 代码块：深色代码面板 + 等宽 + 横向滚动（长行不换行、也不撑破面板） */
+.msg-markdown :deep(pre) {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: var(--code-bg);
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.msg-markdown :deep(pre code) {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: var(--code-fg);
+  font-size: inherit;
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* ---------- 语法高亮（highlight.js 的 .hljs-* 类） ---------- */
+/* 代码面板在浅色/深色两种主题下都是深色，所以 token 配色不跟随主题 */
+.msg-markdown :deep(.hljs-comment),
+.msg-markdown :deep(.hljs-quote) {
+  color: #8b93a3;
+  font-style: italic;
+}
+
+.msg-markdown :deep(.hljs-keyword),
+.msg-markdown :deep(.hljs-selector-tag),
+.msg-markdown :deep(.hljs-literal),
+.msg-markdown :deep(.hljs-doctag) {
+  color: #c792ea;
+}
+
+.msg-markdown :deep(.hljs-string),
+.msg-markdown :deep(.hljs-regexp),
+.msg-markdown :deep(.hljs-addition),
+.msg-markdown :deep(.hljs-attribute) {
+  color: #a5e075;
+}
+
+.msg-markdown :deep(.hljs-number),
+.msg-markdown :deep(.hljs-symbol),
+.msg-markdown :deep(.hljs-bullet),
+.msg-markdown :deep(.hljs-variable),
+.msg-markdown :deep(.hljs-template-variable) {
+  color: #f78c6c;
+}
+
+.msg-markdown :deep(.hljs-title),
+.msg-markdown :deep(.hljs-name),
+.msg-markdown :deep(.hljs-section),
+.msg-markdown :deep(.hljs-selector-id),
+.msg-markdown :deep(.hljs-selector-class) {
+  color: #82aaff;
+}
+
+.msg-markdown :deep(.hljs-built_in),
+.msg-markdown :deep(.hljs-type),
+.msg-markdown :deep(.hljs-attr),
+.msg-markdown :deep(.hljs-params) {
+  color: #ffcb6b;
+}
+
+.msg-markdown :deep(.hljs-meta),
+.msg-markdown :deep(.hljs-link) {
+  color: #7f9cd6;
+}
+
+.msg-markdown :deep(.hljs-deletion) {
+  color: #ff8a80;
+}
+
+.msg-markdown :deep(.hljs-emphasis) {
+  font-style: italic;
+}
+
+.msg-markdown :deep(.hljs-strong) {
+  font-weight: 600;
+}
+
+/* 深色底上的滚动条别太扎眼 */
+.msg-markdown :deep(pre::-webkit-scrollbar) {
+  height: 8px;
+}
+
+.msg-markdown :deep(pre::-webkit-scrollbar-thumb) {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+}
+
+.msg-markdown :deep(pre::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+.msg-markdown :deep(table) {
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.msg-markdown :deep(th),
+.msg-markdown :deep(td) {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+}
+
+.msg-markdown :deep(th) {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+
+.msg-markdown :deep(a) {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--primary-light);
+}
+
+.msg-markdown :deep(a:hover) {
+  border-bottom-color: var(--primary);
+}
+
+.msg-markdown :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+/* 高亮节点（@提及 / 搜索关键词）同样是脚本注入的，必须 :deep() */
+.msg-markdown :deep(.mention) {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.msg-markdown :deep(.search-mark) {
   background: var(--search-mark-bg, #ffd54d);
   color: #333;
   border-radius: 3px;
   padding: 0 2px;
 }
 
-html[data-theme='dark'] .search-mark {
+html[data-theme='dark'] .msg-markdown :deep(.search-mark) {
+  background: #b8860b;
+  color: #fff;
+}
+
+/* 文本消息的 @提及 / 搜索关键词高亮同样由 v-html 注入（renderContent 拼的 span），
+   原先写成裸 .mention / .search-mark 时带了 scope 属性、永远匹配不上 —— 顺手修掉。 */
+.msg-bubble :deep(.mention) {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.msg-bubble :deep(.search-mark) {
+  background: var(--search-mark-bg, #ffd54d);
+  color: #333;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+html[data-theme='dark'] .msg-bubble :deep(.search-mark) {
   background: #b8860b;
   color: #fff;
 }

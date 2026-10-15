@@ -1,1 +1,3 @@
-{}
+{
+    "dotnet.defaultSolution": "backend/LHZ.OnlineChat.slnx"
+}

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using LHZ.OnlineChat.Domain.Common;
+using LHZ.OnlineChat.Domain.Messaging;
 
 namespace LHZ.OnlineChat.Domain.Robots;
 
@@ -265,11 +266,21 @@ public sealed class Robot : AggregateRoot<long>
             "该机器人未配置 Webhook 地址，仅支持第三方主动推送");
     }
 
-    /// <summary>校验第三方推送的回复内容</summary>
-    public static void EnsureReplyContentValid(string? content)
+    /// <summary>机器人允许推送的内容类型：只有纯文本与 Markdown</summary>
+    /// <remarks>
+    /// 图片/文件类型的内容是 URL，而机器人没有上传通道 —— 放开等于允许第三方往气泡里
+    /// 塞任意外链（跟踪像素、热链、伪装成官方上传域的地址）。真要让机器人发图，
+    /// 得先把上传来源与鉴权补齐。
+    /// </remarks>
+    private static bool IsAllowedReplyKind(MessageKind kind)
+        => kind is MessageKind.Text or MessageKind.Markdown;
+
+    /// <summary>校验第三方推送 / Webhook 同步回复的内容与类型</summary>
+    public static void EnsureReplyContentValid(string? content, MessageKind kind)
     {
         DomainException.Ensure(!string.IsNullOrWhiteSpace(content), "回复内容不能为空");
         DomainException.Ensure(content!.Length <= MaxReplyLength, "回复内容过长");
+        DomainException.Ensure(IsAllowedReplyKind(kind), "机器人只能发送文字或 Markdown 消息");
     }
 
     /// <summary>推送埋点</summary>

@@ -98,7 +98,8 @@ internal sealed class WebhookDispatcher : IWebhookDispatcher
                 return new WebhookDispatchResult
                 {
                     Success = true,
-                    Reply = string.IsNullOrEmpty(content) ? null : content
+                    Reply = string.IsNullOrEmpty(content) ? null : content,
+                    Kind = (MessageKind)(parsed?.MessageType ?? 0)
                 };
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -274,11 +275,15 @@ internal sealed class WebhookMessagePayload
     public long Timestamp { get; set; }
 }
 
-/// <summary>Webhook 同步响应：200 + {"content":"回复文本"}</summary>
+/// <summary>Webhook 同步响应：200 + {"content":"回复文本","messageType":0}</summary>
 internal sealed class WebhookReply
 {
     [JsonProperty("content")]
     public string? Content { get; set; }
+
+    /// <summary>可选：0 文字 / 3 Markdown；缺省 0（合法性由用例统一校验）</summary>
+    [JsonProperty("messageType")]
+    public int MessageType { get; set; }
 }
 
 /// <summary>第三方主动推送的请求体（入站，camelCase）</summary>

@@ -225,6 +225,7 @@ public class SendPrivateMessageTests
     [InlineData(MessageKind.Text)]
     [InlineData(MessageKind.Image)]
     [InlineData(MessageKind.File)]
+    [InlineData(MessageKind.Markdown)]
     public async Task Send_AllMessageKinds_AreSupported(MessageKind kind)
     {
         var (a, b) = _ctx.GivenFriends();

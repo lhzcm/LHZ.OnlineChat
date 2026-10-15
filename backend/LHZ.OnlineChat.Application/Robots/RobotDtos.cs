@@ -49,6 +49,9 @@ public sealed class RobotReplyPayload
 
     public string Content { get; set; } = string.Empty;
 
+    /// <summary>0 文字 / 3 Markdown（缺省 0；图片、文件不允许机器人推送）</summary>
+    public int MessageType { get; set; }
+
     public string? ReplyTo { get; set; }
 }
 

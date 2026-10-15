@@ -213,6 +213,9 @@ public sealed class SendRobotMessageCommand : ICommand<Unit>
 
     public string Content { get; set; } = string.Empty;
 
+    /// <summary>消息类型：文字或 Markdown（机器人不产出图片/文件）</summary>
+    public MessageKind Kind { get; set; } = MessageKind.Text;
+
     public string? QuotedMessageId { get; set; }
 
     public string? QuotedContent { get; set; }
@@ -253,6 +256,9 @@ internal sealed class SendRobotMessageHandler : IRequestHandler<SendRobotMessage
 
     public async Task<Unit> Handle(SendRobotMessageCommand command, CancellationToken ct)
     {
+        // 三条入口（同步回复 / 异步推送 / 第三方主动推送）都从这里出去，校验收口在这
+        Robot.EnsureReplyContentValid(command.Content, command.Kind);
+
         var robot = await _robots.GetRequiredAsync(command.RobotId, ct).ConfigureAwait(false);
         var botUser = await _users.FindByIdAsync(robot.UserId, ct).ConfigureAwait(false);
         var now = _clock.UtcNow;
@@ -291,7 +297,7 @@ internal sealed class SendRobotMessageHandler : IRequestHandler<SendRobotMessage
     {
         var message = PrivateMessage.Send(
             robot.UserId, (int)command.SessionId, command.Content,
-            MessageKind.Text, null, reply, now);
+            command.Kind, null, reply, now);
 
         await _privateMessages.AddAsync(message, ct).ConfigureAwait(false);
 
@@ -316,7 +322,7 @@ internal sealed class SendRobotMessageHandler : IRequestHandler<SendRobotMessage
     {
         var message = GroupMessage.Send(
             command.SessionId, robot.UserId, command.Content,
-            MessageKind.Text, null, MentionList.Empty, reply, now);
+            command.Kind, null, MentionList.Empty, reply, now);
 
         await _groupMessages.AddAsync(message, ct).ConfigureAwait(false);
 

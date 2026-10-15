@@ -100,6 +100,7 @@ public sealed class RobotsController : ApiControllerBase
                 SessionType = wire.SessionType,
                 SessionId = wire.SessionId,
                 Content = wire.Content,
+                MessageType = wire.MessageType,
                 ReplyTo = wire.ReplyTo
             };
         }
@@ -120,6 +121,10 @@ public sealed class RobotsController : ApiControllerBase
 
         [LHZ.FastJson.Json.Attributes.JsonProperty("content")]
         public string Content { get; set; } = string.Empty;
+
+        /// <summary>0 文字 / 3 Markdown；缺省 0</summary>
+        [LHZ.FastJson.Json.Attributes.JsonProperty("messageType")]
+        public int MessageType { get; set; }
 
         [LHZ.FastJson.Json.Attributes.JsonProperty("replyTo")]
         public string? ReplyTo { get; set; }

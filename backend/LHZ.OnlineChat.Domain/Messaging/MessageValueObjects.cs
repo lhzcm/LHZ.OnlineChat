@@ -7,7 +7,14 @@ public enum MessageKind
 {
     Text = 0,
     Image = 1,
-    File = 2
+    File = 2,
+
+    /// <summary>
+    /// Markdown 源文本，由客户端渲染（3 是新增值，历史库表里不存在）。
+    /// 存的是**源文本**而不是渲染后的 HTML：渲染规则与 XSS 消毒属于表现层，
+    /// 入库 HTML 会让转义口径同时散落在服务端与客户端，且改一次渲染规则就要洗历史数据。
+    /// </summary>
+    Markdown = 3
 }
 
 /// <summary>
