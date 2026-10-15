@@ -9,6 +9,7 @@ import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { messageApi } from '@/api/message'
+import { MAX_MESSAGE_LENGTH } from '@/constants/limits'
 import { useToast } from '@/composables/useToast'
 import { formatMsgTime } from '@/utils/format'
 import { compressChatImage } from '@/utils/image'
@@ -326,6 +327,12 @@ const inputPlaceholder = computed(() => {
   return props.chat?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
 })
 
+/** 接近上限才显示字数：平时不打扰，快满了才有存在感 */
+const showLengthHint = computed(() => activeText.value.length >= MAX_MESSAGE_LENGTH * 0.8)
+
+/** 超限就禁止发送（服务端同样会拒，这里是为了不让人白等一下） */
+const isOverLengthLimit = computed(() => activeText.value.length > MAX_MESSAGE_LENGTH)
+
 /**
  * 输入框按键：@ 键直接打开成员面板（双保险，避免 input 事件异常）。
  * 普通模式 Enter 发送；Markdown 模式 Enter 是换行（多行语法得能敲出来），Ctrl/Cmd+Enter 才发送。
@@ -458,6 +465,11 @@ function send() {
   // 只取当前模式那一份草稿（普通文本 / Markdown 各自独立暂存）
   const text = activeText.value.trim()
   if (!text) return
+  // 超长不发出去：服务端会拒（回 message_failed），但没必要让用户等那一下，草稿也留着
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    toast(`消息内容不能超过 ${MAX_MESSAGE_LENGTH} 字（当前 ${text.length} 字）`)
+    return
+  }
   // 断线时不再直接丢弃消息：照常乐观上屏，由 sendMessage 的返回值决定是否标记"发送失败"（可重试）
   sendHint.value = ws.connected
     ? ''
@@ -493,6 +505,11 @@ function send() {
  */
 function retryMessage(msg: ChatMessage) {
   if (!props.chat || !auth.user) return
+  // 重发不会让超长内容变合法：直接说清楚，别让它再被服务端拒一次
+  if ((msg.content || '').length > MAX_MESSAGE_LENGTH) {
+    toast(`这条消息超过 ${MAX_MESSAGE_LENGTH} 字，无法重发（请精简后重新发送）`)
+    return
+  }
   const key = chatStore.sessionKey(props.chat.type, props.chat.id)
   if (sendWs(msg)) {
     chatStore.setMessageStatus(key, msg.messageId, 'sending')
@@ -693,7 +710,10 @@ function openLightbox(url: string) {
         <input ref="inputEl" v-if="!markdownMode" v-model="activeText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
         <textarea v-else ref="inputEl" v-model="activeText" class="input md-input" :placeholder="inputPlaceholder"
           rows="3" @keydown="onInputKeydown" @input="onInputChange"></textarea>
-        <button class="send-btn" @click="send" :disabled="!activeText.trim()">发送</button>
+        <span class="input-counter" v-if="showLengthHint" :class="{ over: isOverLengthLimit }">
+          {{ activeText.length }} / {{ MAX_MESSAGE_LENGTH }}
+        </span>
+        <button class="send-btn" @click="send" :disabled="!activeText.trim() || isOverLengthLimit">发送</button>
       </div>
       <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
     </template>
@@ -1055,6 +1075,20 @@ function openLightbox(url: string) {
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.2px;
+}
+
+/* 字数提示：接近上限才出现，超限变红（此时发送按钮同时禁用） */
+.input-counter {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.input-counter.over {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* 多行输入：Enter 换行，Ctrl/Cmd+Enter 发送 */

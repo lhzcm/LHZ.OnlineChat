@@ -146,7 +146,11 @@ public sealed class Robot : AggregateRoot<long>
     public const int MaxNameLength = 50;
     public const int DefaultTimeoutMs = 10000;
     public const int MaxTimeoutMs = 60000;
-    public const int MaxReplyLength = 5000;
+    /// <summary>
+    /// 机器人推送 / 回复的内容上限。与消息内容上限共用同一个常量（同一口径），
+    /// 避免两边各写一个数字之后慢慢漂移。
+    /// </summary>
+    public const int MaxReplyLength = MessageContentRules.MaxLength;
 
     private Robot() { }
 

@@ -28,8 +28,13 @@ public enum MessageKind
 /// </summary>
 public static class MessageContentRules
 {
-    /// <summary>单条消息内容上限（与机器人推送接口的公开文档一致）</summary>
-    public const int MaxLength = 5000;
+    /// <summary>
+    /// 单条消息内容上限（与机器人推送 / 回复的公开文档一致）。
+    /// 50000 字是为了长 Markdown（任务报告、整段代码、日志）：DB 列是 text、WS 单帧上限 4MiB，
+    /// 真正的边界只剩这一处，所以前端提示与机器人文档都以它为准。
+    /// 注意：这是**字符**数，UTF-8 中文约 3 字节/字（50000 字 ≈ 150KB，JSON 里再转义会更长）。
+    /// </summary>
+    public const int MaxLength = 50000;
 
     public static void EnsureValid(string? content, MessageKind kind)
     {

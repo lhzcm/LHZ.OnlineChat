@@ -68,10 +68,12 @@ internal sealed class WsInboundDispatcher
             switch (message.Type)
             {
                 case WsMessageType.PrivateMessage:
+                    if (RejectInvalidContent(sender, userId, message)) break;
                     await HandlePrivateMessageAsync(mediator, userId, message).ConfigureAwait(false);
                     break;
 
                 case WsMessageType.GroupMessage:
+                    if (RejectInvalidContent(sender, userId, message)) break;
                     await HandleGroupMessageAsync(mediator, userId, message).ConfigureAwait(false);
                     break;
 
@@ -97,6 +99,35 @@ internal sealed class WsInboundDispatcher
             // 入站处理失败不能让连接崩掉
             _logger.LogError(ex, "处理 WS 报文失败（用户 {UserId}，类型 {Type}）", userId, message.Type);
         }
+    }
+
+    /// <summary>
+    /// 内容不合法时：回一条 message_failed 给发送者并跳过用例，返回 true。
+    ///
+    /// 只回「原因」，不带任何会话/关系信息 —— 这类失败是发送方自己的输入问题，
+    /// 不构成对他人存在性或关系的探测（与 blocked / muted 的回执同一思路）。
+    /// </summary>
+    private bool RejectInvalidContent(IWebSocketClient sender, int userId, WsMessage message)
+    {
+        var reason = WsContentGuard.DescribeRejection(message.Content, message.MessageType);
+        if (reason is null) return false;
+
+        _logger.LogInformation(
+            "WS 消息内容被拒（用户 {UserId}，类型 {Type}）：{Reason}", userId, message.Type, reason);
+
+        try
+        {
+            if (sender.Status != ClientStatus.Opened) return true;
+
+            sender.SendMessage(JsonConvert.Serialize(WsContentGuard.BuildFailureFrame(message, reason)));
+        }
+        catch (Exception ex)
+        {
+            // 回执发失败不影响连接本身：客户端那边最多还是"未读"（与改造前一致）
+            _logger.LogDebug(ex, "发送 message_failed 回执失败（用户 {UserId}）", userId);
+        }
+
+        return true;
     }
 
     private static async Task HandlePrivateMessageAsync(ISender mediator, int userId, WsMessage message)
