@@ -10,7 +10,7 @@
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
 - JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
-- 测试:1025 个后端单测(xUnit) + 19 个前端单测(vitest),全量约 7 秒
+- 测试:1025 个后端单测(xUnit) + 72 个前端单测(vitest,独立工程),全量约 9 秒
 
 ## ✨ 功能总览
 
@@ -167,6 +167,10 @@ LHZ.OnlineChat/
 │       ├── Dockerfile + nginx.conf
 │       └── src/views/                  # Dashboard / Users / Groups / Admins / 审计日志
 │
+├── frontend/tests/                     # 前端测试工程(独立 npm 工程,不参与应用构建与镜像)
+│   ├── vitest.config.ts + tsconfig.json
+│   └── tests/                          # markdown / chat-store / format / message-bubble / 依赖一致性
+│
 └── plugins/
     └── dsh-bot-notify/                 # DeepSeek Harness 客户端推送插件(见下)
 ```
@@ -176,7 +180,7 @@ LHZ.OnlineChat/
 ```bash
 cd backend
 dotnet test                                       # 全部 1025 个用例，约 6 秒
-cd frontend/lhz-onlinechat-web && npm run test       # 前端单测(vitest):Markdown 渲染与消毒
+cd frontend/tests && npm ci && npm run test           # 前端单测(vitest,独立工程):渲染/消毒/store/组件
 dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ```
 
@@ -194,7 +198,7 @@ dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 - **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
 - **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](backend/tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
 - **需要真实 PostgreSQL / Redis / SMTP 的部分不在单元测试里糊弄**(那只会测出替身自己的行为),仓储查询与会话存储属于集成测试范畴。
-- **CI**(`.github/workflows/ci.yml`)分三个 job:后端(依赖漏洞审计 + 构建 + 测试)、前端(类型检查 + 构建 + 单测)、镜像(compose 校验 + 三个镜像构建 + 前端镜像启动冒烟)。镜像那个 job 是 Dockerfile / nginx.conf 唯一的自动化覆盖 —— 它们坏了只有部署时才会暴露。
+- **CI**(`.github/workflows/ci.yml`)分四个 job:后端(依赖漏洞审计 + 构建 + 测试)、前端(两个应用的类型检查 + 构建)、前端测试(独立工程,`npm run typecheck` + `npm run test`)、镜像(compose 校验 + 三个镜像构建 + 前端镜像启动冒烟)。镜像那个 job 是 Dockerfile / nginx.conf 唯一的自动化覆盖 —— 它们坏了只有部署时才会暴露。
 
 ## 🚀 本地运行
 

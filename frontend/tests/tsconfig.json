@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@/*": ["../lhz-onlinechat-web/src/*"]
+    }
+  },
+  "include": ["tests/**/*.ts", "vitest.config.ts", "../lhz-onlinechat-web/src/vite-env.d.ts"]
+}

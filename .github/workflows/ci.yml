@@ -48,7 +48,7 @@ jobs:
         run: dotnet test backend/LHZ.OnlineChat.slnx --nologo --configuration Release --no-build
 
   frontend:
-    name: 前端（类型检查 + 构建 + 单测）
+    name: 前端（类型检查 + 构建）
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -76,11 +76,33 @@ jobs:
         working-directory: frontend/${{ matrix.app }}
         run: npm run build
 
-      # 目前只有 lhz-onlinechat-web 有单测（vitest，覆盖 Markdown 渲染与消毒）；
-      # admin-web 还没有 test 脚本，--if-present 让它跳过而不是失败。
+  # 前端测试是**独立工程**（frontend/tests）：应用只负责构建，测试框架不进应用依赖、
+  # 也不进镜像。这个 job 同时验证「测试工程能装起来」和「用例全绿」。
+  frontend-tests:
+    name: 前端测试（独立工程）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/tests/package-lock.json
+
+      - name: 安装依赖
+        working-directory: frontend/tests
+        run: npm ci
+
+      # 用 vue-tsc 而不是 tsc：测试同时覆盖 .vue 单文件组件
+      - name: 类型检查
+        working-directory: frontend/tests
+        run: npm run typecheck
+
       - name: 单元测试
-        working-directory: frontend/${{ matrix.app }}
-        run: npm test --if-present
+        working-directory: frontend/tests
+        run: npm run test
 
   docker:
     name: 镜像构建（Dockerfile / nginx.conf / compose）

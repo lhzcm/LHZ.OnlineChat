@@ -95,10 +95,17 @@ export const useChatStore = defineStore('chat', () => {
     return list.filter(s => keep.has(sessionKey(s.type, s.id)))
   }
 
-  // 标签页标题未读角标：(N) OnlineChat
-  watch(unreadCounts, (map) => {
+  // 未读总数：unreadCounts 是 Map 且一律原地修改（.set/.delete），
+  // watch 一个 ref<Map> 的浅层值不会触发 —— 直接 watch(unreadCounts) 时标题角标其实从不更新。
+  // 用 computed 读一遍 Map 的迭代，才能把 set/delete 变成依赖。
+  const totalUnread = computed(() => {
     let total = 0
-    map.forEach(v => { total += v })
+    unreadCounts.value.forEach(v => { total += v })
+    return total
+  })
+
+  // 标签页标题未读角标：(N) OnlineChat
+  watch(totalUnread, (total) => {
     document.title = total > 0 ? `(${total}) OnlineChat` : 'OnlineChat'
   }, { immediate: true })
 

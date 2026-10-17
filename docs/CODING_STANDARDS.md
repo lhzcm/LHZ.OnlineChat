@@ -154,11 +154,12 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - 新增替身/端口实现时要同步 `ApplicationTestContext` 暴露出来。
 - 别测实现细节（私有方法、SQL 文本）—— 例外是刻意的契约测试（如 `MessageQueryOrderingTests` 用 `ToSql()` 钉住排序）。
 
-**前端（vitest + jsdom）**
-- 只覆盖**可确定性断言**的部分：纯函数、解析/消毒、状态机（当前是 `utils/markdown.test.ts` 与 Markdown 渲染链）。不要去测模板长得对不对——那靠人眼，不靠断言。
-- 测试文件与被测模块同目录、`*.test.ts`；`vitest.config.ts` 单独一份（`environment: 'jsdom'`），**不要**塞进 `vite.config.ts`（那里挂了开发代理，测试用不上）。
-- 安全相关的渲染（`v-html` 前的消毒）必须有**反例用例**：`<script>`、`onerror`、`javascript:`、`<iframe>`、Markdown 图片语法 —— 这类用例的价值高于覆盖率数字。
-- 本地 `npm run test`（watch 用 `npm run test:watch`）；CI 里是 `npm test --if-present`（`admin-web` 暂无测试脚本，跳过而不失败）。
+**前端（独立测试工程 `frontend/tests`）**
+- **测试不放在应用目录里**：应用只负责"能构建"，vitest / jsdom / @vue/test-utils 不进它的 dependencies，也不进镜像。前端测试是独立 npm 工程，用 `@` 别名（与应用的 vite 别名一致）引用被测源码；`resolve.dedupe` 保证 vue/pinia 只有一份实例（否则 store 与测试各自 `getActivePinia()`，报错很难懂）。
+- 只覆盖**可确定性断言**的部分：纯函数、解析/消毒、Pinia store 逻辑、组件**渲染成什么**（文本/图片/Markdown/已撤回分支）。不要去测模板长什么样、样式、`axios` 拦截器的网络时序。
+- 安全相关的渲染（`v-html` 前的消毒）必须有**反例用例**：`<script>`、`onerror`/`onclick`、`javascript:`/`data:`/`vbscript:`、`<iframe>`/`<svg>`/`<form>`、Markdown 图片语法 —— 这类用例的价值高于覆盖率数字。
+- 改应用依赖版本要同步 `frontend/tests/package.json`：`dependency-parity.test.ts` 会比对两边范围，写歪了直接失败（防止"测试跑的是旧 marked、线上是新 marked"的假绿）。
+- 本地：`cd frontend/tests && npm run test`（watch 用 `npm run test:watch`，类型检查 `npm run typecheck` —— 用 vue-tsc 才能覆盖 `.vue`）。
 
 ---
 

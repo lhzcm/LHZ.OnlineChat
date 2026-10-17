@@ -11,6 +11,7 @@ dotnet build backend/LHZ.OnlineChat.slnx --nologo --configuration Release   # �
 dotnet test  backend/LHZ.OnlineChat.slnx --nologo --configuration Release --no-build
 cd frontend/lhz-onlinechat-web && npm run build    # = vue-tsc && vite build
 cd frontend/admin-web        && npm run build
+cd frontend/tests            && npm run test     # 前端单测(vitest，独立工程)
 ```
 
 - 跑不了要写清"哪条没跑、为什么、用什么替代验证"。**禁止把"编译通过"说成"测试通过"。**
@@ -55,7 +56,7 @@ Server ──→ Infrastructure ──→ Application ──→ Domain
 ## 五、提交前自检
 
 - [ ] 后端 build **0 警告 0 错误**、test 全绿（跑不了则明说）
-- [ ] 改动的每个前端应用 `npm run build` 通过
+- [ ] 改动的每个前端应用 `npm run build` 通过；改了前端源码/测试则 `cd frontend/tests && npm run test` 通过
 - [ ] 没有跨层引用，Domain 仍零外部包；改过构建配置用 `-getProperty` 验过
 - [ ] 新增配置项 → 自检 + `.env.example` + `compose` + `DEPLOY.md` 四处同步
 - [ ] 改对外接口 / WS 协议 / 行为 → `README.md`（含 WS 协议表）同步
