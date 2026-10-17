@@ -14,6 +14,7 @@
 #         pushSecret: ''            # 机器人的签名密钥，配了才带 X-Bot-Signature
 #         sessionType: private      # private=发给创建者本人 / group=发到群
 #         sessionId: 10001          # 接收方账号 ID（或群 ID）
+#         messageType: 3            # 3=Markdown（默认，保留标题/列表/代码块）/ 0=纯文本
 #         notifyStart: true
 #         notifyResult: true
 #         notifyError: true

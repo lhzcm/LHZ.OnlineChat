@@ -75,6 +75,9 @@ dsh web            # 或重启你的 Harness 进程
 
 ## 通知格式
 
+默认按 **Markdown** 推送（`messageType: 3`），聊天窗口里会渲染成文档块：标题、列表、代码块都保留原样，
+不会出现一堆 `**` / `##` 记号。想退回纯文本把 `messageType` 配成 `0`。
+
 | 事件 | 机器人推送内容 |
 |---|---|
 | 任务开始 | `🧠 DeepSeek Harness 收到任务，开始执行…` + 任务内容 |
@@ -90,12 +93,13 @@ dsh web            # 或重启你的 Harness 进程
 | `pushSecret` | 空 | 机器人的签名密钥；配置后推送带 `X-Bot-Signature` |
 | `sessionType` | `private` | 推送目标会话类型 `private`/`group` |
 | `sessionId` | 0（必填） | 接收方账号 ID 或群 ID |
+| `messageType` | `3` | 消息类型：`3`=Markdown（按文档块渲染）/ `0`=纯文本。服务端只接受 0 与 3 |
 | `notifyStart` | `true` | 任务开始通知 |
 | `notifyResult` | `true` | 执行结果通知（每条 assistant 消息） |
 | `notifyError` | `true` | 异常结束通知 |
 | `notifyTools` | `false` | 工具调用过程通知 |
 | `toolMinIntervalMs` | `5000` | 工具通知最小间隔（防刷屏） |
-| `maxText` | `4000` | 推送内容截断长度（含截断提示，服务端单条上限 5000） |
+| `maxText` | `4000` | 推送内容截断长度（含截断提示；服务端上限 50000，通知只做摘要） |
 | `pushTimeoutMs` | `8000` | 单次推送超时；也是进程退出前等待在途推送的上限 |
 
 ## 注意事项

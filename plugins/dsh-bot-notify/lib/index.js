@@ -28,6 +28,9 @@ const DEFAULTS = {
   // 推送目标会话：private=接收方账号 ID / group=群 ID（机器人需在该群）
   sessionType: 'private',
   sessionId: 0,
+  // 消息类型：3=Markdown（前端按文档块渲染，保留标题/列表/代码块），0=纯文本
+  // 服务端目前只接受 0 / 3（图片 1 机器人不允许），填别的会被拒收并回 message_failed
+  messageType: 3,
   // 通知开关
   notifyStart: true,   // 🧠 任务开始
   notifyResult: true,  // ✅ 执行结果（每条 assistant/message）
@@ -35,7 +38,8 @@ const DEFAULTS = {
   notifyTools: false,  // 🔧 工具调用过程
   // 工具过程通知的最小间隔（毫秒），防刷屏
   toolMinIntervalMs: 5000,
-  // 推送内容截断长度（服务端单条消息上限 5000 字）
+  // 推送内容截断长度。服务端上限已放宽到 50000 字，这里仍截到 4000：
+  // 通知只是摘要，把整段长回复塞进推送既刷屏又要多等一次网络往返
   maxText: 4000,
   // 单次推送的超时（毫秒）：headless 单任务进程退出前要能把在途推送了结
   pushTimeoutMs: 8000
@@ -120,6 +124,9 @@ export function apply(ctx, config) {
           sessionType: cfg.sessionType,
           sessionId: cfg.sessionId,
           content,
+          // 默认 3（Markdown）：通知正文里的标题/列表/代码块会被前端按文档块渲染；
+          // 想退回纯文本把它配成 0
+          messageType: cfg.messageType,
           replyTo: null
         })
         const headers = { 'Content-Type': 'application/json' }

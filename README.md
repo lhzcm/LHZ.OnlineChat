@@ -395,7 +395,7 @@ print(r.json())  # {'success': True, 'message': '已发送'}
 
 ### 4. 官方示例插件:DeepSeek Harness 客户端推送插件(plugins/dsh-bot-notify)
 
-装在 **DeepSeek Harness 客户端里**的插件:监听 Harness 会话事件,把任务的**执行过程与结果**通过机器人主动推送链接(`/api/robots/{令牌}/reply`)通知用户——`🧠 任务开始(含任务内容)` → `🔧 工具调用(可选)` → `✅ 执行结果(turn/step+回复)` → `⚠️ 异常结束`。详见 [plugins/dsh-bot-notify/README.md](plugins/dsh-bot-notify/README.md),安装 3 步:
+装在 **DeepSeek Harness 客户端里**的插件:监听 Harness 会话事件,把任务的**执行过程与结果**通过机器人主动推送链接(`/api/robots/{令牌}/reply`)通知用户——`🧠 任务开始(含任务内容)` → `🔧 工具调用(可选)` → `✅ 执行结果(turn/step+回复)` → `⚠️ 异常结束`。默认以 **Markdown**(`messageType: 3`)推送,聊天里按文档块渲染(标题/列表/代码块保留);想退回纯文本把它配成 `0`。详见 [plugins/dsh-bot-notify/README.md](plugins/dsh-bot-notify/README.md),安装 3 步:
 
 ```bash
 dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
