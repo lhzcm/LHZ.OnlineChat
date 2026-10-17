@@ -159,6 +159,7 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - 只覆盖**可确定性断言**的部分：纯函数、解析/消毒、Pinia store 逻辑、组件**渲染成什么**（文本/图片/Markdown/已撤回分支）。不要去测模板长什么样、样式、`axios` 拦截器的网络时序。
 - 安全相关的渲染（`v-html` 前的消毒）必须有**反例用例**：`<script>`、`onerror`/`onclick`、`javascript:`/`data:`/`vbscript:`、`<iframe>`/`<svg>`/`<form>`、Markdown 图片语法 —— 这类用例的价值高于覆盖率数字。
 - 改应用依赖版本要同步 `frontend/tests/package.json`：`dependency-parity.test.ts` 会比对两边范围，写歪了直接失败（防止"测试跑的是旧 marked、线上是新 marked"的假绿）。
+- 被测源码裸引用的运行时依赖（vue/pinia/axios/marked/dompurify/highlight.js）在 `frontend/tests/tsconfig.json` 的 `paths` 里显式映射到本工程 `node_modules`；`vitest.config.ts` 用 `resolve.dedupe` 做同样的事。**两条都不能删**：CI 只装本工程那一份，删了在干净环境里 `TS2307` / `getActivePinia()`，而本地因应用装过依赖会假绿。
 - 本地：`cd frontend/tests && npm run test`（watch 用 `npm run test:watch`，类型检查 `npm run typecheck` —— 用 vue-tsc 才能覆盖 `.vue`）。
 
 ---

@@ -29,3 +29,16 @@ npm run typecheck   # vue-tsc --noEmit（含被测源码与 .vue 单文件组件
 `marked` / `dompurify` / `highlight.js` / `vue` / `pinia` 在这里是**解析被测源码用的**，不是本工程
 自己的运行时。两边范围写歪了，就会出现"测试跑的是 marked 18、线上跑的是 marked 19"这种假绿。
 `dependency-parity.test.ts` 就是钉这一点的：改应用依赖版本时它会直接失败，提醒你同步本工程。
+
+## 为什么 `tsconfig.json` 里有一串 `paths` 映射
+
+TypeScript 解析裸模块名（`vue` / `axios` / `marked` …）时，是从**引用方文件所在目录**往上找
+`node_modules`。被测源码在 `../lhz-onlinechat-web/src`，所以本地只要应用装过依赖就能解析 ——
+而 CI 只安装本工程这一份（应用目录没有 `node_modules`），同一个 `vue-tsc` 就会报一片
+`TS2307: Cannot find module 'vue'`。
+
+`tsconfig.json` 把这几条显式映射到 `./node_modules/*`，让类型检查**不依赖应用是否装过依赖**。
+`vitest` 侧对应的是 `resolve.dedupe`（否则测试与被测源码会各自加载一份 `pinia`，报
+`getActivePinia() was called but there was no active Pinia`）。
+
+改动这里前先想清楚：删掉任意一条，`npm ci && npm run typecheck` 在干净环境里就会挂。

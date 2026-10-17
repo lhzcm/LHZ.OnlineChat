@@ -11,7 +11,21 @@
     "moduleDetection": "force",
     "types": ["vite/client", "node"],
     "paths": {
-      "@/*": ["../lhz-onlinechat-web/src/*"]
+      // 被测源码用 `@/...` 互相引用，与应用自身的 vite 别名保持一致
+      "@/*": ["../lhz-onlinechat-web/src/*"],
+
+      // 被测源码还裸引用了应用自己的运行时依赖。TypeScript 解析裸模块名时，是从
+      // **引用方文件所在目录**往上找 node_modules；而 CI 只安装 frontend/tests 这一份
+      // （应用目录没有 node_modules），不显式映射就会在 CI 上 TS2307 —— 本地则会被
+      // 应用目录里的 node_modules 掩盖，看着是绿的。版本一致性由
+      // tests/dependency-parity.test.ts 保证。
+      "vue": ["./node_modules/vue"],
+      "pinia": ["./node_modules/pinia"],
+      "axios": ["./node_modules/axios"],
+      "marked": ["./node_modules/marked"],
+      "dompurify": ["./node_modules/dompurify"],
+      "highlight.js": ["./node_modules/highlight.js"],
+      "highlight.js/*": ["./node_modules/highlight.js/*"]
     }
   },
   "include": ["tests/**/*.ts", "vitest.config.ts", "../lhz-onlinechat-web/src/vite-env.d.ts"]
