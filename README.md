@@ -10,7 +10,7 @@
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
 - JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
-- 测试:1004 个单元测试(xUnit),全量约 6 秒
+- 测试:1025 个后端单测(xUnit) + 19 个前端单测(vitest),全量约 7 秒
 
 ## ✨ 功能总览
 
@@ -67,7 +67,7 @@
 | 前端 | Vue 3 (Composition API) + TypeScript、Vite 6、Pinia、Vue Router、Axios |
 | 实时通信 | LHZ.WebSocket 1.2.0 (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 中间件 |
 | 序列化 | LHZ.FastJson 2.0.1-pre(WS 协议 camelCase,`[JsonProperty]` 标注) |
-| 测试 | xUnit 2.9,手写内存测试替身(不依赖 mock 框架) |
+| 测试 | 后端 xUnit 2.9 + 前端 vitest,手写内存测试替身(不依赖 mock 框架) |
 
 ## 🧱 后端架构(DDD 四层)
 
@@ -175,7 +175,8 @@ LHZ.OnlineChat/
 
 ```bash
 cd backend
-dotnet test                                       # 全部 1004 个用例，约 6 秒
+dotnet test                                       # 全部 1025 个用例，约 6 秒
+cd frontend/lhz-onlinechat-web && npm run test       # 前端单测(vitest):Markdown 渲染与消毒
 dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ```
 
@@ -183,7 +184,7 @@ dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 |---|---:|---:|---|---|
 | `Domain.Tests` | 382 | 550ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
 | `Application.Tests` | 459 | 660ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
-| `Infrastructure.Tests` | 163 | 5s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储、WS 入站内容预校验 | 无 |
+| `Infrastructure.Tests` | 184 | 5s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储、WS 连接表/入站分发/内容预校验 | 无 |
 
 几点约定:
 
@@ -193,6 +194,7 @@ dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 - **事件订阅方也在覆盖范围内**:`RecordingEventDispatcher.Subscribe()` 可以挂真实处理器,所以"改密 → 踢全部会话""拉黑 → 解好友 + 推通知"这类链路是被验证过的,而不只是"事件发出来了"。
 - **实体映射有专门的测试**:表名/列名一旦与既有 schema 对不上,线上会建出新表或读不到数据,而编译期毫无提示 —— 见 [MappingTests.cs](backend/tests/LHZ.OnlineChat.Infrastructure.Tests/Persistence/MappingTests.cs)。
 - **需要真实 PostgreSQL / Redis / SMTP 的部分不在单元测试里糊弄**(那只会测出替身自己的行为),仓储查询与会话存储属于集成测试范畴。
+- **CI**(`.github/workflows/ci.yml`)分三个 job:后端(依赖漏洞审计 + 构建 + 测试)、前端(类型检查 + 构建 + 单测)、镜像(compose 校验 + 三个镜像构建 + 前端镜像启动冒烟)。镜像那个 job 是 Dockerfile / nginx.conf 唯一的自动化覆盖 —— 它们坏了只有部署时才会暴露。
 
 ## 🚀 本地运行
 

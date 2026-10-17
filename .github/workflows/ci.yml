@@ -1,12 +1,17 @@
 name: CI
 
-# 这个仓库此前没有任何流水线：946 个测试、0 警告、两个前端的类型检查，
+# 这个仓库此前没有任何流水线：测试、0 警告、两个前端的类型检查，
 # 全靠「提交的人记得本地跑一遍」。这里把这几条固化下来。
 on:
   push:
     branches: [dev, master]
   pull_request:
   workflow_dispatch:
+
+# 最小权限：只读仓库内容。没有这一步时 GITHUB_TOKEN 拿到的是默认权限集，
+# 而被 PR 触发的 job 里跑的是外部提交的代码。
+permissions:
+  contents: read
 
 # 同一分支的新推送取消上一次未跑完的任务，避免排队
 concurrency:
@@ -15,8 +20,9 @@ concurrency:
 
 jobs:
   backend:
-    name: 后端（构建 + 测试）
+    name: 后端（构建 + 测试 + 依赖审计）
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -26,18 +32,25 @@ jobs:
           cache: true
           cache-dependency-path: backend/**/*.csproj
 
+      # 显式强制重算依赖图：NuGet 审计（NU1903 等）只在「真的发生还原」时才查，
+      # 缓存命中的增量还原会沿用旧结论 —— 2026-10 的 Pkcs 漏洞就是这样漏到部署时才炸的。
+      # 这里不吞输出：触发漏洞时因为 TreatWarningsAsErrors 会直接以 error NU1903 失败。
+      - name: 依赖漏洞审计
+        run: dotnet restore backend/LHZ.OnlineChat.slnx --force-evaluate
+
       # Directory.Build.props 里开了 TreatWarningsAsErrors，所以构建这一步
       # 同时守着「0 警告」这条线
       - name: 构建
-        run: dotnet build backend/LHZ.OnlineChat.slnx --nologo --configuration Release
+        run: dotnet build backend/LHZ.OnlineChat.slnx --nologo --configuration Release --no-restore
 
       # 单元测试只用内存替身，不需要 PostgreSQL / Redis —— 这也是它们能在 CI 里直接跑的前提
       - name: 测试
         run: dotnet test backend/LHZ.OnlineChat.slnx --nologo --configuration Release --no-build
 
   frontend:
-    name: 前端（类型检查 + 构建）
+    name: 前端（类型检查 + 构建 + 单测）
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -62,3 +75,66 @@ jobs:
       - name: 类型检查 + 构建
         working-directory: frontend/${{ matrix.app }}
         run: npm run build
+
+      # 目前只有 lhz-onlinechat-web 有单测（vitest，覆盖 Markdown 渲染与消毒）；
+      # admin-web 还没有 test 脚本，--if-present 让它跳过而不是失败。
+      - name: 单元测试
+        working-directory: frontend/${{ matrix.app }}
+        run: npm test --if-present
+
+  docker:
+    name: 镜像构建（Dockerfile / nginx.conf / compose）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # compose 里的必填变量用 ${VAR:?} 声明，缺少时 config 会直接失败 ——
+      # 这里给占位值，只校验 YAML、变量引用与挂载路径，不启动任何服务。
+      - name: 校验 compose 与必填变量
+        env:
+          POSTGRES_PASSWORD: ci-placeholder
+          REDIS_PASSWORD: ci-placeholder
+          JWT_SECRET: ci-placeholder-signing-key-for-compose-validation
+          ROBOT_TOKEN_KEY: ci-placeholder-robot-token-key-only-for-config
+        run: docker compose config -q
+
+      # 三个镜像此前零覆盖：Dockerfile、nginx.conf、镜像里的构建参数出问题，
+      # 只有部署时才暴露。构建本身也会跑一遍 npm ci / dotnet publish。
+      - name: 构建后端镜像
+        run: docker build -t onlinechat-backend -f backend/LHZ.OnlineChat.Server/Dockerfile backend
+
+      - name: 构建主前端镜像
+        run: docker build -t onlinechat-web --build-arg VITE_WS_URL= -f frontend/lhz-onlinechat-web/Dockerfile frontend
+
+      - name: 构建管理后台镜像
+        run: docker build -t onlinechat-admin -f frontend/admin-web/Dockerfile frontend
+
+      # nginx 配置错了（语法、root、监听端口）镜像照样能构建成功，但起不来或 404。
+      # 后端镜像依赖 PG/Redis，这里不启动，只验证前端两个镜像能真正服务首页。
+      #
+      # 主前端的 nginx.conf 里有 `proxy_pass http://backend:5000` 与 `http://frontend-admin:8080`，
+      # nginx 在**启动时**解析上游主机名 —— 独立起容器（没有 compose 网络）会直接 [emerg] 拒绝启动，
+      # 所以这里用 --add-host 注入两条 hosts 记录，只验证静态首页与配置语法。
+      - name: 冒烟：镜像启动后能返回首页
+        run: |
+          set -e
+          check() {
+            name="$1"; image="$2"; port="$3"; extra="$4"
+            # shellcheck disable=SC2086
+            docker run -d --name "$name" -p "${port}:8080" $extra "$image" >/dev/null
+            ok=0
+            for _ in $(seq 1 30); do
+              if curl -fsS -o /dev/null "http://127.0.0.1:${port}/"; then ok=1; break; fi
+              sleep 1
+            done
+            if [ "$ok" != "1" ]; then
+              echo "::error::${name} 未在 30s 内返回首页（nginx 配置或产物有问题）"
+              docker logs "$name" || true
+              exit 1
+            fi
+            echo "${name} 首页 200 ✓"
+            docker rm -f "$name" >/dev/null
+          }
+          check onlinechat-web onlinechat-web 18080 "--add-host backend:127.0.0.1 --add-host frontend-admin:127.0.0.1"
+          check onlinechat-admin onlinechat-admin 18081 ""

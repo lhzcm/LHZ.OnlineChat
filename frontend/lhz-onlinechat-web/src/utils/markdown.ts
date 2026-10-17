@@ -94,8 +94,10 @@ function highlightInPlace(root: HTMLElement, keyword: string): void {
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node: Node) {
-      const tag = (node.parentElement?.tagName ?? '').toUpperCase()
-      if (tag === 'PRE' || tag === 'CODE' || tag === 'A') return NodeFilter.FILTER_REJECT
+      // 必须看**祖先链**而不是直接父节点：代码块被 hljs 着色后，代码文本的父节点是
+      // <span class="hljs-*">，只判 parent.tagName 会让 @提及/关键词高亮插进代码里，
+      // 既破坏代码原样，也会把注释里的 @名字 染成链接色。
+      if (node.parentElement?.closest('pre, code, a')) return NodeFilter.FILTER_REJECT
       return NodeFilter.FILTER_ACCEPT
     }
   })

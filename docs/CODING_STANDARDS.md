@@ -154,6 +154,12 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - 新增替身/端口实现时要同步 `ApplicationTestContext` 暴露出来。
 - 别测实现细节（私有方法、SQL 文本）—— 例外是刻意的契约测试（如 `MessageQueryOrderingTests` 用 `ToSql()` 钉住排序）。
 
+**前端（vitest + jsdom）**
+- 只覆盖**可确定性断言**的部分：纯函数、解析/消毒、状态机（当前是 `utils/markdown.test.ts` 与 Markdown 渲染链）。不要去测模板长得对不对——那靠人眼，不靠断言。
+- 测试文件与被测模块同目录、`*.test.ts`；`vitest.config.ts` 单独一份（`environment: 'jsdom'`），**不要**塞进 `vite.config.ts`（那里挂了开发代理，测试用不上）。
+- 安全相关的渲染（`v-html` 前的消毒）必须有**反例用例**：`<script>`、`onerror`、`javascript:`、`<iframe>`、Markdown 图片语法 —— 这类用例的价值高于覆盖率数字。
+- 本地 `npm run test`（watch 用 `npm run test:watch`）；CI 里是 `npm test --if-present`（`admin-web` 暂无测试脚本，跳过而不失败）。
+
 ---
 
 ## §6 前端规范（Vue 3 + TS + Pinia）
