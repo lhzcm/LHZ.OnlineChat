@@ -63,9 +63,17 @@ internal sealed class GetPrivateHistoryHandler
                     .PageBetweenAsync(query.UserId, query.FriendId, new PageRequest(1, 1), ct)
                     .ConfigureAwait(false);
 
+                // 缓存是「最新在前」的滑动窗口（LPUSH + LTRIM，见 RecentMessageCache）。
+                // 第 1 页要的是窗口里**最新**的 PageSize 条，再按时间正序返回（与 PageBetweenAsync
+                // 的第 1 页同义）。原先在升序序列上 Take(N)，取到的是窗口里最旧的 N 条 ——
+                // 只有 PageSize 恰好等于缓存长度（默认 50 == 50）时才看不出来；
+                // 一旦页长更小，最新的那批消息就永远翻不到。
+                // OrderBy 是稳定排序：同毫秒的并列项会保留缓存的「后到在前」顺序，
+                // 与 SQL 侧 (SentAt DESC, Id DESC) 的次级序同向。
                 var cachedItems = cached
-                    .OrderBy(m => m.SentAt)
+                    .OrderByDescending(m => m.SentAt)
                     .Take(page.PageSize)
+                    .OrderBy(m => m.SentAt)
                     .Select(m => m.ToDto())
                     .ToList();
 

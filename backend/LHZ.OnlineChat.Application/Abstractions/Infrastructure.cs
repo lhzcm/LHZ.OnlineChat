@@ -67,7 +67,12 @@ public interface IRecentMessageCache
     Task AppendAsync(ChatSessionType sessionType, long sessionKeyLeft, long sessionKeyRight,
         RealtimeMessage message, CancellationToken ct = default);
 
-    /// <summary>读取私聊会话缓存</summary>
+    /// <summary>
+    /// 读取私聊会话缓存。
+    /// 返回的是「最新在前、最多 RetainCount 条」的滑动窗口快照 ——
+    /// **不要拿这个物理顺序当分页切片依据**：分页语义由调用方按 SentAt 显式排序后再取，
+    /// 否则一旦页长小于缓存长度，取到的会是窗口里最旧的一批（历史上踩过）。
+    /// </summary>
     Task<IReadOnlyList<CachedMessage>> GetPrivateAsync(int userId, int peerId, CancellationToken ct = default);
 
     /// <summary>从缓存中移除指定消息（撤回时）</summary>

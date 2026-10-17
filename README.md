@@ -10,7 +10,7 @@
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
 - JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
-- 测试:1025 个后端单测(xUnit) + 72 个前端单测(vitest,独立工程),全量约 9 秒
+- 测试:1029 个后端单测(xUnit) + 72 个前端单测(vitest,独立工程),全量约 9 秒
 
 ## ✨ 功能总览
 
@@ -179,7 +179,7 @@ LHZ.OnlineChat/
 
 ```bash
 cd backend
-dotnet test                                       # 全部 1025 个用例，约 6 秒
+dotnet test                                       # 全部 1029 个用例，约 6 秒
 cd frontend/tests && npm ci && npm run test           # 前端单测(vitest,独立工程):渲染/消毒/store/组件
 dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 ```
@@ -187,7 +187,7 @@ dotnet test tests/LHZ.OnlineChat.Domain.Tests     # 只跑领域层
 | 测试工程 | 用例数 | 耗时 | 覆盖内容 | 外部依赖 |
 |---|---:|---:|---|---|
 | `Domain.Tests` | 382 | 550ms | 聚合根行为与不变量、值对象校验与归一化、领域事件、权限/禁言/撤回规则 | 无(纯内存) |
-| `Application.Tests` | 459 | 660ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
+| `Application.Tests` | 463 | 660ms | 全部用例的成功路径与失败分支、领域事件订阅方的副作用、管道异常转换 | 无(内存仓储 + 端口替身) |
 | `Infrastructure.Tests` | 184 | 5s | BCrypt、JWT 声明、机器人令牌 AES-GCM、HMAC 验签、实体映射元数据、Redis 键位、本地文件存储、WS 连接表/入站分发/内容预校验 | 无 |
 
 几点约定:

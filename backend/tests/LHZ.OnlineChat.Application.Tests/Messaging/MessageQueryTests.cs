@@ -1,3 +1,4 @@
+using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Messaging.Commands;
 using LHZ.OnlineChat.Application.Messaging.Queries;
 using LHZ.OnlineChat.Application.Tests.TestDoubles;
@@ -114,6 +115,112 @@ public class PrivateHistoryTests
         }, default);
 
         Assert.Equal(100, result.Data!.PageSize);
+    }
+
+    /// <summary>
+    /// 造 total 条消息（消息1 最旧、消息{total} 最新），并只把最近 cachedCount 条灌进最近消息缓存。
+    /// 缓存按时间正序 AppendAsync —— 替身与生产一样是头部插入（LPUSH），所以缓存头部是最新一条。
+    /// </summary>
+    private (int A, int B) GivenConversation(int total, int? cachedCount = null)
+    {
+        var (a, b) = _ctx.GivenFriends();
+        var now = _ctx.Now;
+        var cacheFrom = cachedCount is > 0 ? total - cachedCount.Value + 1 : total + 1;
+
+        for (var i = 1; i <= total; i++)
+        {
+            var sentAt = now.AddSeconds(-(total - i));
+            _ctx.GivenPrivateMessage(a.Id, b.Id, $"消息{i}", sentAt);
+
+            if (i < cacheFrom) continue;
+            _ctx.Cache.AppendAsync(
+                ChatSessionType.Private, a.Id, b.Id,
+                new RealtimeMessage
+                {
+                    SessionType = ChatSessionType.Private,
+                    SenderId = a.Id,
+                    TargetId = b.Id,
+                    Content = $"消息{i}",
+                    Kind = MessageKind.Text,
+                    MessageId = $"cmid-{i}",
+                    SenderName = "张三",
+                    SentAt = sentAt
+                }).GetAwaiter().GetResult();
+        }
+
+        return (a.Id, b.Id);
+    }
+
+    [Fact(DisplayName = "缓存命中且页长小于缓存长度时返回最新的一页")]
+    public async Task History_CacheHitSmallerPageSize_ReturnsNewest()
+    {
+        var (a, b) = GivenConversation(50, cachedCount: 50);
+
+        var result = await Handler().Handle(new GetPrivateHistoryQuery
+        {
+            UserId = a, FriendId = b, Page = 1, PageSize = 20
+        }, default);
+
+        var items = result.Data!.Items;
+
+        Assert.Equal(20, items.Count);
+        // 缓存是「最新在前」的滑动窗口，第 1 页必须取窗口里**最新**的 20 条（消息31..消息50）。
+        // 取成最旧的 20 条（消息1..消息20）时，最新的消息就永远翻不到 ——
+        // 只有页长恰好等于缓存长度（默认 50 == 50）时才会掩盖。
+        Assert.Equal("消息31", items[0].Content);
+        Assert.Equal("消息50", items[^1].Content);
+    }
+
+    [Fact(DisplayName = "缓存命中且页长等于缓存长度时仍返回整窗")]
+    public async Task History_CacheHitDefaultPageSize_ReturnsWholeWindow()
+    {
+        var (a, b) = GivenConversation(50, cachedCount: 50);
+
+        var result = await Handler().Handle(new GetPrivateHistoryQuery
+        {
+            UserId = a, FriendId = b, Page = 1, PageSize = 50
+        }, default);
+
+        var items = result.Data!.Items;
+
+        Assert.Equal(50, items.Count);
+        Assert.Equal("消息1", items[0].Content);
+        Assert.Equal("消息50", items[^1].Content);
+    }
+
+    [Fact(DisplayName = "缓存不足一页时回落到数据库")]
+    public async Task History_CacheInsufficient_FallsBackToDatabase()
+    {
+        var (a, b) = GivenConversation(50, cachedCount: 10);
+
+        var result = await Handler().Handle(new GetPrivateHistoryQuery
+        {
+            UserId = a, FriendId = b, Page = 1, PageSize = 20
+        }, default);
+
+        var items = result.Data!.Items;
+
+        Assert.Equal(20, items.Count);
+        // 缓存只有 10 条 < 页长 20 → 走数据库；数据库第 1 页本来就是最新的 20 条
+        Assert.Equal("消息31", items[0].Content);
+        Assert.Equal("消息50", items[^1].Content);
+    }
+
+    [Fact(DisplayName = "非首页不读缓存")]
+    public async Task History_PageTwo_IgnoresCache()
+    {
+        var (a, b) = GivenConversation(50, cachedCount: 50);
+
+        var result = await Handler().Handle(new GetPrivateHistoryQuery
+        {
+            UserId = a, FriendId = b, Page = 2, PageSize = 20
+        }, default);
+
+        var items = result.Data!.Items;
+
+        Assert.Equal(20, items.Count);
+        Assert.Equal("消息11", items[0].Content);
+        Assert.Equal("消息30", items[^1].Content);
     }
 }
 
