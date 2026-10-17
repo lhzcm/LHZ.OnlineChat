@@ -56,6 +56,9 @@
 
   起点必须是**上一级**（写成当前目录会找到自己、变成自导入）；必须判空（父级不存在时跳过）。**新增任何一层 `Directory.Build.props` 都要照做**，否则父级设置会被静默忽略（不报错、不生效）。
 - 改完构建配置用 `dotnet msbuild <proj> -getProperty:<Name>` 看生效值，不要靠肉眼。
+- **工具链版本**：SDK 由仓库根 `global.json` 钉住 —— 下限 `10.0.100` + `rollForward: latestFeature`，即 10.0.x 内任意 feature band 都放行（`sdk:10.0` 镜像与 CI 的 `10.0.x` 都能解析），.NET 11 及以上会被拒绝。要严格复现就把它提到团队统一版本、改成 `latestPatch`。
+- **格式基线**：根 `.editorconfig`（UTF-8 无 BOM、C# 4 空格 / 前端与配置 2 空格、`Dockerfile` 与 `.sh` 强制 LF、Markdown 不裁行尾空格）。换行**故意交给 git**（`core.autocrlf=true`，索引存 LF、按平台检出）—— 编辑器再强制一边只会制造"整文件翻转"的假改动。其中的 C# 风格项一律 `suggestion`，**不改变构建结果**；会让构建失败的红线仍然只在 `Directory.Build.props`。
+- **依赖升级**：`.github/dependabot.yml` 覆盖 nuget / 两个 npm / GitHub Actions，每周一 09:00（Asia/Shanghai）向 `dev` 开 PR，minor+patch 合组；**故意忽略自研包 `LHZ.FastJson` 与 `LHZ.WebSocket.AspNetCore`**（升级等价于改 WS 线协议，必须连 README 协议表与前端一起动）。漏洞驱动的 PR 还需在 GitHub 仓库设置里开启 Dependabot alerts + security updates。
 
 ---
 

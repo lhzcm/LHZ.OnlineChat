@@ -1,0 +1,79 @@
+# 依赖更新 PR（Dependabot）。
+#
+# 两个前提，缺一不可：
+#   1) 本文件只管**常规版本更新**；漏洞驱动的 PR 来自仓库设置
+#      Settings → Code security → Dependabot alerts + security updates（都要开）。
+#   2) CI 会在 PR 上跑（.github/workflows/ci.yml 的 pull_request 触发），
+#      所以升级 PR 过不了编译/测试就不会被合进来。
+#
+# target-branch 指到 dev（本仓库的工作分支，master 由它合过去）。
+# 如果 GitHub 上把默认分支改成了别的，删掉 target-branch 让它跟随默认分支即可。
+version: 2
+
+updates:
+  # ---------- 后端：一个 nuget.config 管住 7 个工程 ----------
+  - package-ecosystem: nuget
+    directory: /backend
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # 次要/补丁版合成一个 PR，减少噪音；主版本升级仍然单独开
+      nuget-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # 自研包（WS 线协议 / JSON 序列化）按协议兼容性手工升级，不交给自动 PR：
+      # 升级它们等价于改对外协议，必须同时改 README 的 WS 协议表与前端。
+      - dependency-name: LHZ.FastJson
+      - dependency-name: LHZ.WebSocket.AspNetCore
+
+  # ---------- 主前端 ----------
+  - package-ecosystem: npm
+    directory: /frontend/lhz-onlinechat-web
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ---------- 管理后台前端 ----------
+  - package-ecosystem: npm
+    directory: /frontend/admin-web
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ---------- GitHub Actions 自身（setup-dotnet 等）----------
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    labels: ["dependencies", "ci"]
