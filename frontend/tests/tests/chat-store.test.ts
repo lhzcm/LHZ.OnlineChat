@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useChatStore, type ChatMessage } from '@/stores/chat'
+import { messageApi } from '@/api/message'
 
 /**
  * 会话 store：消息归属、去重、状态回填、跨会话标失败、未读角标与内存上限。
@@ -186,5 +187,60 @@ describe('内存上限', () => {
     expect(s.messages.size).toBe(30)
     expect(s.messages.has('private_20000')).toBe(true)   // 当前会话被保住
     expect(s.messages.has('private_11001')).toBe(false)  // 最早的非当前会话被淘汰
+  })
+})
+
+describe('会话行', () => {
+  it('hasSession 判断会话是否已在列表里（红点要有行可挂）', () => {
+    const s = store()
+    s.sessions.push({ type: 'private', id: PEER } as never)
+
+    expect(s.hasSession('private', PEER)).toBe(true)
+    expect(s.hasSession('private', 999)).toBe(false)
+    // 同 id 不同类型不算同一会话
+    expect(s.hasSession('group', PEER)).toBe(false)
+  })
+})
+
+describe('离线补拉（挂载与 WS 重连各调一次）', () => {
+  const offline = (id: number) => ({
+    id,
+    senderId: PEER,
+    receiverId: ME,
+    content: `离线${id}`,
+    sentAt: new Date(1_700_000_000_000 + id * 1000).toISOString(),
+    messageId: `cmid-${id}`,
+    messageType: 0,
+    senderName: '张三',
+    senderAvatar: null
+  })
+
+  it('同一批消息重复拉取：第二次不算新增未读，也不会重复入列', async () => {
+    const s = store()
+    vi.spyOn(messageApi, 'getOfflineMessages')
+      .mockResolvedValue({ success: true, data: [offline(1), offline(2), offline(3)] } as never)
+
+    const first = await s.loadOfflineMessages(ME)
+    expect(first.get('private_10002')).toBe(3)
+
+    // 重连后又拉了一遍：未读数不能翻倍，否则角标会越连越大且无法自愈
+    const second = await s.loadOfflineMessages(ME)
+    expect(second.get('private_10002')).toBe(0)
+    expect(s.messages.get('private_10002')).toHaveLength(3)
+  })
+
+  it('只算本地没有的那部分（部分重复时按新增计）', async () => {
+    const s = store()
+    const spy = vi.spyOn(messageApi, 'getOfflineMessages')
+      .mockResolvedValue({ success: true, data: [offline(1), offline(2)] } as never)
+
+    await s.loadOfflineMessages(ME)
+
+    // 第二次服务端多了一条新的
+    spy.mockResolvedValue({ success: true, data: [offline(1), offline(2), offline(3)] } as never)
+    const again = await s.loadOfflineMessages(ME)
+
+    expect(again.get('private_10002')).toBe(1)
+    expect(s.messages.get('private_10002')).toHaveLength(3)
   })
 })

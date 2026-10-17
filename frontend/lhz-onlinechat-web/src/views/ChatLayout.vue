@@ -82,6 +82,7 @@ import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { useToast } from '@/composables/useToast'
 import { inDnd, showDesktopNotify } from '@/composables/useNotify'
+import { decideIncomingAction } from '@/utils/unread'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
 import ProfileModal from '@/components/chat/modals/ProfileModal.vue'
@@ -187,6 +188,37 @@ function refreshQuietly(promise: Promise<unknown>, label: string) {
   promise.catch(err => console.error(`[ChatLayout] ${label} 失败`, err))
 }
 
+/**
+ * 用户此刻是否真的在看这个页面。
+ * 标签页切走、窗口最小化、被别的窗口挡住时 `hasFocus()` 为 false ——
+ * 这些情况下消息不算已读（否则用户事后既看不到红点，发送方还显示"已读"）。
+ */
+function isUserLooking(): boolean {
+  return document.visibilityState === 'visible' && document.hasFocus()
+}
+
+/** 拉取离线消息并计入未读角标（挂载时与 WS 重连后都要跑一次） */
+async function syncOfflineUnread() {
+  if (!auth.user) return
+  try {
+    const counts = await chatStore.loadOfflineMessages(auth.user.id)
+    for (const [key, count] of counts) {
+      chatStore.setUnreadCount(key, count)
+    }
+  } catch { /* 离线消息拉取失败不阻塞界面 */ }
+}
+
+/**
+ * 窗口重新可见 / 获得焦点时，把"正开着"的会话补标已读。
+ * 与 decideIncomingAction 的 read 分支对应：后台期间先挂红点，回到前台再清。
+ */
+function markCurrentChatRead() {
+  const chat = currentChat.value
+  if (!chat || !isUserLooking()) return
+  chatStore.markSessionRead(chat.type, chat.id)
+  if (chat.type === 'private' && auth.user) sendReadReceipt(chat.id)
+}
+
 /** 首页数据加载（好友 / 申请 / 群组 / 会话），失败只提示不阻塞 */
 async function loadInitialData() {
   try {
@@ -216,6 +248,19 @@ function friendDisplayName(f: FriendInfo): string {
 /** ChatArea 实例引用（新消息滚动/提示/定位） */
 const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
 
+// WS 重连成功后补一次同步：断线期间的消息既没有被推送、也不会被计入未读，
+// 光靠"连上了"是拿不回来的（之前只有刷新页面才会重新拉取，表现为消息和红点一起消失）。
+let everConnected = false
+watch(() => ws.connected, (connected) => {
+  if (!connected) return
+  if (!everConnected) {
+    everConnected = true
+    return
+  }
+  refreshQuietly(chatStore.fetchSessions(), '重连后刷新会话列表')
+  refreshQuietly(syncOfflineUnread(), '重连后补拉离线消息')
+})
+
 onMounted(async () => {
   if (!auth.isLoggedIn) {
     router.push('/login')
@@ -225,6 +270,9 @@ onMounted(async () => {
 
   // 桌面通知点击：跳转到对应会话
   window.addEventListener('oc:open-session', handleOpenSession)
+  // 窗口回到前台：把当前会话补标已读（后台期间到达的消息只挂了红点）
+  document.addEventListener('visibilitychange', markCurrentChatRead)
+  window.addEventListener('focus', markCurrentChatRead)
 
   // 先注册回调，再建立连接，避免漏掉连接期间的消息。
   // 取消订阅函数必须留着并在卸载时调用：这个页面是 SPA 内部跳转（登出→登录不会刷新页面），
@@ -243,20 +291,15 @@ onMounted(async () => {
   await loadInitialData()
 
   // 拉取离线消息并计入未读角标
-  try {
-    if (auth.user) {
-      const counts = await chatStore.loadOfflineMessages(auth.user.id)
-      for (const [key, count] of counts) {
-        chatStore.setUnreadCount(key, count)
-      }
-    }
-  } catch { /* 离线消息拉取失败不阻塞界面 */ }
+  await syncOfflineUnread()
 })
 
 onUnmounted(() => {
   offMessage?.()
   offStatusChange?.()
   window.removeEventListener('oc:open-session', handleOpenSession)
+  document.removeEventListener('visibilitychange', markCurrentChatRead)
+  window.removeEventListener('focus', markCurrentChatRead)
   offMessage = null
   offStatusChange = null
 })
@@ -464,8 +507,22 @@ function handleWsMessage(msg: WsMessage) {
   // 是否是自己发出的消息（多端同步：其他设备收到的"自己的消息"不应计未读/提示音）
   const isMine = Number(msg.from) === auth.user?.id
   const currentKey = currentChat.value ? chatStore.sessionKey(currentChat.value.type, currentChat.value.id) : ''
-  if (key === currentKey) {
-    // 当前会话：清未读、标记已读、滚到底部；对方发来的消息即时回已读回执
+
+  // 会话 key 形如 private_10001 / group_5
+  const sep = key.indexOf('_')
+  const sType = key.slice(0, sep) as ChatType
+  const sId = Number(key.slice(sep + 1))
+
+  const action = decideIncomingAction({
+    isCurrentSession: key === currentKey,
+    isMine,
+    isNew,
+    muted: chatStore.isSessionMuted(sType, sId),
+    isUserLooking: isUserLooking()
+  })
+
+  if (action === 'read') {
+    // 会话开着且窗口在前台：清未读、落库已读、回已读回执、贴底
     const chat = currentChat.value
     if (chat) {
       chatStore.markSessionRead(chat.type, chat.id)
@@ -475,20 +532,25 @@ function handleWsMessage(msg: WsMessage) {
     }
     // 仅在接近底部时自动滚动（用户正在上翻历史时不做打扰）
     chatAreaRef.value?.scrollToBottomIfNear()
-  } else if (isNew && !isMine) {
-    // 免打扰会话不增加未读提醒、不播放提示音
-    const sep = key.indexOf('_')
-    const sType = key.slice(0, sep) as ChatType
-    const sId = Number(key.slice(sep + 1))
-    if (!chatStore.isSessionMuted(sType, sId)) {
-      chatStore.bumpUnread(key)
-      playNotifySound()
-      // 浏览器桌面通知（页面隐藏时）：点击通知可跳转到该会话
-      const isGroup = sType === 'group'
-      const title = isGroup
-        ? `群消息 · ${msg.senderName || ''}`
-        : msg.senderName || '新消息'
-      showDesktopNotify(title, msg.content, { type: sType, id: sId })
+    return
+  }
+
+  if (action === 'notify') {
+    // 窗口在后台时也走这里：先挂红点，等用户回到前台再补标已读（见 markCurrentChatRead）
+    chatStore.bumpUnread(key)
+    playNotifySound()
+
+    // 浏览器桌面通知（页面隐藏时）：点击通知可跳转到该会话
+    const isGroup = sType === 'group'
+    const title = isGroup
+      ? `群消息 · ${msg.senderName || ''}`
+      : msg.senderName || '新消息'
+    showDesktopNotify(title, msg.content, { type: sType, id: sId })
+
+    // 会话行还不存在（对方第一次发消息，或会话被 MAX_SESSIONS 淘汰）：
+    // 让服务端补一行，否则会话列表里既没有这一行，红点也没处挂。
+    if (!chatStore.hasSession(sType, sId)) {
+      refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     }
   }
 }

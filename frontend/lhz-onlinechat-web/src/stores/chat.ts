@@ -422,8 +422,12 @@ export const useChatStore = defineStore('chat', () => {
     for (const [senderId, list] of bySender) {
       const key = sessionKey('private', senderId)
       const existing = messages.value.get(key) || []
+      const known = new Set(existing.map(m => m.messageId).filter(Boolean))
+      // 只统计本地还没有的那些：挂载与 WS 重连都会调这个接口，按 list.length 计会把
+      // 同一批消息重复计入，未读数越连越大（setUnreadCount 取最大值，自己不会降回来）。
+      const fresh = list.filter(m => !m.messageId || !known.has(m.messageId))
       messages.value.set(key, mergeList(existing, list))
-      counts.set(key, list.length)
+      counts.set(key, fresh.length)
     }
     evictStaleEntries()
     return counts
@@ -440,10 +444,15 @@ export const useChatStore = defineStore('chat', () => {
     currentSession.value = null
   }
 
+  /** 会话是否已经出现在列表里（红点要挂在行上，行不存在就没处挂 → 调用方补拉会话列表） */
+  function hasSession(type: ChatType, id: number): boolean {
+    return sessions.value.some(s => s.type === type && s.id === id)
+  }
+
   return {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages, historyMeta,
     sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled, removeMessage,
     setMessageStatus, markMessageFailedById, markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
-    setCurrentSession, loadHistory, loadMoreHistory, loadOfflineMessages, clearAll
+    setCurrentSession, hasSession, loadHistory, loadMoreHistory, loadOfflineMessages, clearAll
   }
 })

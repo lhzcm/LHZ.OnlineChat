@@ -171,6 +171,7 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - **生命周期必须配对**：`ws.onMessage(...)` / `onStatusChange(...)` 返回取消订阅函数，组件卸载（`onUnmounted`）时**必须调用**；`window.addEventListener` 要配 `removeEventListener`。SPA 内部跳转不会刷新页面，漏清理会导致"换账号后回调叠加、串号"。
 - 主动断开要能抑制自动重连（参考 `websocket.ts` 的 `manualClose`），重连耗尽要有 UI 出口而不是只打 console。
 - 竞态：切会话/搜索这类会并发发请求的地方，用请求序号或"在途标记"防止旧响应覆盖新数据；列表合并避免每次全量 `sort`（大多是新消息追加）。
+- **未读语义**：只有「消息属于当前会话 **且** `document.visibilityState === 'visible'` **且** `document.hasFocus()`」才算已读；窗口切后台/最小化/被挡住一律按未读处理（红点 + 提示音），回到前台再补标已读（`ChatLayout` 的 `markCurrentChatRead`）。入站动作统一由 `utils/unread.ts` 的 `decideIncomingAction` 决定，不要在组件里散写 `if`（历史 bug：会话被选中但窗口在后台，消息被静默标已读 —— 用户看不到红点，发送方那边还显示"已读"）。WS **重连**后必须补一次 `fetchSessions` + `loadOfflineMessages`，断线期间的消息不会自己回来。
 - 图片：上传前压缩（`utils/image.ts`），头像导出用 WebP；不要在缩放时阻塞主线程太久或漏掉 EXIF 方向。
 - **安全**：`v-html` 之前必须转义（参考 `MessageBubble.vue`）；不要把非令牌的敏感数据放 `localStorage`；退出登录要 `ws.disconnect()` + 清 store（内存里的会话与消息缓存一并清）。
 - PWA：`sw.js` 不缓存 `/api/`；`VERSION` 递增才会清旧缓存。
