@@ -34,7 +34,7 @@ async function rejectRequest(r: FriendRequestInfo) {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>好友申请</h3>
       <div class="empty" v-if="friendStore.pendingRequests.length === 0">

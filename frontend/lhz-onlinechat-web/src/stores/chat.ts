@@ -25,6 +25,13 @@ export const useChatStore = defineStore('chat', () => {
   const currentSession = ref<{ type: ChatType; id: number; name: string } | null>(null)
   // 历史分页元数据：会话 key → { page, hasMore, loading }
   const historyMeta = ref<Map<string, { page: number; hasMore: boolean; loading: boolean }>>(new Map())
+  /**
+   * 每个会话的输入草稿：普通文本与 Markdown 各自独立暂存（用户明确要求互不影响），
+   * 且**按会话隔离** —— 切到别的会话再切回来内容还在，也不会把 A 会话的草稿发到 B。
+   */
+  const drafts = ref<Map<string, { text: string; markdownText: string; markdown: boolean }>>(new Map())
+  /** 打开会话时的「第一条未读」消息 ID：用于未读分隔线与打开时定位 */
+  const unreadAnchors = ref<Map<string, string>>(new Map())
 
   const currentMessages = computed(() => {
     if (!currentSession.value) return []
@@ -34,6 +41,32 @@ export const useChatStore = defineStore('chat', () => {
 
   function sessionKey(type: ChatType, id: number) {
     return `${type}_${id}`
+  }
+
+  const EMPTY_DRAFT = Object.freeze({ text: '', markdownText: '', markdown: false })
+
+  /** 取该会话的草稿（没有就返回空白草稿，调用方只读） */
+  function getDraft(key: string): { text: string; markdownText: string; markdown: boolean } {
+    return drafts.value.get(key) || EMPTY_DRAFT
+  }
+
+  /** 写入该会话草稿的部分字段（key 为空时忽略：没有打开任何会话） */
+  function setDraft(
+    key: string,
+    patch: Partial<{ text: string; markdownText: string; markdown: boolean }>
+  ): void {
+    if (!key) return
+    drafts.value.set(key, { ...getDraft(key), ...patch })
+  }
+
+  /** 该会话打开时的第一条未读消息 ID（空串 = 没有） */
+  function unreadAnchorOf(key: string): string {
+    return unreadAnchors.value.get(key) || ''
+  }
+
+  /** 清除未读分隔线（切走该会话时调用，避免下次进来又看到旧分隔线） */
+  function clearUnreadAnchor(key: string): void {
+    unreadAnchors.value.delete(key)
   }
 
   /** 已读标记写入队列：会话 key → 该会话最后一次已读请求的 Promise */
@@ -239,6 +272,15 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function markSessionRead(type: ChatType, id: number) {
     const key = sessionKey(type, id)
+
+    // 未读分隔线：清零之前先把「第一条未读」换算成本地消息 ID（未读按尾部 N 条计）
+    const unread = unreadCounts.value.get(key) || 0
+    if (unread > 0) {
+      const list = messages.value.get(key)
+      const anchor = list && list.length > 0 ? list[Math.max(0, list.length - unread)] : undefined
+      if (anchor?.messageId) unreadAnchors.value.set(key, anchor.messageId)
+    }
+
     unreadCounts.value.set(key, 0)
     const prev = readQueues.get(key) || Promise.resolve()
     const task = prev.catch(() => {}).then(async () => {
@@ -440,6 +482,8 @@ export const useChatStore = defineStore('chat', () => {
     unreadCounts.value = new Map()
     readByPeer.value = new Set()
     historyMeta.value = new Map()
+    drafts.value = new Map()
+    unreadAnchors.value = new Map()
     readQueues.clear()
     currentSession.value = null
   }
@@ -453,6 +497,7 @@ export const useChatStore = defineStore('chat', () => {
     sessions, messages, unreadCounts, readByPeer, currentSession, currentMessages, historyMeta,
     sessionKey, addMessage, bumpUnread, setUnreadCount, markSessionReadByPeer, isReadByPeer, markMessageRecalled, removeMessage,
     setMessageStatus, markMessageFailedById, markSessionRead, fetchSessions, updateSessionSetting, isSessionMuted,
-    setCurrentSession, hasSession, loadHistory, loadMoreHistory, loadOfflineMessages, clearAll
+    setCurrentSession, hasSession, getDraft, setDraft, unreadAnchorOf, clearUnreadAnchor,
+    loadHistory, loadMoreHistory, loadOfflineMessages, clearAll
   }
 })

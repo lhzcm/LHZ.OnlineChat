@@ -138,7 +138,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('cancel')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('cancel')">
     <div class="modal crop-modal">
       <h3>裁剪头像</h3>
       <p class="crop-desc">拖动图片调整位置，滚轮或滑块缩放</p>

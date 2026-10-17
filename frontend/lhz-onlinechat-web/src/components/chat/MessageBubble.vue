@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
+import { useToast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
 import { formatMsgTime } from '@/utils/format'
 import { renderMarkdownMessage } from '@/utils/markdown'
 import type { WsMessage, ChatType } from '@/types'
@@ -17,7 +19,13 @@ const props = defineProps<{
   /** 搜索高亮关键词（会话内搜索定位时传入） */
   highlight?: string
 }>()
-const emit = defineEmits<{ reply: [msg: WsMessage]; retry: [msg: ChatMessage]; 'image-click': [url: string] }>()
+const emit = defineEmits<{
+  reply: [msg: WsMessage]
+  retry: [msg: ChatMessage]
+  'image-click': [url: string]
+  /** 撤回后重新编辑：把原内容交回输入框 */
+  reedit: [content: string]
+}>()
 
 const auth = useAuthStore()
 const chatStore = useChatStore()
@@ -108,10 +116,86 @@ function recallMessage(msg: WsMessage) {
   // 本地乐观标记
   chatStore.markMessageRecalled(chatStore.sessionKey(props.chatType, props.chatId), msg.messageId)
 }
+
+// ==================== 操作菜单（右键 / 移动端长按） ====================
+const { toast } = useToast()
+const menu = ref<{ x: number; y: number } | null>(null)
+let longPressTimer: number | null = null
+
+/** 菜单大概宽高，用于把浮层限制在视口内 */
+const MENU_W = 132
+const MENU_H = 168
+
+/** 打开时间：长按后浏览器会补发一次合成 click，别让它刚打开就被点关 */
+let menuOpenedAt = 0
+
+function openMenu(x: number, y: number) {
+  menuOpenedAt = Date.now()
+  menu.value = {
+    x: Math.max(8, Math.min(x, window.innerWidth - MENU_W - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - MENU_H - 8))
+  }
+}
+
+function onContextMenu(e: MouseEvent) {
+  // 移动端长按浏览器也会派发 contextmenu，这里统一处理（长按另有 touch 兜底）
+  e.preventDefault()
+  openMenu(e.clientX, e.clientY)
+}
+
+function onTouchStart(e: TouchEvent) {
+  const t = e.touches[0]
+  if (!t) return
+  cancelLongPress()
+  longPressTimer = window.setTimeout(() => openMenu(t.clientX, t.clientY), 500)
+}
+
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+async function copyMessage(msg: ChatMessage) {
+  const ok = await copyText(msg.content || '')
+  toast(ok ? '已复制' : '复制失败，请手动选中文本复制')
+  menu.value = null
+}
+
+/** 关闭菜单：点别处、Esc、滚动都关（否则浮层会留在原地挡住消息） */
+function closeMenu() {
+  // 长按（touch）后浏览器会补发一次合成 click：刚打开 300ms 内忽略，否则菜单一闪就没了
+  if (Date.now() - menuOpenedAt < 300) return
+  menu.value = null
+}
+
+function onDocKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeMenu()
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeMenu)
+  document.addEventListener('keydown', onDocKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeMenu)
+  document.removeEventListener('keydown', onDocKeydown)
+  cancelLongPress()
+})
 </script>
 
 <template>
-  <div class="msg-row" :class="{ mine, 'is-markdown-msg': msg.messageType === 3 && !msg.isDeleted }" :data-mid="msg.messageId">
+  <div class="msg-row" :class="{ mine, 'is-markdown-msg': msg.messageType === 3 && !msg.isDeleted }" :data-mid="msg.messageId"
+    @contextmenu="onContextMenu" @touchstart.passive="onTouchStart" @touchend="cancelLongPress" @touchmove="cancelLongPress">
+    <!-- 操作菜单：右键或移动端长按唤出（复制/引用/撤回/重新编辑） -->
+    <div class="ctx-menu" v-if="menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
+      <button class="ctx-item" @click="copyMessage(msg)">复制</button>
+      <button class="ctx-item" v-if="canReply(msg)" @click="startReply(msg); closeMenu()">引用</button>
+      <button class="ctx-item" v-if="canRecall(msg)" @click="recallMessage(msg); closeMenu()">撤回</button>
+      <button class="ctx-item" v-if="mine && msg.isDeleted && msg.content"
+        @click="emit('reedit', msg.content); closeMenu()">重新编辑</button>
+    </div>
     <Avatar class="msg-avatar" :name="msg.senderName || chatName" :url="msg.senderAvatar" size="sm" />
     <div class="msg-body">
       <span class="msg-sender" v-if="chatType === 'group' && !mine">
@@ -309,6 +393,38 @@ function recallMessage(msg: WsMessage) {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 260px;
+}
+
+/* 操作菜单（右键 / 长按）：固定定位到指针处，避免被气泡或列表裁掉 */
+.ctx-menu {
+  position: fixed;
+  z-index: 300;
+  min-width: 120px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-panel, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.ctx-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ctx-item:hover {
+  background: var(--bg-hover);
 }
 
 /* 操作按钮（回复/撤回）：绝对定位在气泡旁的空白区，不占文档流 → 悬停不再引起布局跳动 */

@@ -115,7 +115,7 @@ async function copyRobotToken(url: string) {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal modal-wide">
       <h3>🤖 我的机器人</h3>
       <p class="robot-tip">机器人收到消息会 POST 事件到 Webhook 地址，返回 <code>{"content":"回复"}</code> 即自动回复；<b>也可不配置 Webhook</b>，仅由第三方通过 <code>/api/robots/&#123;id&#125;/reply</code> 主动推送消息。</p>

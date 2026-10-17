@@ -1,6 +1,6 @@
 <template>
   <div class="chat-layout">
-    <ChatSidebar v-model:active-tab="activeTab" :current-chat="currentChat" :mobile-chat-open="mobileChatOpen"
+    <ChatSidebar ref="sidebarRef" v-model:active-tab="activeTab" :current-chat="currentChat" :mobile-chat-open="mobileChatOpen"
       @select-private="selectPrivateChat" @select-group="selectGroupChat" @select-session="selectSession"
       @session-setting="openSessionSetting" @friend-setting="openFriendSetting" @add="openAddModal"
       @requests="openRequestsModal" @robot="showRobotModal = true" @profile="showProfileModal = true"
@@ -247,6 +247,92 @@ function friendDisplayName(f: FriendInfo): string {
 
 /** ChatArea 实例引用（新消息滚动/提示/定位） */
 const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
+/** ChatSidebar 实例引用（Ctrl/Cmd+K 聚焦搜索） */
+const sidebarRef = ref<InstanceType<typeof ChatSidebar> | null>(null)
+
+/**
+ * 全局快捷键与弹窗键盘支持。
+ * - Esc：先关图片预览，再按"最上层"顺序关弹窗（弹窗本身不各写一份）
+ * - Tab：焦点锁在打开的弹窗里（`.modal-overlay` 统一加了 role=dialog）
+ * - Ctrl/Cmd+K：聚焦侧边栏搜索
+ * - Alt+↑/↓：上一个 / 下一个会话
+ */
+function closeTopModal(): boolean {
+  const flags = [
+    showMembersModal, showAnnouncementModal, showSessionSetting, showFriendSetting,
+    showProfileModal, showRobotModal, showBlacklistModal, showSessionsModal,
+    showRequestsModal, showAddModal
+  ]
+  for (const flag of flags) {
+    if (flag.value) {
+      flag.value = false
+      return true
+    }
+  }
+  return false
+}
+
+function trapFocusInModal(e: KeyboardEvent) {
+  const overlay = document.querySelector<HTMLElement>('.modal-overlay')
+  if (!overlay) return
+  const focusables = Array.from(overlay.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), ' +
+    'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null)
+  if (focusables.length === 0) return
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  const active = document.activeElement as HTMLElement | null
+  if (!active || !overlay.contains(active)) {
+    e.preventDefault()
+    first.focus()
+    return
+  }
+  if (e.shiftKey && active === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+function cycleSession(delta: number) {
+  const list = chatStore.sessions
+  if (list.length === 0) return
+  const cur = currentChat.value
+  const idx = cur ? list.findIndex(s => s.type === cur.type && s.id === cur.id) : -1
+  const next = idx < 0 ? 0 : (idx + delta + list.length) % list.length
+  const target = list[next]
+  if (target) selectSession(target)
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (lightboxUrl.value) {
+      lightboxUrl.value = ''
+      return
+    }
+    if (closeTopModal()) e.preventDefault()
+    return
+  }
+
+  if (e.key === 'Tab') {
+    trapFocusInModal(e)
+    return
+  }
+
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    sidebarRef.value?.focusSearch()
+    return
+  }
+
+  if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault()
+    cycleSession(e.key === 'ArrowDown' ? 1 : -1)
+  }
+}
 
 // WS 重连成功后补一次同步：断线期间的消息既没有被推送、也不会被计入未读，
 // 光靠"连上了"是拿不回来的（之前只有刷新页面才会重新拉取，表现为消息和红点一起消失）。
@@ -273,6 +359,8 @@ onMounted(async () => {
   // 窗口回到前台：把当前会话补标已读（后台期间到达的消息只挂了红点）
   document.addEventListener('visibilitychange', markCurrentChatRead)
   window.addEventListener('focus', markCurrentChatRead)
+  // 全局快捷键 / Esc 关弹窗 / 弹窗内 Tab 焦点锁
+  window.addEventListener('keydown', onGlobalKeydown)
 
   // 先注册回调，再建立连接，避免漏掉连接期间的消息。
   // 取消订阅函数必须留着并在卸载时调用：这个页面是 SPA 内部跳转（登出→登录不会刷新页面），
@@ -300,6 +388,7 @@ onUnmounted(() => {
   window.removeEventListener('oc:open-session', handleOpenSession)
   document.removeEventListener('visibilitychange', markCurrentChatRead)
   window.removeEventListener('focus', markCurrentChatRead)
+  window.removeEventListener('keydown', onGlobalKeydown)
   offMessage = null
   offStatusChange = null
 })
@@ -413,6 +502,15 @@ function handleWsMessage(msg: WsMessage) {
   if (msg.type === 'read_receipt') {
     if (msg.from) {
       chatStore.markSessionReadByPeer(chatStore.sessionKey('private', Number(msg.from)))
+    }
+    return
+  }
+
+  // 「正在输入」：只对当前会话的人显示（服务端只转发、不落库，绝不能进消息列表）
+  if (msg.type === 'typing') {
+    const peer = Number(msg.from)
+    if (currentChat.value?.type === 'private' && currentChat.value.id === peer) {
+      chatAreaRef.value?.setPeerTyping()
     }
     return
   }

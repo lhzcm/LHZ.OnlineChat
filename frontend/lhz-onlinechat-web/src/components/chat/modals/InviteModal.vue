@@ -43,7 +43,7 @@ async function doInvite() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>邀请好友加入群组</h3>
       <div class="empty" v-if="invitableFriends.length === 0">

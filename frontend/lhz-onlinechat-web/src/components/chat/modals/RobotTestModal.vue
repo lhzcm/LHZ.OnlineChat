@@ -30,7 +30,7 @@ async function runTest() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>测试 · {{ robot.name }}</h3>
       <p class="robot-tip">模拟一条私聊消息触发 Webhook，展示机器人同步回复。</p>

@@ -45,7 +45,7 @@ async function createGroup() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>{{ props.mode === 'friend' ? '添加好友' : '创建群组' }}</h3>
       <template v-if="props.mode === 'friend'">

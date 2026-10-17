@@ -35,7 +35,7 @@ async function toggleMuted(e: Event) {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>会话设置</h3>
       <div class="friend-setting-head">

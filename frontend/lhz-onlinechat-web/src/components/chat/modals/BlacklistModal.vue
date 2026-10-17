@@ -32,7 +32,7 @@ async function unblockUser(userId: number) {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>黑名单 ({{ blacklist.length }})</h3>
       <div class="empty" v-if="blacklist.length === 0">

@@ -235,7 +235,7 @@ function onDndTimeChange(field: 'start' | 'end', e: Event) {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>个人信息</h3>
       <div class="profile-avatar">

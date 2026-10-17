@@ -93,7 +93,7 @@ async function logoutOthers() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>登录设备</h3>
       <p class="session-desc">同一账号可多台设备同时在线，此处可管理各设备的登录状态</p>

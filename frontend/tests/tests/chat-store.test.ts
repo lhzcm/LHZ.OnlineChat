@@ -244,3 +244,71 @@ describe('离线补拉（挂载与 WS 重连各调一次）', () => {
     expect(s.messages.get('private_10002')).toHaveLength(3)
   })
 })
+
+describe('草稿（按会话隔离）', () => {
+  it('不同会话、不同模式的草稿互不影响', () => {
+    const s = store()
+    s.setDraft('private_1', { text: 'A 的普通' })
+    s.setDraft('private_2', { text: 'B 的普通' })
+    s.setDraft('private_1', { markdownText: '# A 的 MD', markdown: true })
+
+    expect(s.getDraft('private_1').text).toBe('A 的普通')
+    expect(s.getDraft('private_2').text).toBe('B 的普通')
+    expect(s.getDraft('private_1').markdown).toBe(true)
+    // 切到 B 必须是普通模式，不能沿用 A 的 Markdown
+    expect(s.getDraft('private_2').markdown).toBe(false)
+    expect(s.getDraft('private_2').markdownText).toBe('')
+  })
+
+  it('没有草稿时返回空白草稿；空 key 不写入（没打开任何会话）', () => {
+    const s = store()
+
+    expect(s.getDraft('private_9')).toEqual({ text: '', markdownText: '', markdown: false })
+    s.setDraft('', { text: '不该写进去' })
+    expect(s.getDraft('').text).toBe('')
+  })
+
+  it('清空某一模式的草稿不影响另一模式', () => {
+    const s = store()
+    s.setDraft('private_1', { text: '普通', markdownText: '**MD**' })
+
+    s.setDraft('private_1', { text: '' })
+
+    expect(s.getDraft('private_1').text).toBe('')
+    expect(s.getDraft('private_1').markdownText).toBe('**MD**')
+  })
+})
+
+describe('未读分隔线锚点', () => {
+  it('打开会话时把「第一条未读」换算成该条消息 ID', async () => {
+    const s = store()
+    vi.spyOn(messageApi, 'markAllAsRead').mockResolvedValue({ success: true } as never)
+    s.addMessage(msg({ messageId: 'm1' }), ME)
+    s.addMessage(msg({ messageId: 'm2' }), ME)
+    s.addMessage(msg({ messageId: 'm3' }), ME)
+    s.bumpUnread('private_10002')
+    s.bumpUnread('private_10002')
+
+    await s.markSessionRead('private', PEER)
+
+    // 3 条里最后 2 条未读 → 分隔线落在 m2 之前
+    expect(s.unreadAnchorOf('private_10002')).toBe('m2')
+    expect(s.unreadCounts.get('private_10002')).toBe(0)
+  })
+
+  it('没有未读时不产生锚点，切走可以清掉', async () => {
+    const s = store()
+    vi.spyOn(messageApi, 'markAllAsRead').mockResolvedValue({ success: true } as never)
+    s.addMessage(msg({ messageId: 'm1' }), ME)
+
+    await s.markSessionRead('private', PEER)
+    expect(s.unreadAnchorOf('private_10002')).toBe('')
+
+    s.bumpUnread('private_10002')
+    await s.markSessionRead('private', PEER)
+    expect(s.unreadAnchorOf('private_10002')).toBe('m1')
+
+    s.clearUnreadAnchor('private_10002')
+    expect(s.unreadAnchorOf('private_10002')).toBe('')
+  })
+})

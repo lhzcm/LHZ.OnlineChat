@@ -173,6 +173,9 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - 竞态：切会话/搜索这类会并发发请求的地方，用请求序号或"在途标记"防止旧响应覆盖新数据；列表合并避免每次全量 `sort`（大多是新消息追加）。
 - **未读语义**：只有「消息属于当前会话 **且** `document.visibilityState === 'visible'` **且** `document.hasFocus()`」才算已读；窗口切后台/最小化/被挡住一律按未读处理（红点 + 提示音），回到前台再补标已读（`ChatLayout` 的 `markCurrentChatRead`）。入站动作统一由 `utils/unread.ts` 的 `decideIncomingAction` 决定，不要在组件里散写 `if`（历史 bug：会话被选中但窗口在后台，消息被静默标已读 —— 用户看不到红点，发送方那边还显示"已读"）。WS **重连**后必须补一次 `fetchSessions` + `loadOfflineMessages`，断线期间的消息不会自己回来。
 - 图片：上传前压缩（`utils/image.ts`），头像导出用 WebP；不要在缩放时阻塞主线程太久或漏掉 EXIF 方向。
+- **草稿与未读锚点都在 chat store 里**：草稿按 `sessionKey` 存（`drafts`，普通/Markdown 两份 + 模式），未读分隔线存 `unreadAnchors`（打开会话时把"尾部 N 条未读"换算成第一条的消息 ID）。**不要在组件里另起一份本地状态** —— 那正是"切会话草稿串了 / 分隔线不消失"的来源。
+- **输入中提示**（`typing`）只做转发、不落库：客户端 3 秒节流发帧，收到方只在**当前会话**显示、4 秒无新帧自动消失；`typing` 帧必须在 `handleWsMessage` 里**提前 return**，绝不能流进 `addMessage`（否则会变成一条空消息）。
+- **弹窗键盘支持是全局的**：`Esc` 关闭与 Tab 焦点锁定由 `ChatLayout` 的 `onGlobalKeydown` 统一处理（按 `.modal-overlay` 找当前弹窗），弹窗组件根元素统一带 `role="dialog" aria-modal="true"` —— 新加弹窗照抄这两个属性即可，不用各自实现键盘逻辑。
 - **安全**：`v-html` 之前必须转义（参考 `MessageBubble.vue`）；不要把非令牌的敏感数据放 `localStorage`；退出登录要 `ws.disconnect()` + 清 store（内存里的会话与消息缓存一并清）。
 - PWA：`sw.js` 不缓存 `/api/`；`VERSION` 递增才会清旧缓存。
 

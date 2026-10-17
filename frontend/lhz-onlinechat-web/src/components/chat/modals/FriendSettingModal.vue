@@ -113,7 +113,7 @@ async function copyFriendRobotUrl() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>{{ props.friend.isBot ? '机器人设置' : '好友设置' }}</h3>
       <div class="friend-setting-head">

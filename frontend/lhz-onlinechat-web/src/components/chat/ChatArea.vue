@@ -31,19 +31,23 @@ const ws = useWebSocketStore()
 const { toast } = useToast()
 
 /**
- * 两套输入暂存：普通文本与 Markdown 各存各的草稿，切换模式时互不带内容、也不清空对方。
- * 输入框、表情/@ 插入、发送按钮都只作用于 activeText（当前模式对应的那一个）。
+ * 草稿按会话存（chat store 的 drafts）：普通文本与 Markdown 各存各的、互不带内容，
+ * 切到别的会话再切回来内容还在 —— 也就不会出现"A 的草稿发到 B"。
+ * 输入框、表情/@ 插入、发送按钮都只作用于 activeText（当前会话 + 当前模式对应的那一份）。
  */
-const inputText = ref('')
-const markdownInputText = ref('')
-/** Markdown 模式：输入框换成多行，发出去的是 messageType=3 的 Markdown 消息 */
-const markdownMode = ref(false)
+const draftKey = computed(() => (props.chat ? chatStore.sessionKey(props.chat.type, props.chat.id) : ''))
+const draft = computed(() => chatStore.getDraft(draftKey.value))
+/** Markdown 模式也按会话记忆（A 会话用 MD、切到 B 用普通，各自保留） */
+const markdownMode = computed({
+  get: () => draft.value.markdown,
+  set: (value: boolean) => chatStore.setDraft(draftKey.value, { markdown: value })
+})
 const activeText = computed({
-  get: () => (markdownMode.value ? markdownInputText.value : inputText.value),
-  set: (value: string) => {
-    if (markdownMode.value) markdownInputText.value = value
-    else inputText.value = value
-  }
+  get: () => (markdownMode.value ? draft.value.markdownText : draft.value.text),
+  set: (value: string) => chatStore.setDraft(
+    draftKey.value,
+    markdownMode.value ? { markdownText: value } : { text: value }
+  )
 })
 const inputEl = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
@@ -153,6 +157,11 @@ const currentMessages = computed(() => {
   return chatStore.messages.get(key) || []
 })
 
+/** 未读分隔线锚点：该会话打开时的第一条未读消息 ID（空串 = 没有未读） */
+const unreadAnchor = computed(() => (
+  props.chat ? chatStore.unreadAnchorOf(chatStore.sessionKey(props.chat.type, props.chat.id)) : ''
+))
+
 // 聊天窗口副标题：私聊显示原昵称+在线状态（有备注时），群聊显示人数
 const chatSub = computed(() => {
   if (!props.chat) return ''
@@ -180,6 +189,43 @@ const currentAnnouncement = computed(() => {
   if (!props.chat || props.chat.type !== 'group') return ''
   return groupStore.groups.find(g => g.id === props.chat!.id)?.announcement || ''
 })
+
+// ==================== 正在输入 ====================
+/**
+ * 对方是否正在输入：收到一次 typing 帧就置 true，4 秒内没有新帧自动消失。
+ * 服务端只做转发（私聊），所以这里不落库、也不参与未读。
+ */
+const peerTyping = ref(false)
+let peerTypingTimer: number | null = null
+
+/** 父级收到 typing 帧时调用（只对当前会话的人调用，见 ChatLayout） */
+function setPeerTyping() {
+  peerTyping.value = true
+  if (peerTypingTimer) clearTimeout(peerTypingTimer)
+  peerTypingTimer = window.setTimeout(() => { peerTyping.value = false }, 4000)
+}
+
+/** 我也在输入：私聊每 3 秒最多发一帧（服务端只转发，不发就没有"正在输入…"） */
+let lastTypingSentAt = 0
+function notifyTyping() {
+  const chat = props.chat
+  if (!chat || chat.type !== 'private' || !auth.user || !ws.connected) return
+  if (!activeText.value.trim()) return
+  const now = Date.now()
+  if (now - lastTypingSentAt < 3000) return
+  lastTypingSentAt = now
+  ws.sendMessage({
+    type: 'typing',
+    from: String(auth.user.id),
+    to: String(chat.id),
+    content: '',
+    timestamp: now,
+    messageId: '',
+    messageType: 0,
+    senderName: '',
+    senderAvatar: null
+  })
+}
 
 // ==================== 历史加载与滚动 ====================
 const historyMeta = computed(() => {
@@ -225,16 +271,41 @@ async function onMessagesScroll() {
   })
 }
 
-/** 会话切换：加载第一页历史并滚到底部（供父级定位等待）；同时清空会话内搜索状态 */
+/** 把某条消息滚进视口（并可选高亮）；返回是否找到该行 */
+function scrollRowIntoView(messageId: string, flash = false): boolean {
+  const el = msgContainer.value?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
+  if (!el) return false
+  el.scrollIntoView({ block: 'center' })
+  if (flash) {
+    el.classList.add('msg-highlight')
+    setTimeout(() => el.classList.remove('msg-highlight'), 2200)
+  }
+  return true
+}
+
+/**
+ * 会话切换：加载第一页历史；有未读分隔线就定位到「第一条未读」，否则滚到底部。
+ * 切走的上一个会话要清掉它自己的分隔线记录（否则下次进来会看到过期的分隔线）。
+ */
 let historyReady: Promise<void> = Promise.resolve()
-watch(() => props.chat, (chat) => {
+watch(() => props.chat, (chat, prev) => {
+  if (prev) chatStore.clearUnreadAnchor(chatStore.sessionKey(prev.type, prev.id))
   if (!chat) return
   replyTarget.value = null
   sendHint.value = ''
   clearSearch()
+  // 输入提示属于上一个会话，切走就清；节流计时也重置，新会话第一条消息立刻能提示
+  peerTyping.value = false
+  if (peerTypingTimer) {
+    clearTimeout(peerTypingTimer)
+    peerTypingTimer = null
+  }
+  lastTypingSentAt = 0
+  const anchor = chatStore.unreadAnchorOf(chatStore.sessionKey(chat.type, chat.id))
   historyReady = (async () => {
     await chatStore.loadHistory(chat.type, chat.id, 1, auth.user?.id)
-    scrollToBottom()
+    await nextTick()
+    if (!anchor || !scrollRowIntoView(anchor)) scrollToBottom()
   })().catch(err => {
     // 历史加载失败不能变成未处理的 Promise 拒绝：会话仍可用，用户上滑可重试
     console.error('[ChatArea] 加载历史消息失败', err)
@@ -259,25 +330,27 @@ async function scrollToMessage(messageId: string) {
   const key = chatStore.sessionKey(chat.type, chat.id)
   // 先让历史加载的 scrollToBottom nextTick 落定，避免其覆盖定位滚动
   await nextTick()
-  const scrollToRow = (): boolean => {
-    const el = msgContainer.value?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
-    if (!el) return false
-    el.scrollIntoView({ block: 'center' })
-    el.classList.add('msg-highlight')
-    setTimeout(() => el.classList.remove('msg-highlight'), 2200)
-    return true
-  }
-  if (scrollToRow()) return
+  if (scrollRowIntoView(messageId, true)) return
   for (let i = 0; i < 10; i++) {
     const meta = chatStore.historyMeta.get(key)
     if (!meta?.hasMore) break
     await chatStore.loadMoreHistory(chat.type, chat.id, auth.user?.id)
     await nextTick()
-    if (scrollToRow()) return
+    if (scrollRowIntoView(messageId, true)) return
   }
 }
 
-defineExpose({ scrollToBottomIfNear, setHint, scrollToMessage })
+/** 撤回后「重新编辑」：把原内容填回输入框并聚焦（草稿按会话存，不会串到别的会话） */
+function reeditMessage(content: string) {
+  activeText.value = content
+  nextTick(() => {
+    inputEl.value?.focus()
+    const len = content.length
+    inputEl.value?.setSelectionRange(len, len)
+  })
+}
+
+defineExpose({ scrollToBottomIfNear, setHint, scrollToMessage, setPeerTyping })
 
 // ==================== 表情 ====================
 const showEmojiPanel = ref(false)
@@ -352,8 +425,9 @@ function onInputKeydown(e: KeyboardEvent) {
   }
 }
 
-/** 输入变化时检测 @ 触发成员选择（仅群聊），兼容全角 ＠ */
+/** 输入变化时检测 @ 触发成员选择（仅群聊），兼容全角 ＠；顺便给对方一个"正在输入"信号 */
 function onInputChange() {
+  notifyTyping()
   const el = inputEl.value
   if (!el || props.chat?.type !== 'group') {
     mentionOpen.value = false
@@ -493,8 +567,8 @@ function send() {
   }
   chatStore.addMessage(msg, auth.user.id)
   if (!sendWs(msg)) chatStore.setMessageStatus(key, msg.messageId, 'failed')
-  // 只清当前模式的草稿：另一种模式的输入留着，切回来还在
-  activeText.value = ''
+  // 只清当前会话当前模式的草稿：另一种模式、以及别的会话的草稿都留着
+  chatStore.setDraft(key, markdownMode.value ? { markdownText: '' } : { text: '' })
   replyTarget.value = null
   scrollToBottom()
 }
@@ -605,7 +679,7 @@ function openLightbox(url: string) {
             <span class="chat-type-tag" v-if="chat.type === 'group'">群</span>
             <span class="chat-name">{{ chat.name }}</span>
           </div>
-          <span class="chat-sub">{{ chatSub }}</span>
+          <span class="chat-sub" :class="{ typing: peerTyping }">{{ peerTyping ? '正在输入…' : chatSub }}</span>
         </div>
         <div class="header-spacer"></div>
         <button v-if="chat.type === 'group'" class="icon-btn" @click="emit('members')" title="群成员">
@@ -654,10 +728,17 @@ function openLightbox(url: string) {
 
       <div class="chat-messages" ref="msgContainer" @scroll="onMessagesScroll">
         <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
-        <MessageBubble v-for="msg in currentMessages" :key="msg.messageId" :msg="msg"
-          :chat-type="chat.type" :chat-id="chat.id" :chat-name="chat.name"
-          :highlight="highlightKeyword"
-          @reply="startReply" @retry="retryMessage" @image-click="openLightbox" />
+        <template v-for="msg in currentMessages" :key="msg.messageId">
+          <!-- 未读分隔线：打开会话时把"从这条开始是新消息"标出来（定位也用它） -->
+          <div class="unread-divider" v-if="unreadAnchor && msg.messageId === unreadAnchor">
+            <span>以下是新消息</span>
+          </div>
+          <MessageBubble :msg="msg"
+            :chat-type="chat.type" :chat-id="chat.id" :chat-name="chat.name"
+            :highlight="highlightKeyword"
+            @reply="startReply" @retry="retryMessage" @image-click="openLightbox"
+            @reedit="reeditMessage" />
+        </template>
       </div>
 
       <!-- 引用回复横幅 -->
@@ -835,6 +916,31 @@ function openLightbox(url: string) {
   padding: 2px 0;
   user-select: none;
   flex-shrink: 0;
+}
+
+/* 未读分隔线：打开会话时标出"从这里开始是新消息" */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  color: var(--danger, #ef4444);
+  font-size: 12px;
+  user-select: none;
+}
+
+.unread-divider::before,
+.unread-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+/* 对方正在输入：用弱化的文字，别抢消息本身的注意力 */
+.chat-sub.typing {
+  color: var(--primary, #3b82f6);
 }
 
 /* 群公告横幅 */

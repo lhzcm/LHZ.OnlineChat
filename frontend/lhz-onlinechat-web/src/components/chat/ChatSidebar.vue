@@ -190,6 +190,16 @@ function closeSearch() {
 function openSearchResult(r: MessageSearchResult) {
   emit('open-result', r)
 }
+
+const searchInputEl = ref<HTMLInputElement | null>(null)
+
+/** Ctrl/Cmd+K：聚焦侧边栏搜索框（由 ChatLayout 的全局快捷键调用） */
+function focusSearch() {
+  searchInputEl.value?.focus()
+  searchInputEl.value?.select()
+}
+
+defineExpose({ focusSearch })
 </script>
 
 <template>
@@ -252,7 +262,7 @@ function openSearchResult(r: MessageSearchResult) {
         <circle cx="11" cy="11" r="8" />
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
       </svg>
-      <input v-model="searchKeyword" class="search-input" placeholder="搜索消息…" @keydown.enter="runSearch" />
+      <input v-model="searchKeyword" ref="searchInputEl" class="search-input" placeholder="搜索消息…" @keydown.enter="runSearch" />
       <button class="search-go" @click="runSearch" :disabled="searchLoading" title="搜索">搜索</button>
     </div>
 

@@ -93,7 +93,7 @@ function onGroupRobotAdded() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" role="dialog" aria-modal="true" @click.self="emit('close')">
     <div class="modal">
       <h3>{{ props.groupName }} · 群成员 ({{ groupStore.members.length }})</h3>
       <div class="group-id-row">
