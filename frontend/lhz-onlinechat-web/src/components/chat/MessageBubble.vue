@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import Avatar from '@/components/Avatar.vue'
+import ImageMessage from './messages/ImageMessage.vue'
+import MarkdownMessage from './messages/MarkdownMessage.vue'
+import ForwardMessage from './messages/ForwardMessage.vue'
+import TextMessage from './messages/TextMessage.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { useToast } from '@/composables/useToast'
 import { copyText } from '@/utils/clipboard'
-import { forwardItemPreview, parseForwardBundle, type ForwardedItem } from '@/utils/forward'
+import type { ForwardedItem } from '@/utils/forward'
 import { formatMsgTime } from '@/utils/format'
-import { renderMarkdownMessage } from '@/utils/markdown'
 import type { WsMessage, ChatType } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
@@ -44,58 +47,24 @@ const ws = useWebSocketStore()
 
 const mine = Number(props.msg.from) === auth.user?.id
 
-/** 「聊天记录」卡片明细（messageType = 4）：解析失败返回 null，界面退化成占位卡片而不是崩 */
-const forwardItems = computed(() => (
-  props.msg.messageType === 4 ? parseForwardBundle(props.msg.content || '') : null
-))
-
-function onForwardClick() {
+/** 图片点击：多选模式下是勾选，否则放大预览 */
+function onImageClick() {
   if (props.selectMode) {
     emit('toggle-select')
     return
   }
-  emit('open-forward', forwardItems.value || [])
+  emit('image-click', props.msg.content)
 }
 
-/**
- * Markdown 消息（messageType = 3）：内容存的是源文本，渲染前一律消毒。
- * 高亮（@提及 / 搜索关键词）在消毒后的 DOM 上做，见 utils/markdown.ts。
- */
-const renderedMarkdown = computed(() => renderMarkdownMessage(props.msg.content || '', props.highlight))
-
-/** 转义 HTML（防 XSS） */
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+/** 「聊天记录」卡片点击：多选模式下是勾选，否则打开只读明细 */
+function onForwardOpen(items: ForwardedItem[]) {
+  if (props.selectMode) {
+    emit('toggle-select')
+    return
+  }
+  emit('open-forward', items)
 }
 
-/**
- * 渲染消息内容：转义 HTML → 搜索关键词高亮（<mark>）→ @提及高亮。
- * 用占位符先提取 @提及 片段，避免关键词高亮的 split/join 拆坏 mention 标签。
- */
-function renderContent(content: string): string {
-  const esc = escapeHtml(content)
-
-  // 1. 提取 @提及 片段（占位符替换，稍后还原）
-  const mentions: string[] = []
-  const withoutMention = esc.replace(/@([^\s@，。！？!?,]+)/g, (m) => {
-    mentions.push(m)
-    return `\u0000${mentions.length - 1}\u0000`
-  })
-
-  // 2. 搜索关键词高亮（split/join 而非正则，避免特殊字符问题）
-  const kw = escapeHtml(props.highlight?.trim() || '')
-  let html = kw
-    ? withoutMention.split(kw).join(`<mark class="search-mark">${kw}</mark>`)
-    : withoutMention
-
-  // 3. 还原 @提及（若关键词与提及重叠，mark 已包住原文，还原后嵌套正确）
-  html = html.replace(/\u0000(\d+)\u0000/g, (_, i) => `<span class="mention">${mentions[Number(i)]}</span>`)
-  return html
-}
 
 /** 该消息是否提及了当前用户 */
 function isMentioned(msg: WsMessage): boolean {
@@ -260,27 +229,11 @@ onUnmounted(() => {
       </div>
       <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, 'is-forward': msg.messageType === 4, recalled: msg.isDeleted }">
         <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
-        <img v-else-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
-          loading="lazy" @click.stop="selectMode ? emit('toggle-select') : emit('image-click', msg.content)" />
-        <div v-else-if="msg.messageType === 3" class="msg-markdown" v-html="renderedMarkdown"></div>
-        <!-- 「聊天记录」合并转发卡片：独立样式，点击展开只读明细 -->
-        <div v-else-if="msg.messageType === 4" class="msg-forward" @click.stop="onForwardClick">
-          <div class="fwd-head">
-            <span class="fwd-ico">🗂</span>
-            <span class="fwd-title">聊天记录</span>
-            <span class="fwd-count" v-if="forwardItems">{{ forwardItems.length }} 条</span>
-          </div>
-          <div class="fwd-list" v-if="forwardItems">
-            <div class="fwd-line" v-for="(it, i) in forwardItems.slice(0, 3)" :key="i">
-              <span class="fwd-name">{{ it.n || '对方' }}：</span>
-              <span class="fwd-text">{{ forwardItemPreview(it) }}</span>
-            </div>
-            <div class="fwd-more" v-if="forwardItems.length > 3">…共 {{ forwardItems.length }} 条</div>
-          </div>
-          <div class="fwd-broken" v-else>记录无法解析</div>
-          <div class="fwd-foot">点击查看 ›</div>
-        </div>
-        <span v-else v-html="renderContent(msg.content)"></span>
+        <!-- 消息体按类型拆成子组件：文本 / 图片 / Markdown / 聊天记录卡片 -->
+        <ImageMessage v-else-if="msg.messageType === 1" :src="msg.content" @click="onImageClick" />
+        <MarkdownMessage v-else-if="msg.messageType === 3" :content="msg.content" :highlight="highlight" />
+        <ForwardMessage v-else-if="msg.messageType === 4" :content="msg.content" @open="onForwardOpen" />
+        <TextMessage v-else :content="msg.content" :highlight="highlight" />
       </div>
       <div class="msg-actions">
         <button v-if="canReply(msg)" class="msg-recall-btn" @click.stop="startReply(msg)">回复</button>
@@ -474,74 +427,6 @@ onUnmounted(() => {
   max-width: 320px;
 }
 
-.msg-forward {
-  border: 1px solid var(--border, #e5e7eb);
-  border-left: 3px solid var(--primary, #3b82f6);
-  border-radius: 10px;
-  background: var(--bg-panel, #fff);
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.msg-forward:hover {
-  background: var(--bg-hover);
-}
-
-.fwd-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-
-.fwd-count {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: normal;
-  color: var(--text-secondary);
-}
-
-.fwd-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.fwd-line {
-  display: flex;
-  gap: 2px;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.fwd-name {
-  color: var(--text-primary);
-  flex-shrink: 0;
-}
-
-.fwd-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.fwd-more,
-.fwd-broken {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.fwd-foot {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--primary);
-  text-align: right;
-}
 
 /* 多选模式：整行可点、显示勾选框，隐藏悬停操作按钮避免误触 */
 .msg-row.selectable {
@@ -656,13 +541,6 @@ onUnmounted(() => {
   }
 }
 
-.msg-image {
-  max-width: 260px;
-  max-height: 260px;
-  border-radius: 10px;
-  display: block;
-  cursor: pointer;
-}
 
 /* ==================== Markdown 消息（文档块，不是聊天气泡） ==================== */
 /* Markdown 按「文档」渲染：整行铺开的面板，收发方只靠左侧色条区分。
@@ -708,253 +586,6 @@ onUnmounted(() => {
   transform: none;
 }
 
-.msg-markdown {
-  width: 100%;
-  padding: 14px 18px;
-  background: var(--bg-white);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
-  border-radius: 10px;
-  font-size: 14px;
-  line-height: 1.7;
-  word-break: break-word;
-}
-
-/* 自己发出的文档：左侧主色条（不给整块染渐变，读起来正式些） */
-.msg-row.mine .msg-markdown {
-  border-left-color: var(--primary);
-}
-
-.msg-markdown :deep(> :first-child) { margin-top: 0; }
-.msg-markdown :deep(> :last-child) { margin-bottom: 0; }
-
-.msg-markdown :deep(p) {
-  margin: 0 0 9px;
-}
-
-.msg-markdown :deep(strong) {
-  font-weight: 600;
-}
-
-.msg-markdown :deep(del) {
-  color: var(--text-secondary);
-}
-
-.msg-markdown :deep(h1),
-.msg-markdown :deep(h2),
-.msg-markdown :deep(h3),
-.msg-markdown :deep(h4),
-.msg-markdown :deep(h5),
-.msg-markdown :deep(h6) {
-  margin: 16px 0 8px;
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-/* 文档式层级：h1/h2 带分隔线，而不是把字号粗暴放大 */
-.msg-markdown :deep(h1) {
-  font-size: 20px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.msg-markdown :deep(h2) {
-  font-size: 17.5px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
-
-.msg-markdown :deep(h3) {
-  font-size: 15.5px;
-}
-
-.msg-markdown :deep(h4),
-.msg-markdown :deep(h5),
-.msg-markdown :deep(h6) {
-  font-size: 14.5px;
-  color: var(--text-secondary);
-}
-
-.msg-markdown :deep(ul),
-.msg-markdown :deep(ol) {
-  margin: 6px 0 10px;
-  padding-left: 22px;
-}
-
-.msg-markdown :deep(li) {
-  margin: 3px 0;
-}
-
-.msg-markdown :deep(li)::marker {
-  color: var(--text-secondary);
-}
-
-.msg-markdown :deep(blockquote) {
-  margin: 9px 0;
-  padding: 7px 12px;
-  border-left: 3px solid var(--primary-light);
-  background: var(--bg-hover);
-  border-radius: 0 6px 6px 0;
-  color: var(--text-secondary);
-}
-
-/* 行内代码：浅色小色块，与代码块区分开 */
-.msg-markdown :deep(code) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
-  font-size: 12.5px;
-  padding: 1.5px 5px;
-  border-radius: 5px;
-  background: var(--code-inline-bg);
-  color: var(--code-inline-fg);
-}
-
-/* 代码块：深色代码面板 + 等宽 + 横向滚动（长行不换行、也不撑破面板） */
-.msg-markdown :deep(pre) {
-  margin: 10px 0;
-  padding: 12px 14px;
-  background: var(--code-bg);
-  border-radius: 10px;
-  overflow-x: auto;
-  font-size: 12.5px;
-  line-height: 1.65;
-}
-
-.msg-markdown :deep(pre code) {
-  display: block;
-  padding: 0;
-  background: transparent;
-  color: var(--code-fg);
-  font-size: inherit;
-  white-space: pre;
-  tab-size: 4;
-}
-
-/* ---------- 语法高亮（highlight.js 的 .hljs-* 类） ---------- */
-/* 代码面板在浅色/深色两种主题下都是深色，所以 token 配色不跟随主题 */
-.msg-markdown :deep(.hljs-comment),
-.msg-markdown :deep(.hljs-quote) {
-  color: #8b93a3;
-  font-style: italic;
-}
-
-.msg-markdown :deep(.hljs-keyword),
-.msg-markdown :deep(.hljs-selector-tag),
-.msg-markdown :deep(.hljs-literal),
-.msg-markdown :deep(.hljs-doctag) {
-  color: #c792ea;
-}
-
-.msg-markdown :deep(.hljs-string),
-.msg-markdown :deep(.hljs-regexp),
-.msg-markdown :deep(.hljs-addition),
-.msg-markdown :deep(.hljs-attribute) {
-  color: #a5e075;
-}
-
-.msg-markdown :deep(.hljs-number),
-.msg-markdown :deep(.hljs-symbol),
-.msg-markdown :deep(.hljs-bullet),
-.msg-markdown :deep(.hljs-variable),
-.msg-markdown :deep(.hljs-template-variable) {
-  color: #f78c6c;
-}
-
-.msg-markdown :deep(.hljs-title),
-.msg-markdown :deep(.hljs-name),
-.msg-markdown :deep(.hljs-section),
-.msg-markdown :deep(.hljs-selector-id),
-.msg-markdown :deep(.hljs-selector-class) {
-  color: #82aaff;
-}
-
-.msg-markdown :deep(.hljs-built_in),
-.msg-markdown :deep(.hljs-type),
-.msg-markdown :deep(.hljs-attr),
-.msg-markdown :deep(.hljs-params) {
-  color: #ffcb6b;
-}
-
-.msg-markdown :deep(.hljs-meta),
-.msg-markdown :deep(.hljs-link) {
-  color: #7f9cd6;
-}
-
-.msg-markdown :deep(.hljs-deletion) {
-  color: #ff8a80;
-}
-
-.msg-markdown :deep(.hljs-emphasis) {
-  font-style: italic;
-}
-
-.msg-markdown :deep(.hljs-strong) {
-  font-weight: 600;
-}
-
-/* 深色底上的滚动条别太扎眼 */
-.msg-markdown :deep(pre::-webkit-scrollbar) {
-  height: 8px;
-}
-
-.msg-markdown :deep(pre::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.22);
-  border-radius: 4px;
-}
-
-.msg-markdown :deep(pre::-webkit-scrollbar-track) {
-  background: transparent;
-}
-
-.msg-markdown :deep(table) {
-  border-collapse: collapse;
-  margin: 10px 0;
-  font-size: 13px;
-}
-
-.msg-markdown :deep(th),
-.msg-markdown :deep(td) {
-  border: 1px solid var(--border);
-  padding: 5px 10px;
-}
-
-.msg-markdown :deep(th) {
-  background: var(--bg-hover);
-  font-weight: 600;
-}
-
-.msg-markdown :deep(a) {
-  color: var(--primary);
-  text-decoration: none;
-  border-bottom: 1px solid var(--primary-light);
-}
-
-.msg-markdown :deep(a:hover) {
-  border-bottom-color: var(--primary);
-}
-
-.msg-markdown :deep(hr) {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 14px 0;
-}
-
-/* 高亮节点（@提及 / 搜索关键词）同样是脚本注入的，必须 :deep() */
-.msg-markdown :deep(.mention) {
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.msg-markdown :deep(.search-mark) {
-  background: var(--search-mark-bg, #ffd54d);
-  color: #333;
-  border-radius: 3px;
-  padding: 0 2px;
-}
-
-html[data-theme='dark'] .msg-markdown :deep(.search-mark) {
-  background: #b8860b;
-  color: #fff;
-}
 
 /* 文本消息的 @提及 / 搜索关键词高亮同样由 v-html 注入（renderContent 拼的 span），
    原先写成裸 .mention / .search-mark 时带了 scope 属性、永远匹配不上 —— 顺手修掉。 */
