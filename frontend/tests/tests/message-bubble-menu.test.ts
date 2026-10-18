@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useMessageMenu } from '@/composables/useMessageMenu'
 import type { ChatMessage } from '@/stores/chat'
 
 /**
@@ -45,6 +46,8 @@ function mountBubble(m: ChatMessage = msg()) {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  // 菜单状态是模块级单例：每个用例前清掉，避免跨用例串状态
+  useMessageMenu().closeMenu(true)
 })
 
 describe('MessageBubble 操作菜单', () => {

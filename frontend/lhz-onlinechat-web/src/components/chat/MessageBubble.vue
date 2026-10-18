@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import ImageMessage from './messages/ImageMessage.vue'
 import MarkdownMessage from './messages/MarkdownMessage.vue'
@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { useToast } from '@/composables/useToast'
+import { useMessageMenu } from '@/composables/useMessageMenu'
 import { copyText } from '@/utils/clipboard'
 import type { ForwardedItem } from '@/utils/forward'
 import { formatMsgTime } from '@/utils/format'
@@ -112,35 +113,26 @@ function recallMessage(msg: WsMessage) {
 
 // ==================== 操作菜单（右键 / 移动端长按） ====================
 const { toast } = useToast()
-const menu = ref<{ x: number; y: number } | null>(null)
+// 菜单状态是**全局单例**：每条消息各持一份时，右键 A 再右键 B 会叠出两个菜单
+const { position: menuPosition, openMenu, closeMenu, isMenuOpen } = useMessageMenu()
 let longPressTimer: number | null = null
 
-/** 菜单大概宽高，用于把浮层限制在视口内 */
-const MENU_W = 132
-const MENU_H = 168
-
-/** 打开时间：长按后浏览器会补发一次合成 click，别让它刚打开就被点关 */
-let menuOpenedAt = 0
-
-function openMenu(x: number, y: number) {
-  menuOpenedAt = Date.now()
-  menu.value = {
-    x: Math.max(8, Math.min(x, window.innerWidth - MENU_W - 8)),
-    y: Math.max(8, Math.min(y, window.innerHeight - MENU_H - 8))
-  }
-}
+/** 菜单定位（只有 isMenuOpen 为真时才有意义；关闭时返回空对象） */
+const menuStyle = computed(() => (menuPosition.value
+  ? { left: `${menuPosition.value.x}px`, top: `${menuPosition.value.y}px` }
+  : {}))
 
 function onContextMenu(e: MouseEvent) {
   // 移动端长按浏览器也会派发 contextmenu，这里统一处理（长按另有 touch 兜底）
   e.preventDefault()
-  openMenu(e.clientX, e.clientY)
+  openMenu(props.msg.messageId, e.clientX, e.clientY)
 }
 
 function onTouchStart(e: TouchEvent) {
   const t = e.touches[0]
   if (!t) return
   cancelLongPress()
-  longPressTimer = window.setTimeout(() => openMenu(t.clientX, t.clientY), 500)
+  longPressTimer = window.setTimeout(() => openMenu(props.msg.messageId, t.clientX, t.clientY), 500)
 }
 
 function cancelLongPress() {
@@ -174,28 +166,13 @@ function onRowTouchStart(e: TouchEvent) {
 async function copyMessage(msg: ChatMessage) {
   const ok = await copyText(msg.content || '')
   toast(ok ? '已复制' : '复制失败，请手动选中文本复制')
-  menu.value = null
+  closeMenu(true)
 }
 
-/** 关闭菜单：点别处、Esc、滚动都关（否则浮层会留在原地挡住消息） */
-function closeMenu() {
-  // 长按（touch）后浏览器会补发一次合成 click：刚打开 300ms 内忽略，否则菜单一闪就没了
-  if (Date.now() - menuOpenedAt < 300) return
-  menu.value = null
-}
-
-function onDocKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') closeMenu()
-}
-
-onMounted(() => {
-  document.addEventListener('click', closeMenu)
-  document.addEventListener('keydown', onDocKeydown)
-})
 onUnmounted(() => {
-  document.removeEventListener('click', closeMenu)
-  document.removeEventListener('keydown', onDocKeydown)
   cancelLongPress()
+  // 只关自己的菜单：别的消息的菜单不归这里管
+  if (isMenuOpen(props.msg.messageId)) closeMenu(true)
 })
 </script>
 
@@ -210,13 +187,13 @@ onUnmounted(() => {
     <span v-if="selectMode" class="msg-check" :class="{ checked: selected }">{{ selected ? '✓' : '' }}</span>
 
     <!-- 操作菜单：右键或移动端长按唤出（复制/引用/撤回/重新编辑/多选） -->
-    <div class="ctx-menu" v-if="menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
+    <div class="ctx-menu" v-if="isMenuOpen(msg.messageId)" :style="menuStyle" @click.stop>
       <button class="ctx-item" @click="copyMessage(msg)">复制</button>
-      <button class="ctx-item" v-if="canReply(msg)" @click="startReply(msg); closeMenu()">引用</button>
-      <button class="ctx-item" v-if="canRecall(msg)" @click="recallMessage(msg); closeMenu()">撤回</button>
+      <button class="ctx-item" v-if="canReply(msg)" @click="startReply(msg); closeMenu(true)">引用</button>
+      <button class="ctx-item" v-if="canRecall(msg)" @click="recallMessage(msg); closeMenu(true)">撤回</button>
       <button class="ctx-item" v-if="mine && msg.isDeleted && msg.content"
-        @click="emit('reedit', msg.content); closeMenu()">重新编辑</button>
-      <button class="ctx-item" v-if="!msg.isDeleted" @click="emit('select'); closeMenu()">多选</button>
+        @click="emit('reedit', msg.content); closeMenu(true)">重新编辑</button>
+      <button class="ctx-item" v-if="!msg.isDeleted" @click="emit('select'); closeMenu(true)">多选</button>
     </div>
     <Avatar class="msg-avatar" :name="msg.senderName || chatName" :url="msg.senderAvatar" size="sm" />
     <div class="msg-body">

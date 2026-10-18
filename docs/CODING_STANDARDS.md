@@ -170,6 +170,7 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - 网络请求集中在 `api/`，状态在 `stores/`；组件不直接 `axios`。
 - **生命周期必须配对**：`ws.onMessage(...)` / `onStatusChange(...)` 返回取消订阅函数，组件卸载（`onUnmounted`）时**必须调用**；`window.addEventListener` 要配 `removeEventListener`。SPA 内部跳转不会刷新页面，漏清理会导致"换账号后回调叠加、串号"。
 - 主动断开要能抑制自动重连（参考 `websocket.ts` 的 `manualClose`），重连耗尽要有 UI 出口而不是只打 console。
+- **列表项里的浮层状态必须是单例**：消息右键菜单、Toast 这类「同一时刻只该存在一个」的浮层，状态放模块级单例（composables/useMessageMenu.ts、useToast.ts），**不要**放进每个列表项组件 —— 每个气泡各持一份 menu 时会「右键几条就叠几个弹窗」；监听器同理，只装一份（上千条消息时就是上千个 document 监听）。
 - **对话页按职责分层，别再堆回 ChatArea**：ChatArea（编排：历史分页、滚动锚点、未读分隔线、多选转发、公告、lightbox）→ ChatHeader（头部/正在输入）→ ChatSearchPanel（会话内搜索，防抖与分页在自己身上）→ MessageComposer（草稿/输入/表情/@/图片/引用/发送/提示）→ composer/{EmojiPanel,MentionPanel}（纯展示，只 emit pick）。发送原语统一走 utils/messageSend.ts，输入区对外只暴露 eply/reedit/setHint/focus/retry，发送成功只 emit('sent') 由父级滚动。
 - **消息内容按类型拆成独立组件**：`components/chat/messages/{Text,Image,Markdown,Forward}Message.vue`，样式随组件走；`MessageBubble` 只留行级职责（头像/发送者/时间/已读/操作菜单/多选）。新增内容类型时加一个 `XxxMessage.vue` 并在 `MessageBubble` 里加一支 `v-else-if`，**不要**把渲染逻辑继续堆在 `MessageBubble` 里。文本渲染（转义 + @提及 + 关键词高亮）是纯函数 `utils/messageText.ts`，单独测；`v-html` 内容的后代选择器一律 `:deep()`（注入的节点没有 scoped 属性）。
 - 竞态：切会话/搜索这类会并发发请求的地方，用请求序号或"在途标记"防止旧响应覆盖新数据；列表合并避免每次全量 `sort`（大多是新消息追加）。
