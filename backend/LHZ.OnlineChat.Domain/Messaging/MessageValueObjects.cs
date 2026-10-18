@@ -14,7 +14,16 @@ public enum MessageKind
     /// 存的是**源文本**而不是渲染后的 HTML：渲染规则与 XSS 消毒属于表现层，
     /// 入库 HTML 会让转义口径同时散落在服务端与客户端，且改一次渲染规则就要洗历史数据。
     /// </summary>
-    Markdown = 3
+    Markdown = 3,
+
+    /// <summary>
+    /// 「聊天记录」合并转发卡片（4 是新增值，历史库表里不存在）。
+    /// content 是一段 JSON 快照（结构见 Application/Messaging/ForwardBundle.cs）：
+    /// 一次转发 = 一条消息 = 一个卡片，里面最多 20 条只读明细。
+    /// 快照而不是引用：原消息可能被撤回/删除，且引用会让历史第一页多出一次 JOIN；
+    /// 快照也让 Redis 最近消息缓存无需改动（缓存存的就是 content 原样）。
+    /// </summary>
+    Forward = 4
 }
 
 /// <summary>

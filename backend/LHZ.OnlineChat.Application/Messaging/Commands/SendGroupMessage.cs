@@ -64,6 +64,9 @@ internal sealed class SendGroupMessageHandler : IRequestHandler<SendGroupMessage
 
     public async Task<SendMessageResult> Handle(SendGroupMessageCommand command, CancellationToken ct)
     {
+        // 「聊天记录」合并转发：content 是 JSON 快照，结构校验放在应用层（Domain 不碰 JSON）
+        if (command.Kind == MessageKind.Forward) ForwardBundle.EnsureValid(command.Content);
+
         // 幂等：重试同一条消息时按 ClientMessageId 直接当成功返回（理由同私聊）
         if (!string.IsNullOrWhiteSpace(command.ClientMessageId))
         {

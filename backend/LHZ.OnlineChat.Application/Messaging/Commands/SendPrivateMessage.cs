@@ -86,6 +86,9 @@ internal sealed class SendPrivateMessageHandler : IRequestHandler<SendPrivateMes
 
     public async Task<SendMessageResult> Handle(SendPrivateMessageCommand command, CancellationToken ct)
     {
+        // 「聊天记录」合并转发：content 是 JSON 快照，结构校验放在应用层（Domain 不碰 JSON）
+        if (command.Kind == MessageKind.Forward) ForwardBundle.EnsureValid(command.Content);
+
         // 幂等：客户端重试同一条消息（网络抖动、乐观发送超时重发）时，
         // ClientMessageId 相同就直接当成功返回，不再插一条。
         // 之前只在前端按 messageId 去重，服务端照样插入重复行 —— 刷新一次就现形。

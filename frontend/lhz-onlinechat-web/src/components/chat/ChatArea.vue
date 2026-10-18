@@ -2,6 +2,8 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import MessageBubble from './MessageBubble.vue'
+import ForwardModal from './modals/ForwardModal.vue'
+import ForwardViewerModal from './modals/ForwardViewerModal.vue'
 import { emojiGroups } from '@/constants/emojis'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
@@ -11,9 +13,13 @@ import { useWebSocketStore } from '@/stores/websocket'
 import { messageApi } from '@/api/message'
 import { MAX_MESSAGE_LENGTH } from '@/constants/limits'
 import { useToast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
+import {
+  MAX_FORWARD_MESSAGES, buildBatchCopyText, buildForwardBundle, messagePreview,
+  type ForwardTarget, type ForwardedItem
+} from '@/utils/forward'
 import { formatMsgTime } from '@/utils/format'
 import { compressChatImage } from '@/utils/image'
-import { stripMarkdown } from '@/utils/markdown'
 import type { WsMessage, ChatType, GroupMemberInfo, MessageSearchResult } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
@@ -294,6 +300,8 @@ watch(() => props.chat, (chat, prev) => {
   replyTarget.value = null
   sendHint.value = ''
   clearSearch()
+  // 切会话退出多选：选中的是上一个会话的消息，留着只会误操作
+  exitSelectMode()
   // 输入提示属于上一个会话，切走就清；节流计时也重置，新会话第一条消息立刻能提示
   peerTyping.value = false
   if (peerTypingTimer) {
@@ -382,8 +390,14 @@ function onDocClick(e: MouseEvent) {
     showEmojiPanel.value = false
   }
 }
-onMounted(() => document.addEventListener('click', onDocClick))
-onUnmounted(() => document.removeEventListener('click', onDocClick))
+onMounted(() => {
+  document.addEventListener('click', onDocClick)
+  window.addEventListener('keydown', onSelectKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+  window.removeEventListener('keydown', onSelectKeydown)
+})
 
 // ==================== @ 提及 ====================
 const mentionOpen = ref(false)
@@ -510,6 +524,113 @@ function startReply(msg: WsMessage) {
     senderName: msg.senderName || '对方'
   }
   inputEl.value?.focus()
+}
+
+// ==================== 多选 / 批量转发 ====================
+const selectMode = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
+const forwardOpen = ref(false)
+
+/** 当前会话里被选中的消息（按列表顺序，复制/转发都保持上下文顺序） */
+const selectedMessages = computed(() => currentMessages.value.filter(m => selectedIds.value.has(m.messageId)))
+
+/** 转发目标：会话 + 好友 + 群，按 key 去重（没聊过的好友也要能转） */
+const forwardTargets = computed<ForwardTarget[]>(() => {
+  const out: ForwardTarget[] = []
+  const seen = new Set<string>()
+  const push = (t: ForwardTarget) => {
+    const key = `${t.type}_${t.id}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(t)
+  }
+  for (const s of chatStore.sessions) push({ type: s.type, id: s.id, name: s.name, avatar: s.avatar })
+  for (const f of friendStore.friends) {
+    push({ type: 'private', id: f.userId, name: f.remark || f.nickname, avatar: f.avatar })
+  }
+  for (const g of groupStore.groups) push({ type: 'group', id: g.id, name: g.name, avatar: g.avatar })
+  return out
+})
+
+/** 从某条消息进入多选模式（右键菜单里的「多选」） */
+function enterSelectMode(msg: ChatMessage) {
+  selectMode.value = true
+  selectedIds.value = new Set([msg.messageId])
+}
+
+function toggleSelect(msg: ChatMessage) {
+  const next = new Set(selectedIds.value)
+  if (next.has(msg.messageId)) {
+    next.delete(msg.messageId)
+  } else if (next.size >= MAX_FORWARD_MESSAGES) {
+    toast(`一次最多选 ${MAX_FORWARD_MESSAGES} 条`)
+    return
+  } else {
+    next.add(msg.messageId)
+  }
+  selectedIds.value = next
+}
+
+function exitSelectMode() {
+  selectMode.value = false
+  selectedIds.value = new Set()
+  forwardOpen.value = false
+}
+
+/** 批量复制：每条一行「[发送者] 内容」 */
+async function copySelected() {
+  const list = selectedMessages.value
+  if (list.length === 0) return
+  const ok = await copyText(buildBatchCopyText(list))
+  toast(ok ? `已复制 ${list.length} 条` : '复制失败，请手动选中文本复制')
+}
+
+/**
+ * 批量转发：一次转发 = 一条「聊天记录」卡片消息（messageType = 4），所有目标共用同一份快照。
+ * 卡片是只读快照，原消息后续被撤回也不影响已发出的卡片。
+ */
+function doForward(targets: ForwardTarget[]) {
+  const list = selectedMessages.value
+  if (!auth.user || list.length === 0) return
+  const bundle = buildForwardBundle(list)
+  let sent = 0
+  for (const target of targets) {
+    const isGroup = target.type === 'group'
+    const msg: ChatMessage = {
+      type: isGroup ? 'group_message' : 'private_message',
+      from: String(auth.user.id),
+      to: String(target.id),
+      content: bundle,
+      timestamp: Date.now(),
+      messageId: genId(),
+      messageType: 4,
+      senderName: auth.user.nickname,
+      senderAvatar: auth.user.avatar,
+      mentions: isGroup ? [] : undefined,
+      status: 'sending'
+    }
+    chatStore.addMessage(msg, auth.user.id)
+    if (sendWs(msg)) sent++
+    else chatStore.setMessageStatus(chatStore.sessionKey(target.type, target.id), msg.messageId, 'failed')
+  }
+  forwardOpen.value = false
+  exitSelectMode()
+  toast(sent === targets.length
+    ? `已转发 ${list.length} 条记录到 ${targets.length} 个会话`
+    : `已转发 ${sent}/${targets.length} 个会话（其余发送失败，可在目标会话里重试）`)
+}
+
+/** 打开「聊天记录」卡片（只读明细） */
+const forwardViewerItems = ref<ForwardedItem[] | null>(null)
+
+function openForwardViewer(items: ForwardedItem[]) {
+  forwardViewerItems.value = items
+}
+
+/** 多选模式下 Esc 退出（弹窗打开时交给弹窗自己处理） */
+function onSelectKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !selectMode.value || forwardOpen.value) return
+  exitSelectMode()
 }
 
 // ==================== 发送 ====================
@@ -710,7 +831,7 @@ function openLightbox(url: string) {
         <button v-for="r in searchResults" :key="r.messageId || `${r.sessionId}-${r.sentAt}`"
           class="search-result-item" @click="locateSearchResult(r)">
           <span class="contact-name">{{ r.senderName }}</span>
-          <span class="search-content">{{ r.messageType === 3 ? stripMarkdown(r.content) : r.content }}</span>
+          <span class="search-content">{{ messagePreview(r.content, r.messageType) }}</span>
           <span class="search-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
         </button>
         <div class="search-state" v-if="searching">搜索中…</div>
@@ -726,6 +847,14 @@ function openLightbox(url: string) {
         <span class="announce-text">{{ currentAnnouncement }}</span>
       </div>
 
+      <!-- 多选工具条：批量转发 / 复制 -->
+      <div class="select-bar" v-if="selectMode">
+        <span class="select-count">已选 {{ selectedIds.size }} 条<span class="select-max">（最多 {{ MAX_FORWARD_MESSAGES }} 条）</span></span>
+        <button class="btn btn-sm btn-ghost" :disabled="selectedIds.size === 0" @click="copySelected">复制</button>
+        <button class="btn btn-sm btn-primary" :disabled="selectedIds.size === 0" @click="forwardOpen = true">转发</button>
+        <button class="btn btn-sm btn-ghost" @click="exitSelectMode">取消</button>
+      </div>
+
       <div class="chat-messages" ref="msgContainer" @scroll="onMessagesScroll">
         <div class="history-load-hint" v-if="historyHint">{{ historyHint }}</div>
         <template v-for="msg in currentMessages" :key="msg.messageId">
@@ -736,8 +865,10 @@ function openLightbox(url: string) {
           <MessageBubble :msg="msg"
             :chat-type="chat.type" :chat-id="chat.id" :chat-name="chat.name"
             :highlight="highlightKeyword"
+            :select-mode="selectMode" :selected="selectedIds.has(msg.messageId)"
             @reply="startReply" @retry="retryMessage" @image-click="openLightbox"
-            @reedit="reeditMessage" />
+            @reedit="reeditMessage" @select="enterSelectMode(msg)" @toggle-select="toggleSelect(msg)"
+            @open-forward="openForwardViewer" />
         </template>
       </div>
 
@@ -800,6 +931,14 @@ function openLightbox(url: string) {
     </template>
 
     <!-- 图片放大预览 -->
+    <!-- 转发目标选择 -->
+    <ForwardModal v-if="forwardOpen" :targets="forwardTargets" :count="selectedIds.size"
+      @confirm="doForward" @close="forwardOpen = false" />
+
+    <!-- 「聊天记录」卡片查看器 -->
+    <ForwardViewerModal v-if="forwardViewerItems" :items="forwardViewerItems"
+      @close="forwardViewerItems = null" />
+
     <div class="lightbox" v-if="lightboxUrl" @click="lightboxUrl = ''">
       <img :src="lightboxUrl" alt="图片预览" />
       <span class="lightbox-close">✕ 点击任意处关闭</span>
@@ -916,6 +1055,28 @@ function openLightbox(url: string) {
   padding: 2px 0;
   user-select: none;
   flex-shrink: 0;
+}
+
+/* 多选工具条：紧贴消息列表上方 */
+.select-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--bg-hover);
+  border-top: 1px solid var(--border, #e5e7eb);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.select-count {
+  margin-right: auto;
+  color: var(--text-primary);
+}
+
+.select-max {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 /* 未读分隔线：打开会话时标出"从这里开始是新消息" */

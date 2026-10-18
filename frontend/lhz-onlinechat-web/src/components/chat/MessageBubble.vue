@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { useToast } from '@/composables/useToast'
 import { copyText } from '@/utils/clipboard'
+import { forwardItemPreview, parseForwardBundle, type ForwardedItem } from '@/utils/forward'
 import { formatMsgTime } from '@/utils/format'
 import { renderMarkdownMessage } from '@/utils/markdown'
 import type { WsMessage, ChatType } from '@/types'
@@ -18,6 +19,10 @@ const props = defineProps<{
   chatName: string
   /** 搜索高亮关键词（会话内搜索定位时传入） */
   highlight?: string
+  /** 多选模式：显示勾选框，点击整行切换选中（此时不弹右键菜单、图片不放大） */
+  selectMode?: boolean
+  /** 该消息是否已选中 */
+  selected?: boolean
 }>()
 const emit = defineEmits<{
   reply: [msg: WsMessage]
@@ -25,6 +30,12 @@ const emit = defineEmits<{
   'image-click': [url: string]
   /** 撤回后重新编辑：把原内容交回输入框 */
   reedit: [content: string]
+  /** 从该条消息进入多选模式 */
+  select: []
+  /** 多选模式下切换选中 */
+  'toggle-select': []
+  /** 打开「聊天记录」卡片（转发消息） */
+  'open-forward': [items: ForwardedItem[]]
 }>()
 
 const auth = useAuthStore()
@@ -32,6 +43,19 @@ const chatStore = useChatStore()
 const ws = useWebSocketStore()
 
 const mine = Number(props.msg.from) === auth.user?.id
+
+/** 「聊天记录」卡片明细（messageType = 4）：解析失败返回 null，界面退化成占位卡片而不是崩 */
+const forwardItems = computed(() => (
+  props.msg.messageType === 4 ? parseForwardBundle(props.msg.content || '') : null
+))
+
+function onForwardClick() {
+  if (props.selectMode) {
+    emit('toggle-select')
+    return
+  }
+  emit('open-forward', forwardItems.value || [])
+}
 
 /**
  * Markdown 消息（messageType = 3）：内容存的是源文本，渲染前一律消毒。
@@ -157,6 +181,27 @@ function cancelLongPress() {
   }
 }
 
+/**
+ * 行级事件包装。
+ *
+ * 注意：**不能**在模板里写 `@contextmenu="selectMode ? undefined : onContextMenu"` ——
+ * 三元里的裸函数引用会被编译成 `$event => (条件 ? undefined : fn)`，只是返回函数、
+ * 从不调用，表现就是"右键完全没反应"（构建和类型检查都发现不了）。
+ */
+function onRowClick() {
+  if (props.selectMode) emit('toggle-select')
+}
+
+function onRowContextMenu(e: MouseEvent) {
+  if (props.selectMode) return
+  onContextMenu(e)
+}
+
+function onRowTouchStart(e: TouchEvent) {
+  if (props.selectMode) return
+  onTouchStart(e)
+}
+
 async function copyMessage(msg: ChatMessage) {
   const ok = await copyText(msg.content || '')
   toast(ok ? '已复制' : '复制失败，请手动选中文本复制')
@@ -186,15 +231,23 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="msg-row" :class="{ mine, 'is-markdown-msg': msg.messageType === 3 && !msg.isDeleted }" :data-mid="msg.messageId"
-    @contextmenu="onContextMenu" @touchstart.passive="onTouchStart" @touchend="cancelLongPress" @touchmove="cancelLongPress">
-    <!-- 操作菜单：右键或移动端长按唤出（复制/引用/撤回/重新编辑） -->
+  <div class="msg-row"
+    :class="{ mine, 'is-markdown-msg': msg.messageType === 3 && !msg.isDeleted, selectable: selectMode, selected }"
+    :data-mid="msg.messageId"
+    @contextmenu="onRowContextMenu"
+    @click="onRowClick"
+    @touchstart.passive="onRowTouchStart" @touchend="cancelLongPress" @touchmove="cancelLongPress">
+    <!-- 多选模式的勾选框 -->
+    <span v-if="selectMode" class="msg-check" :class="{ checked: selected }">{{ selected ? '✓' : '' }}</span>
+
+    <!-- 操作菜单：右键或移动端长按唤出（复制/引用/撤回/重新编辑/多选） -->
     <div class="ctx-menu" v-if="menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <button class="ctx-item" @click="copyMessage(msg)">复制</button>
       <button class="ctx-item" v-if="canReply(msg)" @click="startReply(msg); closeMenu()">引用</button>
       <button class="ctx-item" v-if="canRecall(msg)" @click="recallMessage(msg); closeMenu()">撤回</button>
       <button class="ctx-item" v-if="mine && msg.isDeleted && msg.content"
         @click="emit('reedit', msg.content); closeMenu()">重新编辑</button>
+      <button class="ctx-item" v-if="!msg.isDeleted" @click="emit('select'); closeMenu()">多选</button>
     </div>
     <Avatar class="msg-avatar" :name="msg.senderName || chatName" :url="msg.senderAvatar" size="sm" />
     <div class="msg-body">
@@ -205,11 +258,28 @@ onUnmounted(() => {
         <span class="reply-sender">{{ msg.replySender || '引用' }}</span>
         <span class="reply-text">{{ msg.replyContent }}</span>
       </div>
-      <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, recalled: msg.isDeleted }">
+      <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, 'is-forward': msg.messageType === 4, recalled: msg.isDeleted }">
         <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
         <img v-else-if="msg.messageType === 1" :src="msg.content" class="msg-image" alt="图片"
-          loading="lazy" @click.stop="emit('image-click', msg.content)" />
+          loading="lazy" @click.stop="selectMode ? emit('toggle-select') : emit('image-click', msg.content)" />
         <div v-else-if="msg.messageType === 3" class="msg-markdown" v-html="renderedMarkdown"></div>
+        <!-- 「聊天记录」合并转发卡片：独立样式，点击展开只读明细 -->
+        <div v-else-if="msg.messageType === 4" class="msg-forward" @click.stop="onForwardClick">
+          <div class="fwd-head">
+            <span class="fwd-ico">🗂</span>
+            <span class="fwd-title">聊天记录</span>
+            <span class="fwd-count" v-if="forwardItems">{{ forwardItems.length }} 条</span>
+          </div>
+          <div class="fwd-list" v-if="forwardItems">
+            <div class="fwd-line" v-for="(it, i) in forwardItems.slice(0, 3)" :key="i">
+              <span class="fwd-name">{{ it.n || '对方' }}：</span>
+              <span class="fwd-text">{{ forwardItemPreview(it) }}</span>
+            </div>
+            <div class="fwd-more" v-if="forwardItems.length > 3">…共 {{ forwardItems.length }} 条</div>
+          </div>
+          <div class="fwd-broken" v-else>记录无法解析</div>
+          <div class="fwd-foot">点击查看 ›</div>
+        </div>
         <span v-else v-html="renderContent(msg.content)"></span>
       </div>
       <div class="msg-actions">
@@ -393,6 +463,120 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 260px;
+}
+
+/* 「聊天记录」转发卡片：不是气泡，是一张可点的卡（独立配色 + 左侧强调条） */
+.msg-bubble.is-forward {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  max-width: 320px;
+}
+
+.msg-forward {
+  border: 1px solid var(--border, #e5e7eb);
+  border-left: 3px solid var(--primary, #3b82f6);
+  border-radius: 10px;
+  background: var(--bg-panel, #fff);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.msg-forward:hover {
+  background: var(--bg-hover);
+}
+
+.fwd-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.fwd-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--text-secondary);
+}
+
+.fwd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fwd-line {
+  display: flex;
+  gap: 2px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.fwd-name {
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.fwd-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fwd-more,
+.fwd-broken {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.fwd-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--primary);
+  text-align: right;
+}
+
+/* 多选模式：整行可点、显示勾选框，隐藏悬停操作按钮避免误触 */
+.msg-row.selectable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.msg-row.selectable .msg-actions {
+  display: none;
+}
+
+.msg-row.selected {
+  background: var(--bg-active, rgba(59, 130, 246, 0.1));
+  border-radius: 8px;
+}
+
+.msg-check {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 50%;
+  font-size: 12px;
+  color: var(--primary);
+  background: var(--bg-panel, #fff);
+}
+
+.msg-check.checked {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
 }
 
 /* 操作菜单（右键 / 长按）：固定定位到指针处，避免被气泡或列表裁掉 */
