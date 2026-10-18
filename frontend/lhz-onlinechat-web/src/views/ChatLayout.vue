@@ -82,6 +82,7 @@ import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { useToast } from '@/composables/useToast'
 import { inDnd, showDesktopNotify } from '@/composables/useNotify'
+import { messagePreview } from '@/utils/forward'
 import { decideIncomingAction } from '@/utils/unread'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
 import RobotManagerModal from '@/components/chat/modals/RobotManagerModal.vue'
@@ -643,7 +644,8 @@ function handleWsMessage(msg: WsMessage) {
     const title = isGroup
       ? `群消息 · ${msg.senderName || ''}`
       : msg.senderName || '新消息'
-    showDesktopNotify(title, msg.content, { type: sType, id: sId })
+    // 转发/图片的 content 不是给人读的，通知正文同样要过 messagePreview
+    showDesktopNotify(title, messagePreview(msg.content, msg.messageType), { type: sType, id: sId })
 
     // 会话行还不存在（对方第一次发消息，或会话被 MAX_SESSIONS 淘汰）：
     // 让服务端补一行，否则会话列表里既没有这一行，红点也没处挂。

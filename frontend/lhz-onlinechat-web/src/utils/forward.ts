@@ -85,6 +85,8 @@ export function parseForwardBundle(content: string): ForwardedItem[] | null {
 /** 会话列表 / 搜索结果里的单行预览：转发的聊天记录不展示 JSON */
 export function messagePreview(content: string, messageType: number): string {
   if (messageType === 4) return '[聊天记录]'
+  if (messageType === 1) return '[图片]'
+  if (messageType === 2) return '[文件]'
   if (messageType === 3) return stripMarkdown(content)
   return content
 }

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch, reactive } from 'vue'
 import type { SessionInfo, ChatType, WsMessage } from '@/types'
 import { messageApi } from '@/api/message'
+import { messagePreview } from '@/utils/forward'
 
 /** 乐观发送状态：sending=已上屏待服务端确认，sent=服务端已回显，failed=未写入连接（可重试） */
 export type MessageStatus = 'sending' | 'sent' | 'failed'
@@ -182,7 +183,7 @@ export const useChatStore = defineStore('chat', () => {
       if (idx >= 0) {
         sessions.value[idx] = {
           ...sessions.value[idx],
-          lastMessage: msg.content,
+          lastMessage: messagePreview(msg.content, msg.messageType),
           lastTime: new Date(msg.timestamp).toISOString()
         }
       }

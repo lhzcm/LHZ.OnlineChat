@@ -216,6 +216,8 @@ export interface SessionInfo {
   name: string
   avatar: string | null
   lastMessage: string
+  /** 最后一条消息的类型（0 文本 / 1 图片 / 3 Markdown / 4 聊天记录），用于生成预览 */
+  lastMessageType?: number
   lastTime: string
   unreadCount: number
   isPinned: boolean

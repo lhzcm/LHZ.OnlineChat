@@ -179,7 +179,7 @@ internal sealed class DoSomethingHandler : IRequestHandler<DoSomethingCommand, A
 - **草稿与未读锚点都在 chat store 里**：草稿按 `sessionKey` 存（`drafts`，普通/Markdown 两份 + 模式），未读分隔线存 `unreadAnchors`（打开会话时把"尾部 N 条未读"换算成第一条的消息 ID）。**不要在组件里另起一份本地状态** —— 那正是"切会话草稿串了 / 分隔线不消失"的来源。
 - **输入中提示**（`typing`）只做转发、不落库：客户端 3 秒节流发帧，收到方只在**当前会话**显示、4 秒无新帧自动消失；`typing` 帧必须在 `handleWsMessage` 里**提前 return**，绝不能流进 `addMessage`（否则会变成一条空消息）。
 - **弹窗键盘支持是全局的**：`Esc` 关闭与 Tab 焦点锁定由 `ChatLayout` 的 `onGlobalKeydown` 统一处理（按 `.modal-overlay` 找当前弹窗），弹窗组件根元素统一带 `role="dialog" aria-modal="true"` —— 新加弹窗照抄这两个属性即可，不用各自实现键盘逻辑。
-- **聊天记录（合并转发）是 `messageType=4` 的 JSON 快照**：一次转发 = 一条消息 = 一张卡片。打包/解析/预览都在 `utils/forward.ts`（`buildForwardBundle` / `parseForwardBundle` / `messagePreview`），上限常量必须与服务端 `ForwardBundle`（Application）一致 —— 服务端会拒收超限或结构非法的载荷并回 `message_failed`。卡片是**只读快照**（原消息被撤回也不变），不要改成"引用原消息"；渲染走 `ForwardViewerModal`（Markdown 消毒、图片地址白名单）。会话列表与搜索结果的预览必须走 `messagePreview`，别把 JSON 打到界面上。
+- **聊天记录（合并转发）是 `messageType=4` 的 JSON 快照**：一次转发 = 一条消息 = 一张卡片。打包/解析/预览都在 `utils/forward.ts`（`buildForwardBundle` / `parseForwardBundle` / `messagePreview`），上限常量必须与服务端 `ForwardBundle`（Application）一致 —— 服务端会拒收超限或结构非法的载荷并回 `message_failed`。卡片是**只读快照**（原消息被撤回也不变），不要改成"引用原消息"；渲染走 `ForwardViewerModal`（Markdown 消毒、图片地址白名单）。**任何把 content 当文本显示的地方都必须走 `messagePreview`**：会话列表（本地行 + 服务端兜底的 `lastMessage`）、会话内搜索结果、浏览器桌面通知。服务端 `SessionDto` 为此带 `lastMessageType`（0/1/2/3/4），前端 `previewFor` 拿不到类型时才按 0 处理 —— 否则转发卡片会把 JSON、图片会把 URL 直接糊到列表里。
 - **安全**：`v-html` 之前必须转义（参考 `MessageBubble.vue`）；不要把非令牌的敏感数据放 `localStorage`；退出登录要 `ws.disconnect()` + 清 store（内存里的会话与消息缓存一并清）。
 - PWA：`sw.js` 不缓存 `/api/`；`VERSION` 递增才会清旧缓存。
 

@@ -117,6 +117,14 @@ describe('单行预览', () => {
     expect(messagePreview('{"items":[{"c":"x"}]}', 4)).toBe('[聊天记录]')
   })
 
+  it('图片显示占位而不是 URL', () => {
+    expect(messagePreview('/uploads/a.png', 1)).toBe('[图片]')
+  })
+
+  it('文件显示占位而不是 URL', () => {
+    expect(messagePreview('/uploads/a.zip', 2)).toBe('[文件]')
+  })
+
   it('Markdown 抹掉记号，普通文字原样返回', () => {
     expect(messagePreview('# 标题 **粗**', 3)).not.toContain('#')
     expect(messagePreview('普通文字', 0)).toBe('普通文字')

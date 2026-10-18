@@ -723,6 +723,22 @@ public class ChatSessionsTests
         Assert.Equal(2, session.UnreadCount);
     }
 
+    [Fact(DisplayName = "会话预览带最后一条消息的类型（转发卡片别把 JSON 糊到列表里）")]
+    public async Task ChatSessions_IncludeLastMessageType()
+    {
+        var (a, b) = _ctx.GivenFriends();
+        var group = _ctx.GivenGroup(a.Id);
+        _ctx.GivenPrivateMessage(b.Id, a.Id, "{\"v\":1,\"items\":[]}", kind: Domain.Messaging.MessageKind.Forward);
+        _ctx.GivenGroupMessage(group.Id, a.Id, "# 标题", kind: Domain.Messaging.MessageKind.Markdown);
+
+        var result = await Handler().Handle(new GetChatSessionsQuery { UserId = a.Id }, default);
+
+        var privateSession = result.Data!.Single(s => s.Type == "private");
+        Assert.Equal((int)Domain.Messaging.MessageKind.Forward, privateSession.LastMessageType);
+        var groupSession = result.Data!.Single(s => s.Type == "group");
+        Assert.Equal((int)Domain.Messaging.MessageKind.Markdown, groupSession.LastMessageType);
+    }
+
     [Fact(DisplayName = "置顶会话排在前面")]
     public async Task ChatSessions_Pinned_ComesFirst()
     {

@@ -187,10 +187,11 @@ internal sealed class ApplicationTestContext
 
     /// <summary>预置一条私聊消息</summary>
     internal Domain.Messaging.PrivateMessage GivenPrivateMessage(
-        int senderId, int receiverId, string content = "内容", DateTime? sentAt = null)
+        int senderId, int receiverId, string content = "内容", DateTime? sentAt = null,
+        Domain.Messaging.MessageKind kind = Domain.Messaging.MessageKind.Text)
     {
         var message = Domain.Messaging.PrivateMessage.Send(
-            senderId, receiverId, content, Domain.Messaging.MessageKind.Text,
+            senderId, receiverId, content, kind,
             null, null, sentAt ?? Now);
         PrivateMessages.AddAsync(message).GetAwaiter().GetResult();
         return message;
@@ -198,10 +199,11 @@ internal sealed class ApplicationTestContext
 
     /// <summary>预置一条群消息</summary>
     internal Domain.Messaging.GroupMessage GivenGroupMessage(
-        long groupId, int senderId, string content = "内容", DateTime? sentAt = null)
+        long groupId, int senderId, string content = "内容", DateTime? sentAt = null,
+        Domain.Messaging.MessageKind kind = Domain.Messaging.MessageKind.Text)
     {
         var message = Domain.Messaging.GroupMessage.Send(
-            groupId, senderId, content, Domain.Messaging.MessageKind.Text,
+            groupId, senderId, content, kind,
             null, Domain.Messaging.MentionList.Empty, null, sentAt ?? Now);
         GroupMessages.AddAsync(message).GetAwaiter().GetResult();
         return message;

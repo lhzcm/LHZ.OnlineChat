@@ -79,6 +79,13 @@ public sealed class SessionDto
 
     public string LastMessage { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 最后一条消息的类型（0 文本 / 1 图片 / 2 文件 / 3 Markdown / 4 聊天记录）。
+    /// 前端据此生成预览：转发卡片与图片的 content 不是给人读的（JSON / URL），
+    /// 没有类型就只能把原始内容直接糊到会话列表里。
+    /// </summary>
+    public int LastMessageType { get; set; }
+
     public DateTime LastTime { get; set; }
 
     public int UnreadCount { get; set; }

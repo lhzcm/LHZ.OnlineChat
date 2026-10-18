@@ -200,6 +200,34 @@ describe('会话行', () => {
     // 同 id 不同类型不算同一会话
     expect(s.hasSession('group', PEER)).toBe(false)
   })
+
+  it('转发卡片进会话列表时预览是占位文案，不是 JSON', () => {
+    const s = store()
+    s.sessions.push({ type: 'private', id: PEER, lastMessage: '', lastTime: '' } as never)
+
+    s.addMessage(msg({ messageType: 4, content: '{"v":1,"ts":1,"items":[]}' }), ME)
+
+    const row = s.sessions.find(x => x.id === PEER)!
+    expect(row.lastMessage).toBe('[聊天记录]')
+  })
+
+  it('图片消息进会话列表时预览是 [图片]，不是 URL', () => {
+    const s = store()
+    s.sessions.push({ type: 'private', id: PEER, lastMessage: '', lastTime: '' } as never)
+
+    s.addMessage(msg({ messageType: 1, content: '/uploads/a.png' }), ME)
+
+    expect(s.sessions.find(x => x.id === PEER)!.lastMessage).toBe('[图片]')
+  })
+
+  it('Markdown 消息进会话列表时预览抹掉记号', () => {
+    const s = store()
+    s.sessions.push({ type: 'private', id: PEER, lastMessage: '', lastTime: '' } as never)
+
+    s.addMessage(msg({ messageType: 3, content: '# 标题 **粗**' }), ME)
+
+    expect(s.sessions.find(x => x.id === PEER)!.lastMessage).not.toContain('#')
+  })
 })
 
 describe('离线补拉（挂载与 WS 重连各调一次）', () => {

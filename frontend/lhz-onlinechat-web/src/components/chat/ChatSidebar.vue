@@ -118,7 +118,9 @@ function unreadOf(type: ChatType, id: number): number {
 /** 会话预览：优先本地最新消息，否则用服务端会话数据 */
 function previewFor(s: SessionInfo): string {
   const local = lastMessageFor(s.type, s.id)
-  return local || s.lastMessage || (s.type === 'group' ? '群组会话' : '暂无消息')
+  // 服务端只给最后一条的原始 content：转发是 JSON 快照、图片是 URL，必须按类型转成预览
+  const server = s.lastMessage ? messagePreview(s.lastMessage, s.lastMessageType ?? 0) : ''
+  return local || server || (s.type === 'group' ? '群组会话' : '暂无消息')
 }
 
 /** 会话时间：本地消息用毫秒时间戳，服务端数据用 ISO 字符串 */
