@@ -31,6 +31,7 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
     [InlineData(typeof(FriendSetting), "FriendTag")]
     [InlineData(typeof(Group), "Group_")]
     [InlineData(typeof(GroupMember), "GroupMember")]
+    [InlineData(typeof(GroupJoinRequest), "GroupJoinRequest")]
     [InlineData(typeof(PrivateMessage), "PrivateMessage")]
     [InlineData(typeof(GroupMessage), "GroupMessage")]
     [InlineData(typeof(SessionSetting), "SessionSetting")]
@@ -43,10 +44,10 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.Equal(expectedTableName, _fixture.Table(entityType).DbName);
     }
 
-    [Fact(DisplayName = "需要同步的实体共12个_与库里表数一致")]
-    public void SyncedEntityCount_IsTwelve_MatchesTableCount()
+    [Fact(DisplayName = "需要同步的实体共13个_与库里表数一致")]
+    public void SyncedEntityCount_IsThirteen_MatchesTableCount()
     {
-        Assert.Equal(12, EntityConfiguration.AllEntityTypes.Length);
+        Assert.Equal(13, EntityConfiguration.AllEntityTypes.Length);
         Assert.Equal(
             EntityConfiguration.AllEntityTypes.Length,
             EntityConfiguration.AllEntityTypes.Distinct().Count());

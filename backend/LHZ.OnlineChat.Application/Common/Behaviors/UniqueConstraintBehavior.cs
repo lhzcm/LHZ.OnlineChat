@@ -32,6 +32,8 @@ internal sealed class UniqueConstraintBehavior<TRequest, TResponse> : IPipelineB
         // 这不是用户错误，提示语按「已忽略」措辞，与幂等分支的表现保持一致。
         ["ux_privmsg_sender_client"] = "消息重复提交，已忽略",
         ["ux_grpmsg_sender_client"] = "消息重复提交，已忽略",
+        // 并发下两个人同时申请入群：只有一条能成为待审批，另一条按业务驳回处理
+        ["ux_joinrequest_pending"] = "已提交过申请，请等待审批",
     };
 
     /// <summary>未登记的约束（如好友设置/会话设置这类幂等写入）统一提示重试</summary>

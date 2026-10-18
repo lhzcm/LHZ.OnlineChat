@@ -12,6 +12,9 @@ public interface IGroupRepository
 
     Task<IReadOnlyDictionary<long, Group>> GetManyAsync(IEnumerable<long> groupIds, CancellationToken ct = default);
 
+    /// <summary>按邀请链接 token 反查群（token 唯一，找不到返回 null）</summary>
+    Task<Group?> FindByInviteTokenAsync(string token, CancellationToken ct = default);
+
     /// <summary>管理后台：按名称关键词分页</summary>
     Task<(IReadOnlyList<Group> Items, int Total)> SearchAsync(
         string? keyword, PageRequest page, CancellationToken ct = default);
@@ -70,4 +73,29 @@ public interface IGroupMemberRepository
 
     /// <summary>清理某账号的全部群成员记录（删除机器人时）</summary>
     Task DeleteAllOfUserAsync(int userId, CancellationToken ct = default);
+}
+
+/// <summary>入群申请仓储</summary>
+public interface IGroupJoinRequestRepository
+{
+    /// <summary>某人某群的待审批申请（没有返回 null）</summary>
+    Task<GroupJoinRequest?> FindPendingAsync(long groupId, int userId, CancellationToken ct = default);
+
+    Task<GroupJoinRequest> GetRequiredAsync(long requestId, CancellationToken ct = default);
+
+    /// <summary>群内待审批列表（按提交时间升序）</summary>
+    Task<IReadOnlyList<GroupJoinRequest>> ListPendingOfGroupAsync(long groupId, int limit,
+        CancellationToken ct = default);
+
+    Task<int> CountPendingOfGroupAsync(long groupId, CancellationToken ct = default);
+
+    /// <summary>该用户跨群未处理的申请数（防刷上限）</summary>
+    Task<int> CountPendingOfUserAsync(int userId, CancellationToken ct = default);
+
+    Task AddAsync(GroupJoinRequest request, CancellationToken ct = default);
+
+    Task UpdateAsync(GroupJoinRequest request, CancellationToken ct = default);
+
+    /// <summary>群解散时清理（否则待审批记录永远查不到也删不掉）</summary>
+    Task DeleteAllOfGroupAsync(long groupId, CancellationToken ct = default);
 }

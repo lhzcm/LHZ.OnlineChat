@@ -247,3 +247,40 @@ export interface RobotTestResult {
   reply: string | null
   message: string
 }
+/** 群邀请链接（仅群主/管理员可见） */
+export interface GroupInviteLink {
+  /** 当前有效 token；null = 未开启或已过期 */
+  token: string | null
+  expiresAt: string | null
+  /** 凭链接入群是否需要审批 */
+  requiresApproval: boolean
+}
+
+/** 待审批的入群申请 */
+export interface GroupJoinRequestInfo {
+  id: number
+  userId: number
+  nickname: string
+  avatar: string | null
+  message: string | null
+  createdAt: string
+}
+
+/** 邀请页预览（凭 token） */
+export interface GroupInvitePreview {
+  groupId: number
+  name: string
+  avatar: string | null
+  memberCount: number
+  requiresApproval: boolean
+  alreadyMember: boolean
+  hasPendingRequest: boolean
+}
+
+/** 凭链接加入或申请的结果 */
+export interface JoinGroupResult {
+  groupId: number
+  groupName: string
+  /** true=已直接加入；false=已提交申请 */
+  joined: boolean
+}

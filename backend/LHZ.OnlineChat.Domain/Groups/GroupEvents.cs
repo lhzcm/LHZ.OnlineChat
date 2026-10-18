@@ -17,6 +17,11 @@ public sealed record GroupOwnershipTransferred(long GroupId, int PreviousOwnerId
 /// <summary>入群方式变更（仅限邀请 ↔ 开放加入）</summary>
 public sealed record GroupJoinPolicyChanged(long GroupId, GroupJoinPolicy Policy, int OperatedBy, DateTime OccurredAt) : IDomainEvent;
 
+/// <summary>有人凭邀请链接提交入群申请 —— 订阅方推送给该群的管理员</summary>
+public sealed record GroupJoinRequested(long GroupId, long RequestId, int UserId, DateTime OccurredAt) : IDomainEvent;
+
+/// <summary>入群申请被通过或拒绝 —— 订阅方把结果推送给申请人</summary>
+public sealed record GroupJoinRequestDecided(long GroupId, long RequestId, int UserId, bool Approved, DateTime OccurredAt) : IDomainEvent;
 /// <summary>群被解散 —— 订阅方向解散前的成员推送 group_dissolved，客户端自动退出会话</summary>
 public sealed record GroupDissolved(long GroupId, string Name, IReadOnlyList<int> MemberIds, DateTime OccurredAt) : IDomainEvent;
 

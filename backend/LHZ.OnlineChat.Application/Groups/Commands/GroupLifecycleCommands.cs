@@ -104,10 +104,9 @@ internal sealed class JoinGroupHandler : IRequestHandler<JoinGroupCommand, ApiRe
         group.EnsureJoinable();
 
         // 已读游标 = 当前最新消息，避免入群前的历史被当成离线消息补发
-        var latestId = await _messages.MaxIdOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);
-        var member = GroupMember.Join(command.GroupId, command.UserId, latestId, _clock.UtcNow);
-
-        await _members.AddAsync(member, ct).ConfigureAwait(false);
+        await GroupMembershipJoiner
+            .JoinAsync(_members, _messages, command.GroupId, command.UserId, _clock.UtcNow, ct)
+            .ConfigureAwait(false);
         return ApiResponse.Ok("加入群组成功");
     }
 }
@@ -151,17 +150,20 @@ internal sealed class DismissGroupHandler : IRequestHandler<DismissGroupCommand,
 {
     private readonly IGroupRepository _groups;
     private readonly IGroupMemberRepository _members;
+    private readonly IGroupJoinRequestRepository _joinRequests;
     private readonly IDomainEventDispatcher _events;
     private readonly IClock _clock;
 
     public DismissGroupHandler(
         IGroupRepository groups,
         IGroupMemberRepository members,
+        IGroupJoinRequestRepository joinRequests,
         IDomainEventDispatcher events,
         IClock clock)
     {
         _groups = groups;
         _members = members;
+        _joinRequests = joinRequests;
         _events = events;
         _clock = clock;
     }
@@ -173,6 +175,8 @@ internal sealed class DismissGroupHandler : IRequestHandler<DismissGroupCommand,
 
         var memberIds = await _members.ListMemberIdsAsync(command.GroupId, ct).ConfigureAwait(false);
 
+        // 待审批申请一并清理：群没了，这些记录既查不到也删不掉
+        await _joinRequests.DeleteAllOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);
         await _members.DeleteAllOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);
         await _groups.DeleteAsync(command.GroupId, ct).ConfigureAwait(false);
 

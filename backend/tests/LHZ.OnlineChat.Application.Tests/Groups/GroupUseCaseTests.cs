@@ -217,7 +217,7 @@ public class DismissGroupTests
     private readonly ApplicationTestContext _ctx = new();
 
     private DismissGroupHandler Handler()
-        => new(_ctx.Groups, _ctx.GroupMembers, _ctx.Events, _ctx.Clock);
+        => new(_ctx.Groups, _ctx.GroupMembers, _ctx.JoinRequests, _ctx.Events, _ctx.Clock);
 
     [Fact(DisplayName = "群主解散成功并清空成员")]
     public async Task Dismiss_ByOwner_SucceedsAndClearsMembers()

@@ -16,6 +16,14 @@ namespace LHZ.OnlineChat.Infrastructure.Realtime;
 /// </summary>
 internal sealed class RealtimeNotifier : IRealtimeNotifier
 {
+    /// <summary>
+    /// 入群申请相关帧类型。
+    /// WsMessage.Type 是字符串字段，包里 WsMessageType 只提供既有常量，
+    /// 因此新增帧在本层定义，不必升级 NuGet 包。
+    /// </summary>
+    private const string GroupJoinRequestFrame = "group_join_request";
+
+    private const string GroupJoinResultFrame = "group_join_result";
     private readonly WsConnectionManager _connections;
     private readonly ILogger<RealtimeNotifier> _logger;
 
@@ -140,6 +148,42 @@ internal sealed class RealtimeNotifier : IRealtimeNotifier
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 有人申请入群 → 推给单个管理员。
+    /// content 放申请 ID：客户端收到后自行拉「待审批列表」，不在帧里冗余昵称/头像。
+    /// </summary>
+    public Task NotifyGroupJoinRequestedAsync(
+        int toAdminId, long groupId, long requestId, CancellationToken ct = default)
+    {
+        var payload = JsonConvert.Serialize(new WsMessage
+        {
+            Type = GroupJoinRequestFrame,
+            From = Text(groupId),
+            To = Text(groupId),
+            Content = Text(requestId),
+            Timestamp = NowUnixMilliseconds()
+        });
+
+        _connections.Broadcast(toAdminId, payload);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>入群申请结果 → 推给申请人（多端同步：其他在线设备也要刷新群列表）</summary>
+    public Task NotifyGroupJoinResultAsync(
+        int toUserId, long groupId, bool approved, CancellationToken ct = default)
+    {
+        var payload = JsonConvert.Serialize(new WsMessage
+        {
+            Type = GroupJoinResultFrame,
+            From = Text(groupId),
+            To = Text(groupId),
+            Content = approved ? "approved" : "rejected",
+            Timestamp = NowUnixMilliseconds()
+        });
+
+        _connections.Broadcast(toUserId, payload);
+        return Task.CompletedTask;
+    }
     // ==================== 消息 ====================
 
     public Task PushPrivateMessageAsync(RealtimeMessage message, CancellationToken ct = default)

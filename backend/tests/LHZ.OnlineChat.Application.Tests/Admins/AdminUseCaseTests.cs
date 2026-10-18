@@ -722,7 +722,7 @@ public class AdminGroupManagementTests
         _ctx.GivenGroupMessage(group.Id, owner.Id);
 
         var result = await new DissolveGroupByAdminHandler(
-                _ctx.Groups, _ctx.GroupMembers, _ctx.GroupMessages,
+                _ctx.Groups, _ctx.GroupMembers, _ctx.GroupMessages, _ctx.JoinRequests,
                 _ctx.Events, _ctx.Audit, _ctx.Clock)
             .Handle(new DissolveGroupByAdminCommand { AdminId = admin.Id, GroupId = group.Id },
                 default);
@@ -742,7 +742,7 @@ public class AdminGroupManagementTests
         var group = _ctx.GivenGroup(owner.Id);
 
         await new DissolveGroupByAdminHandler(
-                _ctx.Groups, _ctx.GroupMembers, _ctx.GroupMessages,
+                _ctx.Groups, _ctx.GroupMembers, _ctx.GroupMessages, _ctx.JoinRequests,
                 _ctx.Events, _ctx.Audit, _ctx.Clock)
             .Handle(new DissolveGroupByAdminCommand { AdminId = admin.Id, GroupId = group.Id },
                 default);

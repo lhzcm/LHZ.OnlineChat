@@ -28,6 +28,7 @@ internal sealed class DissolveGroupByAdminHandler : IRequestHandler<DissolveGrou
     private readonly IGroupRepository _groups;
     private readonly IGroupMemberRepository _members;
     private readonly IGroupMessageRepository _messages;
+    private readonly IGroupJoinRequestRepository _joinRequests;
     private readonly IDomainEventDispatcher _events;
     private readonly IAuditLogger _audit;
     private readonly IClock _clock;
@@ -36,6 +37,7 @@ internal sealed class DissolveGroupByAdminHandler : IRequestHandler<DissolveGrou
         IGroupRepository groups,
         IGroupMemberRepository members,
         IGroupMessageRepository messages,
+        IGroupJoinRequestRepository joinRequests,
         IDomainEventDispatcher events,
         IAuditLogger audit,
         IClock clock)
@@ -43,6 +45,7 @@ internal sealed class DissolveGroupByAdminHandler : IRequestHandler<DissolveGrou
         _groups = groups;
         _members = members;
         _messages = messages;
+        _joinRequests = joinRequests;
         _events = events;
         _audit = audit;
         _clock = clock;
@@ -56,6 +59,8 @@ internal sealed class DissolveGroupByAdminHandler : IRequestHandler<DissolveGrou
         var memberIds = await _members.ListMemberIdsAsync(command.GroupId, ct).ConfigureAwait(false);
 
         await _messages.DeleteAllOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);
+        // 待审批申请一并清理（群没了，记录无处可查也无处可删）
+        await _joinRequests.DeleteAllOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);
         await _members.DeleteAllOfGroupAsync(command.GroupId, ct).ConfigureAwait(false);
         await _groups.DeleteAsync(command.GroupId, ct).ConfigureAwait(false);
 

@@ -61,6 +61,56 @@ internal sealed class GroupRepository : IGroupRepository
 
     public Task DeleteAsync(long groupId, CancellationToken ct = default)
         => _db.Delete<Group>().Where(g => g.Id == groupId).ExecuteAffrowsAsync(ct);
+
+    public Task<Group?> FindByInviteTokenAsync(string token, CancellationToken ct = default)
+        => _db.Select<Group>().Where(g => g.InviteToken == token).FirstAsync(ct)!;
+}
+
+/// <summary>入群申请仓储（FreeSql）</summary>
+internal sealed class GroupJoinRequestRepository : IGroupJoinRequestRepository
+{
+    private readonly DbSession _db;
+
+    public GroupJoinRequestRepository(DbSession db) => _db = db;
+
+    public Task<GroupJoinRequest?> FindPendingAsync(long groupId, int userId, CancellationToken ct = default)
+        => _db.Select<GroupJoinRequest>()
+            .Where(r => r.GroupId == groupId && r.UserId == userId && r.Status == JoinRequestStatus.Pending)
+            .FirstAsync(ct)!;
+
+    public async Task<GroupJoinRequest> GetRequiredAsync(long requestId, CancellationToken ct = default)
+        => await _db.Select<GroupJoinRequest>().Where(r => r.Id == requestId).FirstAsync(ct).ConfigureAwait(false)
+           ?? throw new EntityNotFoundException("入群申请不存在");
+
+    public async Task<IReadOnlyList<GroupJoinRequest>> ListPendingOfGroupAsync(
+        long groupId, int limit, CancellationToken ct = default)
+        => await _db.Select<GroupJoinRequest>()
+            .Where(r => r.GroupId == groupId && r.Status == JoinRequestStatus.Pending)
+            .OrderBy(r => r.CreatedAt)
+            .Limit(limit)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+    public async Task<int> CountPendingOfGroupAsync(long groupId, CancellationToken ct = default)
+        => (int)await _db.Select<GroupJoinRequest>()
+            .Where(r => r.GroupId == groupId && r.Status == JoinRequestStatus.Pending)
+            .CountAsync(ct)
+            .ConfigureAwait(false);
+
+    public async Task<int> CountPendingOfUserAsync(int userId, CancellationToken ct = default)
+        => (int)await _db.Select<GroupJoinRequest>()
+            .Where(r => r.UserId == userId && r.Status == JoinRequestStatus.Pending)
+            .CountAsync(ct)
+            .ConfigureAwait(false);
+
+    public Task AddAsync(GroupJoinRequest request, CancellationToken ct = default)
+        => _db.InsertWithLongIdentityAsync(request, ct);
+
+    public Task UpdateAsync(GroupJoinRequest request, CancellationToken ct = default)
+        => _db.Update<GroupJoinRequest>().SetSource(request).ExecuteAffrowsAsync(ct);
+
+    public Task DeleteAllOfGroupAsync(long groupId, CancellationToken ct = default)
+        => _db.Delete<GroupJoinRequest>().Where(r => r.GroupId == groupId).ExecuteAffrowsAsync(ct);
 }
 
 /// <summary>群成员仓储（FreeSql）</summary>

@@ -151,6 +151,17 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
 
+    // 凭邀请链接申请/加入群组：一分钟 30 次足够正常人（点错、重试、分享给朋友），
+    // 又能挡住脚本拿着一条公开链接批量提交申请。按 IP 分区的原因见 RateLimitPolicies.GroupJoin。
+    options.AddPolicy(RateLimitPolicies.GroupJoin, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitPolicies.ClientKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
     // 被限流时也回 ApiResponse 形状，前端能按统一契约提示，而不是解析空响应体
     options.OnRejected = async (context, ct) =>
     {

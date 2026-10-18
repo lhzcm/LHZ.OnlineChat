@@ -75,6 +75,8 @@ public sealed class DatabaseInitializer
         // 让 CodeFirst 自己去加列，在已有数据的库上会因「NOT NULL 无默认值」失败；
         // 这里先带上 DEFAULT 0 补列，SyncStructure 随后看到的就是已存在的列。
         EnsureGroupJoinPolicyColumn();
+        // 同理：JoinApprovalRequired 是 NOT NULL 新列，存量库必须先带默认值补列
+        EnsureGroupInviteColumns();
         SyncStructure();
         EnsureAccountIdSchema();
         EnsureSearchIndexes();
@@ -110,6 +112,39 @@ public sealed class DatabaseInitializer
     {
         _fsql.CodeFirst.SyncStructure(EntityConfiguration.AllEntityTypes);
         _logger.LogInformation("表结构已同步（{Count} 个实体）", EntityConfiguration.AllEntityTypes.Length);
+    }
+
+    /// <summary>
+    /// 补 Group_ 的邀请链接列（幂等）。
+    /// JoinApprovalRequired 默认 true：升级后老群统一"凭链接进群需要审批"，不会因为加了这个功能就放开。
+    /// </summary>
+    private void EnsureGroupInviteColumns()
+    {
+        const string sql = """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables
+                         WHERE table_schema='public' AND table_name='Group_') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema='public' AND table_name='Group_'
+                                 AND column_name='InviteToken') THEN
+                  ALTER TABLE "Group_" ADD COLUMN "InviteToken" varchar(64) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema='public' AND table_name='Group_'
+                                 AND column_name='InviteTokenExpiresAt') THEN
+                  ALTER TABLE "Group_" ADD COLUMN "InviteTokenExpiresAt" timestamptz NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema='public' AND table_name='Group_'
+                                 AND column_name='JoinApprovalRequired') THEN
+                  ALTER TABLE "Group_" ADD COLUMN "JoinApprovalRequired" boolean NOT NULL DEFAULT true;
+                END IF;
+              END IF;
+            END $$;
+            """;
+
+        _fsql.Ado.ExecuteNonQuery(sql);
     }
 
     /// <summary>
@@ -241,6 +276,19 @@ public sealed class DatabaseInitializer
             "群聊客户端消息号唯一",
             """CREATE UNIQUE INDEX IF NOT EXISTS "ux_grpmsg_sender_client" ON "GroupMessage" ("SenderId", "ClientMessageId") WHERE "ClientMessageId" IS NOT NULL;""",
             duplicatesPossible: true);
+
+        // 同一人对同一群最多一条「待审批」申请：部分索引只管 Pending，
+        // 用户被拒后可以重新申请，历史记录仍然保留。
+        Execute(
+            "入群申请待审批唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_joinrequest_pending" ON "GroupJoinRequest" ("GroupId", "UserId") WHERE "Status" = 0;""",
+            duplicatesPossible: true);
+
+        // 邀请 token 全局唯一（部分索引排除 NULL：未开启链接的群没有 token）
+        Execute(
+            "邀请链接 token 唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_group_invite_token" ON "Group_" ("InviteToken") WHERE "InviteToken" IS NOT NULL;""",
+            duplicatesPossible: true);
     }
 
     /// <summary>
@@ -287,6 +335,12 @@ public sealed class DatabaseInitializer
                 """CREATE INDEX IF NOT EXISTS "ix_robotprofile_owner" ON "RobotProfile" ("OwnerId");"""),
             ("群按群主",
                 """CREATE INDEX IF NOT EXISTS "ix_group_owner" ON "Group_" ("OwnerId");"""),
+            // 管理端待审批列表：按群 + 状态过滤，再按提交时间升序
+            ("入群申请按群与状态",
+                """CREATE INDEX IF NOT EXISTS "ix_joinrequest_group_status" ON "GroupJoinRequest" ("GroupId", "Status", "CreatedAt");"""),
+            // 防刷上限：统计某用户跨群待审批数
+            ("入群申请按用户与状态",
+                """CREATE INDEX IF NOT EXISTS "ix_joinrequest_user_status" ON "GroupJoinRequest" ("UserId", "Status");"""),
             ("审计日志按时间倒序",
                 """CREATE INDEX IF NOT EXISTS "ix_adminlog_created" ON "AdminLog" ("CreatedAt" DESC);"""),
             ("审计日志按管理员",

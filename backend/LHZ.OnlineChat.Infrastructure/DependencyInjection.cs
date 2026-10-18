@@ -86,6 +86,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IBlacklistRepository, BlacklistRepository>();
         services.AddScoped<IGroupRepository, GroupRepository>();
         services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
+        services.AddScoped<IGroupJoinRequestRepository, GroupJoinRequestRepository>();
         services.AddScoped<IPrivateMessageRepository, PrivateMessageRepository>();
         services.AddScoped<IGroupMessageRepository, GroupMessageRepository>();
         services.AddScoped<ISessionSettingRepository, SessionSettingRepository>();

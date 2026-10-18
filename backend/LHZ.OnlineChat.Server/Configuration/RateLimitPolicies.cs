@@ -15,6 +15,13 @@ internal static class RateLimitPolicies
     /// <summary>匿名发码接口（注册 / 忘记密码 / 换绑邮箱共用同一入口）</summary>
     internal const string SendCode = "send-code";
 
+    /// <summary>
+    /// 凭邀请链接申请/加入群组：按来源 IP 分区。
+    /// 限流中间件在鉴权之前执行（拿不到用户身份），所以这里只能用 IP ——
+    /// 但接口本身要求登录，脚本刷单的起点已经受限。
+    /// </summary>
+    internal const string GroupJoin = "group-join";
+
     /// <summary>机器人主动推送（第三方调用，按令牌分区而非按 IP）</summary>
     internal const string RobotReply = "robot-reply";
 

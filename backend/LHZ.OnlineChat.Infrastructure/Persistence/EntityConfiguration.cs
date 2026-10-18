@@ -31,6 +31,7 @@ internal static class EntityConfiguration
         typeof(FriendSetting),
         typeof(Group),
         typeof(GroupMember),
+        typeof(GroupJoinRequest),
         typeof(PrivateMessage),
         typeof(GroupMessage),
         typeof(SessionSetting),
@@ -121,6 +122,24 @@ internal static class EntityConfiguration
             e.Property(x => x.AnnouncementAt).IsNullable(true);
             e.Property(x => x.AnnouncementBy).IsNullable(true);
             e.Property(x => x.CreatedAt).IsNullable(false);
+            // 邀请链接：token 是能力凭证，可为空表示未开启；过期时间与 token 同进同退
+            e.Property(x => x.InviteToken).StringLength(64).IsNullable(true);
+            e.Property(x => x.InviteTokenExpiresAt).IsNullable(true);
+            // 凭链接入群是否需要审批；存量行经 DDL 补列后默认 true（收紧而非放开）
+            e.Property(x => x.JoinApprovalRequired).IsNullable(false);
+        });
+
+        fsql.CodeFirst.ConfigEntity<GroupJoinRequest>(e =>
+        {
+            e.Name("GroupJoinRequest");
+            e.Property(x => x.Id).IsPrimary(true).IsIdentity(true);
+            e.Property(x => x.GroupId).IsNullable(false);
+            e.Property(x => x.UserId).IsNullable(false);
+            e.Property(x => x.Status).MapType(typeof(int)).IsNullable(false);
+            e.Property(x => x.Message).StringLength(200).IsNullable(true);
+            e.Property(x => x.CreatedAt).IsNullable(false);
+            e.Property(x => x.HandledAt).IsNullable(true);
+            e.Property(x => x.HandledBy).IsNullable(true);
         });
 
         fsql.CodeFirst.ConfigEntity<GroupMember>(e =>

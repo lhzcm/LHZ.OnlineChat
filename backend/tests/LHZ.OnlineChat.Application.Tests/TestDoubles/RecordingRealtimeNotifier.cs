@@ -1,3 +1,4 @@
+using System.Globalization;
 using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Domain.Messaging;
 
@@ -70,6 +71,12 @@ internal sealed class RecordingRealtimeNotifier : IRealtimeNotifier
         }
         return Task.CompletedTask;
     }
+
+    public Task NotifyGroupJoinRequestedAsync(int toAdminId, long groupId, long requestId, CancellationToken ct = default)
+        => Record(PushKind.GroupJoinRequested, toAdminId, contextId: groupId, content: requestId.ToString(CultureInfo.InvariantCulture));
+
+    public Task NotifyGroupJoinResultAsync(int toUserId, long groupId, bool approved, CancellationToken ct = default)
+        => Record(PushKind.GroupJoinResult, toUserId, contextId: groupId, content: approved ? "approved" : "rejected");
 
     public Task NotifyRemovedFromGroupAsync(int toUserId, long groupId, CancellationToken ct = default)
         => Record(PushKind.GroupMemberRemoved, toUserId, contextId: groupId);
@@ -153,6 +160,8 @@ internal enum PushKind
     GroupInvited,
     GroupDissolved,
     GroupMemberRemoved,
+    GroupJoinRequested,
+    GroupJoinResult,
     PrivateMessage,
     PrivateMessageEcho,
     GroupMessage,

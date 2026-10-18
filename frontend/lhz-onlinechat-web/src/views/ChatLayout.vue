@@ -495,6 +495,24 @@ function handleWsMessage(msg: WsMessage) {
     refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     return
   }
+
+  // 有人凭邀请链接申请入群（服务端只推给该群的管理员）：刷新待审批列表 + 提示
+  if (msg.type === 'group_join_request') {
+    const groupId = Number(msg.from)
+    if (groupId) refreshQuietly(groupStore.fetchJoinRequests(groupId), '刷新入群申请')
+    toast('有人申请加入群聊')
+    return
+  }
+
+  // 我的入群申请有结果了：通过就把群加进列表，被拒也要明确告知
+  if (msg.type === 'group_join_result') {
+    const approved = msg.content === 'approved'
+    refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
+    refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
+    toast(approved ? '入群申请已通过' : '入群申请未通过', approved ? 'info' : 'error')
+    return
+  }
+
   // 在线状态已由 onStatusChange 处理
   if (msg.type === 'online_status') return
 

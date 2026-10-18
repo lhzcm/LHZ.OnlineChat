@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Avatar from '@/components/Avatar.vue'
 import InviteModal from './InviteModal.vue'
+import InviteLinkModal from './InviteLinkModal.vue'
+import JoinRequestsModal from './JoinRequestsModal.vue'
 import GroupRobotModal from './GroupRobotModal.vue'
 import { groupApi } from '@/api/group'
 import { useGroupStore } from '@/stores/group'
@@ -19,6 +21,20 @@ const { toast } = useToast()
 const membersError = ref('')
 const showInviteModal = ref(false)
 const showGroupRobotModal = ref(false)
+const showInviteLinkModal = ref(false)
+const showJoinRequestsModal = ref(false)
+
+/** 待审批入群申请数：打开成员面板时拉一次，徽标用 */
+const pendingJoinRequests = ref(0)
+
+async function refreshJoinRequests() {
+  if (!canInvite.value) return
+  const res = await groupApi.getJoinRequests(props.groupId)
+  pendingJoinRequests.value = res.success && res.data ? res.data.length : 0
+}
+
+// 打开成员面板就读一次待审批数：管理员不点开也知道有没有人要进群
+onMounted(() => { void refreshJoinRequests() })
 const copied = ref(false)
 
 /** 复制群号（机器人第三方推送需要用到群 ID） */
@@ -107,6 +123,10 @@ function onGroupRobotAdded() {
       <div class="invite-bar" v-if="canInvite">
         <button class="btn btn-primary btn-sm" @click="showInviteModal = true">+ 邀请好友</button>
         <button class="btn btn-ghost btn-sm" @click="showGroupRobotModal = true">+ 添加机器人</button>
+        <button class="btn btn-ghost btn-sm" @click="showInviteLinkModal = true">🔗 邀请链接</button>
+        <button class="btn btn-ghost btn-sm" @click="showJoinRequestsModal = true; refreshJoinRequests()">
+          入群申请<span class="join-badge" v-if="pendingJoinRequests">({{ pendingJoinRequests }})</span>
+        </button>
       </div>
       <div class="empty" v-if="groupStore.members.length === 0">
         <span class="empty-icon">👥</span>
@@ -137,9 +157,18 @@ function onGroupRobotAdded() {
 
   <InviteModal v-if="showInviteModal" :groupId="props.groupId" @close="showInviteModal = false" @invited="emit('changed')" />
   <GroupRobotModal v-if="showGroupRobotModal" :groupId="props.groupId" @close="showGroupRobotModal = false" @added="onGroupRobotAdded" />
+  <InviteLinkModal v-if="showInviteLinkModal" :group-id="props.groupId" :group-name="props.groupName"
+    @close="showInviteLinkModal = false" />
+  <JoinRequestsModal v-if="showJoinRequestsModal" :group-id="props.groupId" :group-name="props.groupName"
+    @close="showJoinRequestsModal = false; refreshJoinRequests()" />
 </template>
 
 <style scoped>
+.join-badge {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 /* 群号展示行 */
 .group-id-row {
   display: flex;

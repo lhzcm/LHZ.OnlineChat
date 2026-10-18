@@ -35,6 +35,7 @@
 - 创建/加入/退出/踢人(权限分级:群主 0/管理员 1/成员 2)/解散/成员列表(仅群成员可见,含在线状态)
 - **入群默认「仅限邀请」**:知道群 ID 也不能自行加入,需群主/管理员 `PUT /api/groups/{groupId}/join-policy`(body `{"openToJoin": true}`)开放;群机器人列表同样仅群成员可见
 - **群主/管理员邀请好友入群**(仅限自己的好友、排除已在群成员、批量邀请,被邀请者实时收到 `group_invited`)
+- **群邀请链接 / 二维码 + 入群审批**:群主/管理员可生成一条 7 天有效、可随时重置或关闭的邀请链接(`messageType` 无关,纯 HTTP 链接),分享页带二维码(浏览器本地生成);凭链接进群默认**需要管理员审批**,管理员在群成员面板的「入群申请」里通过/拒绝,申请人实时收到 `group_join_result`;关闭审批开关后凭链接直接进群。链接待见 `POST/GET/DELETE /api/groups/{groupId}/invite-link`、`PUT /api/groups/{groupId}/join-approval`、`GET /api/groups/{groupId}/join-requests`、`POST .../join-requests/{requestId}/approve|reject`、`GET|POST /api/groups/join/{token}`
 
 **🤖 机器人(Webhook)**
 - **私人机器人助理**:创建后自动成为好友,私聊即触发;**群机器人**:群主/管理员把机器人拉进群,**被 @ 时触发**
@@ -433,6 +434,8 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `friend_accepted` / `friend_rejected` | 服务端→客户端 | 申请被接受(双向)/ 被拒绝 |
 | `friend_removed` | 服务端→客户端 | 好友关系被删除(双向通知,`from` 为对方用户 ID,被删除方据此得知主动删除方),客户端刷新好友列表;若正在与该用户私聊则退出会话 |
 | `group_invited` | 服务端→客户端 | 被邀请加入群组(`from` 为群 ID) |
+| `group_join_request` | 服务端→客户端 | 有人凭邀请链接申请入群;**只推给该群群主/管理员**,`from` 为群 ID,`content` 为申请 ID(客户端据此刷新待审批列表) |
+| `group_join_result` | 服务端→客户端 | 我的入群申请有结果:`content` 为 `approved` / `rejected`,`from` 为群 ID |
 | `group_dissolved` | 服务端→客户端 | 所在群被解散(`to` 为群 ID),客户端自动退出该会话 |
 | `group_removed` | 服务端→客户端 | 被移出群(`to` 为群 ID),客户端自动退出该会话 |
 | `muted` | 服务端→客户端 | 群发言被拒(禁言中),`content` 含禁言截止时间说明 |
@@ -449,6 +452,7 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 - **Markdown 消息**:`messageType=3` 时 `content` 是 Markdown **源文本**(不存渲染后的 HTML),客户端用 marked 解析、DOMPurify 消毒后渲染;外链强制新窗口打开,图片语法会被剥掉(防跟踪像素,要发图请用图片消息)。输入框的「MD」开关与机器人主动推送 / Webhook 同步回复都能发这种消息
 - **语音消息**:`messageType=5` 时 `content` 是**音频地址**(`/uploads/voices/xxx.webm`),不塞 JSON、不落库时长 —— 渲染时从 `<audio>` 元数据读时长,列表预览只需占位。上传走 `POST /api/uploads/voice`(扩展名白名单 + 10MB 上限,服务端不解码所以也不判时长),时长上限 60 秒由客户端强制(到点自动停止并发送)。静态目录对 `webm/m4a/ogg` 显式声明音频 `Content-Type`,否则 Safari 拒绝播放;机器人只能发 0/3,发不出语音
 - **聊天记录(合并转发)**:`messageType=4` 时 `content` 是一段 JSON 快照 `{"v":1,"ts":…,"items":[{"n":"张三","c":"内容","t":0,"ts":…}]}` —— **一次转发 = 一条消息 = 一张卡片**,卡片里最多 20 条只读明细(每条 ≤ 2000 字,`t` 只允许 0/1/3/5(5=语音),不允许嵌套转发)。为什么存快照而不是引用:原消息可能被撤回/删除、历史第一页不该为只读卡片多一次 JOIN、且 Redis 最近消息缓存存的就是 `content` 原样。服务端在应用层校验结构(`ForwardBundle`),畸形载荷回 `message_failed`;机器人只能发 0/3,发不出卡片。代价:关键词搜索会匹配到 JSON 文本,列表与搜索结果的预览统一显示为 `[聊天记录]`
+- **群邀请链接 / 入群审批**:链接 = `https://<站点>/join/<token>`,token 是 32 字节 CSPRNG 的 base64url(43 字符,约 192 bit),**服务端只存 token 不知道域名**,所以链接与二维码由浏览器用当前 origin 拼。有效期 7 天,重置/关闭即刻失效;失效与不存在统一提示「邀请链接已失效,请让群主重新生成」,不泄露群是否存在。审批只作用于链接入口(「开放加入」语义不变);待审批每群 ≤200、每用户跨群 ≤20,`GET|POST /api/groups/join/{token}` 走 `group-join` 限流(按 IP 30 次/分)。免审批加入时读游标 = 群最新消息,不补发入群前的历史
 - **发送被拒回执**:内容校验失败(超长/为空/类型非法)时服务端回 `message_failed`,`messageId` 是客户端消息 ID、`content` 是原因,前端把那条气泡标成「发送失败」(可重试)并提示原因 —— 改造前这类消息会被静默丢弃,气泡永远停在「未读」、刷新后连痕迹都没有。不含内容问题的失败(不是好友/不在群里/被拉黑)仍按 `blocked`/`muted` 语义处理或静默
 
 ## 🗄️ 数据表
@@ -461,8 +465,9 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `Friend` | `Friendship` | 好友关系(Status: 0待确认/1已接受/2已屏蔽,一条记录表达双向) |
 | `FriendTag` | `FriendSetting` | 好友设置(设置者视角的备注 Remark / 分类 Category) |
 | `Blacklist` | `BlacklistEntry` | 黑名单(拉黑者 → 被拉黑者) |
-| `Group_` | `Group` | 群组(OwnerId;JoinPolicy: 0仅限邀请/1开放加入;公告三列 Announcement/At/By) |
+| `Group_` | `Group` | 群组(OwnerId;JoinPolicy: 0仅限邀请/1开放加入;公告三列 Announcement/At/By;**邀请链接 InviteToken / InviteTokenExpiresAt,JoinApprovalRequired 凭链接进群是否需审批**) |
 | `GroupMember` | `GroupMember` | 群成员(Role: 0群主/1管理员/2成员;LastReadMessageId 已读游标;MutedUntil 禁言) |
+| `GroupJoinRequest` | `GroupJoinRequest` | 入群申请(GroupId/UserId/Status: 0待审批 1通过 2拒绝/Message 附言/CreatedAt/HandledAt/HandledBy;`(GroupId,UserId) WHERE Status=0` 唯一) |
 | `PrivateMessage` | `PrivateMessage` | 私聊消息(ClientMessageId 去重键;IsRead;IsDeleted 撤回;引用三列) |
 | `GroupMessage` | `GroupMessage` | 群聊消息(Mentions 逗号分隔的 @ 列表;IsDeleted;引用三列) |
 | `SessionSetting` | `SessionSetting` | 会话设置(用户 × 会话维度的置顶 IsPinned / 免打扰 Muted) |

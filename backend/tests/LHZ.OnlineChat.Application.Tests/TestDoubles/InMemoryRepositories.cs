@@ -319,6 +319,9 @@ internal sealed class InMemoryGroupRepository : InMemoryStore<Group, long>, IGro
         return Task.FromResult(result);
     }
 
+    public Task<Group?> FindByInviteTokenAsync(string token, CancellationToken ct = default)
+        => Task.FromResult(Where(g => g.InviteToken == token).FirstOrDefault());
+
     public Task<(IReadOnlyList<Group> Items, int Total)> SearchAsync(
         string? keyword, PageRequest page, CancellationToken ct = default)
     {
@@ -595,6 +598,63 @@ internal sealed class InMemoryAdminAuditLogRepository
     public Task AddAsync(AdminAuditLog log, CancellationToken ct = default)
     {
         Insert(log);
+        return Task.CompletedTask;
+    }
+}
+
+// ==================================================================
+// 入群申请
+// ==================================================================
+
+internal sealed class InMemoryGroupJoinRequestRepository
+    : InMemoryStore<GroupJoinRequest, long>, IGroupJoinRequestRepository
+{
+    protected override long ToId(long identity) => identity;
+
+    public Task<GroupJoinRequest?> FindPendingAsync(
+        long groupId, int userId, CancellationToken ct = default)
+        => Task.FromResult(Where(r =>
+            r.GroupId == groupId && r.UserId == userId && r.Status == JoinRequestStatus.Pending)
+            .FirstOrDefault());
+
+    public async Task<GroupJoinRequest> GetRequiredAsync(long requestId, CancellationToken ct = default)
+        => await Task.FromResult(Get(requestId)).ConfigureAwait(false)
+           ?? throw new EntityNotFoundException("入群申请不存在");
+
+    public Task<IReadOnlyList<GroupJoinRequest>> ListPendingOfGroupAsync(
+        long groupId, int limit, CancellationToken ct = default)
+    {
+        IReadOnlyList<GroupJoinRequest> items = Where(r =>
+                r.GroupId == groupId && r.Status == JoinRequestStatus.Pending)
+            .OrderBy(r => r.CreatedAt)
+            .Take(limit)
+            .ToList();
+        return Task.FromResult(items);
+    }
+
+    public Task<int> CountPendingOfGroupAsync(long groupId, CancellationToken ct = default)
+        => Task.FromResult(Where(r =>
+            r.GroupId == groupId && r.Status == JoinRequestStatus.Pending).Count());
+
+    public Task<int> CountPendingOfUserAsync(int userId, CancellationToken ct = default)
+        => Task.FromResult(Where(r =>
+            r.UserId == userId && r.Status == JoinRequestStatus.Pending).Count());
+
+    public Task AddAsync(GroupJoinRequest request, CancellationToken ct = default)
+    {
+        Insert(request);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateAsync(GroupJoinRequest request, CancellationToken ct = default)
+    {
+        Seed(request);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteAllOfGroupAsync(long groupId, CancellationToken ct = default)
+    {
+        RemoveWhere(r => r.GroupId == groupId);
         return Task.CompletedTask;
     }
 }

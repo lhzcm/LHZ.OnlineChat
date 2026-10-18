@@ -71,6 +71,14 @@ public sealed class Group : AggregateRoot<long>
 {
     public const int MaxNameLength = 100;
 
+    /// <summary>邀请链接 token 的长度下限（32 字节 base64url 编码后是 43 字符）</summary>
+    public const int InviteTokenMinLength = 20;
+
+    public const int InviteTokenMaxLength = 64;
+
+    /// <summary>邀请链接有效期（天）。过期即失效，群主可随时重置或关闭</summary>
+    public const int InviteLinkTtlDays = 7;
+
     private Group() { }
 
     public string Name { get; private set; } = string.Empty;
@@ -84,6 +92,26 @@ public sealed class Group : AggregateRoot<long>
 
     /// <summary>是否允许自行加入</summary>
     public bool IsOpenToJoin => JoinPolicy == GroupJoinPolicy.Open;
+
+    /// <summary>
+    /// 群邀请链接的 token（能力凭证）。null = 未开启。
+    /// 只存 token 不存完整 URL：站点域名由客户端拼，服务端不知道用户从哪个域名访问。
+    /// token 是"持有即可申请/加入"的凭证，因此不能写进日志。
+    /// </summary>
+    public string? InviteToken { get; private set; }
+
+    /// <summary>邀请链接过期时间（UTC）；与 InviteToken 同进同退</summary>
+    public DateTime? InviteTokenExpiresAt { get; private set; }
+
+    /// <summary>
+    /// 凭邀请链接入群是否需要管理员审批（默认需要）。
+    /// 只作用于链接入口；「开放加入」（JoinPolicy.Open，知道群号即可进）的语义不受影响。
+    /// </summary>
+    public bool JoinApprovalRequired { get; private set; } = true;
+
+    /// <summary>邀请链接当前是否可用</summary>
+    public bool HasActiveInviteLink(DateTime now)
+        => !string.IsNullOrEmpty(InviteToken) && InviteTokenExpiresAt is { } expires && expires > now;
 
     // ===== 公告的三个持久化列（映射到既有表结构 Announcement / AnnouncementAt / AnnouncementBy）=====
     // 对外只暴露聚合后的值对象，三列永远同进同退。
@@ -133,6 +161,44 @@ public sealed class Group : AggregateRoot<long>
         JoinPolicy = policy;
         Raise(new GroupJoinPolicyChanged(Id, policy, operatedBy, now));
     }
+
+    /// <summary>
+    /// 开启或重置邀请链接（调用前须由 GroupMember.EnsureCanManageGroup 校验权限）。
+    /// 重置会立刻覆盖旧 token —— 旧链接立即失效，已提交的待审批申请不受影响。
+    /// </summary>
+    public void EnableInviteLink(string token, DateTime now)
+    {
+        var normalized = (token ?? string.Empty).Trim();
+        DomainException.Ensure(
+            normalized.Length is >= InviteTokenMinLength and <= InviteTokenMaxLength,
+            "邀请链接 token 长度不合法");
+        DomainException.Ensure(
+            normalized.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'),
+            "邀请链接 token 只能包含字母、数字、- 与 _");
+
+        InviteToken = normalized;
+        InviteTokenExpiresAt = now.AddDays(InviteLinkTtlDays);
+    }
+
+    /// <summary>
+    /// 关闭邀请链接（调用前须由 GroupMember.EnsureCanManageGroup 校验权限）。
+    /// 已提交的申请保留：链接失效不应该连带丢掉管理员还没处理的待审批记录。
+    /// </summary>
+    public void DisableInviteLink()
+    {
+        InviteToken = null;
+        InviteTokenExpiresAt = null;
+    }
+
+    /// <summary>
+    /// 凭链接进入前的准入校验。
+    /// 「失效」与「不存在」共用同一句提示：调用方不该让外人区分出群是否存在。
+    /// </summary>
+    public void EnsureInviteLinkUsable(DateTime now)
+        => DomainException.Ensure(HasActiveInviteLink(now), "邀请链接已失效，请让群主重新生成");
+
+    /// <summary>设置凭链接入群是否需要审批（调用前须由 GroupMember.EnsureCanManageGroup 校验权限）</summary>
+    public void SetJoinApprovalRequired(bool required) => JoinApprovalRequired = required;
 
     /// <summary>设置/清除公告（调用前须由 GroupMember.EnsureCanManageGroup 校验权限）</summary>
     public void SetAnnouncement(string? text, int editedBy, DateTime now)

@@ -42,6 +42,13 @@ public interface IRealtimeNotifier
     /// <summary>被移出群（客户端自动退出该会话），与解散同样是「让客户端主动退出」</summary>
     Task NotifyRemovedFromGroupAsync(int toUserId, long groupId, CancellationToken ct = default);
 
+    /// <summary>有人凭邀请链接申请入群（推给该群的群主/管理员）</summary>
+    Task NotifyGroupJoinRequestedAsync(int toAdminId, long groupId, long requestId,
+        CancellationToken ct = default);
+
+    /// <summary>入群申请结果（推给申请人；approved=false 表示被拒绝）</summary>
+    Task NotifyGroupJoinResultAsync(int toUserId, long groupId, bool approved,
+        CancellationToken ct = default);
     // ===== 消息 =====
 
     /// <summary>推送一条私聊消息给收发双方的全部在线设备（多端同步）</summary>

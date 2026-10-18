@@ -1,6 +1,8 @@
 using LHZ.OnlineChat.Application.Groups.Commands;
 using LHZ.OnlineChat.Application.Groups.Queries;
 using LHZ.OnlineChat.Application.Robots.Commands;
+using LHZ.OnlineChat.Server.Configuration;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -101,6 +103,77 @@ public sealed class GroupsController : ApiControllerBase
     public Task<IActionResult> DismissGroup(long groupId, CancellationToken ct)
         => Send(new DismissGroupCommand { GroupId = groupId, UserId = UserId }, ct);
 
+    // ==================== 邀请链接 / 入群审批 ====================
+
+    /// <summary>生成（或重置）群邀请链接（仅群主/管理员）</summary>
+    [HttpPost("{groupId:long}/invite-link")]
+    public Task<IActionResult> CreateInviteLink(long groupId, CancellationToken ct)
+        => Send(new CreateGroupInviteLinkCommand { GroupId = groupId, OperatorId = UserId }, ct);
+
+    /// <summary>查看当前邀请链接（仅群主/管理员）</summary>
+    [HttpGet("{groupId:long}/invite-link")]
+    public Task<IActionResult> GetInviteLink(long groupId, CancellationToken ct)
+        => Send(new GetGroupInviteLinkQuery { GroupId = groupId, RequesterId = UserId }, ct);
+
+    /// <summary>关闭邀请链接（仅群主/管理员）</summary>
+    [HttpDelete("{groupId:long}/invite-link")]
+    public Task<IActionResult> DisableInviteLink(long groupId, CancellationToken ct)
+        => Send(new DisableGroupInviteLinkCommand { GroupId = groupId, OperatorId = UserId }, ct);
+
+    /// <summary>设置凭邀请链接入群是否需要审批（仅群主/管理员）</summary>
+    [HttpPut("{groupId:long}/join-approval")]
+    public Task<IActionResult> SetJoinApproval(
+        long groupId, [FromBody] SetJoinApprovalRequest body, CancellationToken ct)
+        => Send(new SetGroupJoinApprovalCommand
+        {
+            GroupId = groupId,
+            OperatorId = UserId,
+            Required = body.Required
+        }, ct);
+
+    /// <summary>待审批的入群申请（仅群主/管理员）</summary>
+    [HttpGet("{groupId:long}/join-requests")]
+    public Task<IActionResult> GetJoinRequests(long groupId, CancellationToken ct)
+        => Send(new GetGroupJoinRequestsQuery { GroupId = groupId, RequesterId = UserId }, ct);
+
+    /// <summary>通过入群申请（仅群主/管理员）</summary>
+    [HttpPost("{groupId:long}/join-requests/{requestId:long}/approve")]
+    public Task<IActionResult> ApproveJoinRequest(long groupId, long requestId, CancellationToken ct)
+        => Send(new ApproveGroupJoinRequestCommand
+        {
+            GroupId = groupId,
+            RequestId = requestId,
+            OperatorId = UserId
+        }, ct);
+
+    /// <summary>拒绝入群申请（仅群主/管理员）</summary>
+    [HttpPost("{groupId:long}/join-requests/{requestId:long}/reject")]
+    public Task<IActionResult> RejectJoinRequest(long groupId, long requestId, CancellationToken ct)
+        => Send(new RejectGroupJoinRequestCommand
+        {
+            GroupId = groupId,
+            RequestId = requestId,
+            OperatorId = UserId
+        }, ct);
+
+    /// <summary>凭邀请链接预览群信息（邀请页；需登录，避免匿名窥探群资料）</summary>
+    [HttpGet("join/{token}")]
+    [EnableRateLimiting(RateLimitPolicies.GroupJoin)]
+    public Task<IActionResult> GetInvitePreview(string token, CancellationToken ct)
+        => Send(new GetGroupInvitePreviewQuery { Token = token, UserId = UserId }, ct);
+
+    /// <summary>凭邀请链接加入或提交入群申请</summary>
+    [HttpPost("join/{token}")]
+    [EnableRateLimiting(RateLimitPolicies.GroupJoin)]
+    public Task<IActionResult> JoinByToken(
+        string token, [FromBody] JoinByTokenRequest? body, CancellationToken ct)
+        => Send(new SubmitJoinByTokenCommand
+        {
+            Token = token,
+            UserId = UserId,
+            Message = body?.Message
+        }, ct);
+
     // ==================== 群机器人 ====================
 
     /// <summary>群内机器人列表（仅群成员可见）</summary>
@@ -169,4 +242,15 @@ public sealed class AddGroupRobotRequest
 {
     /// <summary>机器人账号 ID（User.Id）</summary>
     public int UserId { get; set; }
+}
+public sealed class JoinByTokenRequest
+{
+    /// <summary>申请附言（可选，≤100 字）</summary>
+    public string? Message { get; set; }
+}
+
+public sealed class SetJoinApprovalRequest
+{
+    /// <summary>true=凭邀请链接入群需要审批（默认），false=直接入群</summary>
+    public bool Required { get; set; }
 }

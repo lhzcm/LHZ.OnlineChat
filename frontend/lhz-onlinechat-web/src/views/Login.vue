@@ -24,6 +24,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { safeRedirect } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { useWebSocketStore } from '@/stores/websocket'
 
@@ -55,7 +56,8 @@ async function handleLogin() {
     const res = await auth.login({ account: acc, password: password.value })
     if (res.success) {
       ws.connect(auth.token)
-      router.push('/chat')
+      // 扫码进邀请页的人登录后回跳原目标（只接受站内路径，防开放重定向）
+      router.push(safeRedirect(route.query.redirect) ?? '/chat')
     } else {
       error.value = res.message
     }
