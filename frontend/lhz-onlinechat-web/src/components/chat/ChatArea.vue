@@ -1,26 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import Avatar from '@/components/Avatar.vue'
 import MessageBubble from './MessageBubble.vue'
+import ChatHeader from './ChatHeader.vue'
+import ChatSearchPanel from './ChatSearchPanel.vue'
+import MessageComposer from './MessageComposer.vue'
 import ForwardModal from './modals/ForwardModal.vue'
 import ForwardViewerModal from './modals/ForwardViewerModal.vue'
-import { emojiGroups } from '@/constants/emojis'
 import { useAuthStore } from '@/stores/auth'
 import { useFriendStore } from '@/stores/friend'
 import { useGroupStore } from '@/stores/group'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
-import { messageApi } from '@/api/message'
-import { MAX_MESSAGE_LENGTH } from '@/constants/limits'
 import { useToast } from '@/composables/useToast'
 import { copyText } from '@/utils/clipboard'
 import {
-  MAX_FORWARD_MESSAGES, buildBatchCopyText, buildForwardBundle, messagePreview,
+  MAX_FORWARD_MESSAGES, buildBatchCopyText, buildForwardBundle,
   type ForwardTarget, type ForwardedItem
 } from '@/utils/forward'
-import { formatMsgTime } from '@/utils/format'
-import { compressChatImage } from '@/utils/image'
-import type { WsMessage, ChatType, GroupMemberInfo, MessageSearchResult } from '@/types'
+import { genMessageId, sendMessage } from '@/utils/messageSend'
+import type { WsMessage, ChatType } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
 const props = defineProps<{
@@ -36,125 +34,31 @@ const chatStore = useChatStore()
 const ws = useWebSocketStore()
 const { toast } = useToast()
 
-/**
- * 草稿按会话存（chat store 的 drafts）：普通文本与 Markdown 各存各的、互不带内容，
- * 切到别的会话再切回来内容还在 —— 也就不会出现"A 的草稿发到 B"。
- * 输入框、表情/@ 插入、发送按钮都只作用于 activeText（当前会话 + 当前模式对应的那一份）。
- */
-const draftKey = computed(() => (props.chat ? chatStore.sessionKey(props.chat.type, props.chat.id) : ''))
-const draft = computed(() => chatStore.getDraft(draftKey.value))
-/** Markdown 模式也按会话记忆（A 会话用 MD、切到 B 用普通，各自保留） */
-const markdownMode = computed({
-  get: () => draft.value.markdown,
-  set: (value: boolean) => chatStore.setDraft(draftKey.value, { markdown: value })
-})
-const activeText = computed({
-  get: () => (markdownMode.value ? draft.value.markdownText : draft.value.text),
-  set: (value: string) => chatStore.setDraft(
-    draftKey.value,
-    markdownMode.value ? { markdownText: value } : { text: value }
-  )
-})
-const inputEl = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
 const msgContainer = ref<HTMLElement | null>(null)
-const sendHint = ref('')
+/** 输入区实例（回复/重新编辑/提示都转发给它） */
+const composerRef = ref<InstanceType<typeof MessageComposer> | null>(null)
 const lightboxUrl = ref('')
 
 // ==================== 会话内搜索 ====================
+/** 搜索条开合（头部按钮控制）；结果、防抖、分页都在 ChatSearchPanel 里 */
 const searchOpen = ref(false)
-const searchKeyword = ref('')
-const searchResults = ref<MessageSearchResult[]>([])
-const searching = ref(false)
-const searchNoMore = ref(false)
-const searchPage = ref(1)
 /** 搜索关键词高亮（传给 MessageBubble 渲染 <mark>） */
 const highlightKeyword = ref('')
-let searchTimer: number | null = null
-const searchInputRef = ref<HTMLInputElement | null>(null)
 
-/** 打开/关闭搜索条 */
-function toggleSearch() {
-  searchOpen.value = !searchOpen.value
-  if (searchOpen.value) {
-    highlightKeyword.value = ''
-    nextTick(() => searchInputRef.value?.focus())
-  } else {
-    clearSearch()
-  }
-}
-
-function clearSearch() {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchKeyword.value = ''
-  searchResults.value = []
-  searching.value = false
-  searchNoMore.value = false
-  searchPage.value = 1
+function closeSearch() {
+  searchOpen.value = false
   highlightKeyword.value = ''
 }
 
-/** 会话内搜索（防抖 300ms，带分页） */
-watch(searchKeyword, (kw) => {
-  if (searchTimer) clearTimeout(searchTimer)
-  const chat = props.chat
-  if (!chat) return
-  const keyword = kw.trim()
-  if (!keyword) {
-    searchResults.value = []
-    searchNoMore.value = false
-    searchPage.value = 1
-    searching.value = false
-    return
-  }
-  searchTimer = window.setTimeout(async () => {
-    searchPage.value = 1
-    searching.value = true
-    try {
-      const res = await messageApi.searchMessages(keyword, 1, 20, chat.type, chat.id)
-      if (res.success && res.data) {
-        searchResults.value = res.data.items || []
-        searchNoMore.value = searchResults.value.length >= (res.data.total || 0)
-      } else {
-        searchResults.value = []
-        searchNoMore.value = true
-      }
-    } catch {
-      searchResults.value = []
-    } finally {
-      searching.value = false
-    }
-  }, 300)
-})
-
-/** 加载更多搜索结果 */
-async function loadMoreSearchResults() {
-  const chat = props.chat
-  const keyword = searchKeyword.value.trim()
-  if (!chat || !keyword || searching.value || searchNoMore.value) return
-  searching.value = true
-  try {
-    const page = searchPage.value + 1
-    const res = await messageApi.searchMessages(keyword, page, 20, chat.type, chat.id)
-    if (res.success && res.data) {
-      const seen = new Set(searchResults.value.map(r => r.messageId))
-      const fresh = (res.data.items || []).filter(r => !r.messageId || !seen.has(r.messageId))
-      searchResults.value = [...searchResults.value, ...fresh]
-      searchPage.value = page
-      searchNoMore.value = fresh.length === 0
-    } else {
-      searchNoMore.value = true
-    }
-  } catch {
-    searchNoMore.value = true
-  } finally {
-    searching.value = false
-  }
+function toggleSearch() {
+  if (searchOpen.value) closeSearch()
+  else searchOpen.value = true
 }
 
 /** 点击搜索结果：定位到消息并高亮关键词 */
-function locateSearchResult(r: MessageSearchResult) {
-  highlightKeyword.value = searchKeyword.value.trim()
-  if (r.messageId) scrollToMessage(r.messageId)
+function onSearchLocate(messageId: string, keyword: string) {
+  highlightKeyword.value = keyword
+  if (messageId) scrollToMessage(messageId)
 }
 
 const currentMessages = computed(() => {
@@ -167,28 +71,6 @@ const currentMessages = computed(() => {
 const unreadAnchor = computed(() => (
   props.chat ? chatStore.unreadAnchorOf(chatStore.sessionKey(props.chat.type, props.chat.id)) : ''
 ))
-
-// 聊天窗口副标题：私聊显示原昵称+在线状态（有备注时），群聊显示人数
-const chatSub = computed(() => {
-  if (!props.chat) return ''
-  if (props.chat.type === 'private') {
-    const f = friendStore.friends.find(x => x.userId === props.chat!.id)
-    if (!f) return ''
-    const status = f.isOnline ? '在线' : '离线'
-    return f.remark ? `${f.nickname} · ${status}` : status
-  }
-  const g = groupStore.groups.find(x => x.id === props.chat!.id)
-  return g ? `${g.memberCount} 人` : ''
-})
-
-// 当前会话头像（私聊=好友头像，群聊=群头像）
-const chatAvatar = computed(() => {
-  if (!props.chat) return null
-  if (props.chat.type === 'private') {
-    return friendStore.friends.find(x => x.userId === props.chat!.id)?.avatar ?? null
-  }
-  return groupStore.groups.find(x => x.id === props.chat!.id)?.avatar ?? null
-})
 
 // 群公告（横幅）
 const currentAnnouncement = computed(() => {
@@ -209,28 +91,6 @@ function setPeerTyping() {
   peerTyping.value = true
   if (peerTypingTimer) clearTimeout(peerTypingTimer)
   peerTypingTimer = window.setTimeout(() => { peerTyping.value = false }, 4000)
-}
-
-/** 我也在输入：私聊每 3 秒最多发一帧（服务端只转发，不发就没有"正在输入…"） */
-let lastTypingSentAt = 0
-function notifyTyping() {
-  const chat = props.chat
-  if (!chat || chat.type !== 'private' || !auth.user || !ws.connected) return
-  if (!activeText.value.trim()) return
-  const now = Date.now()
-  if (now - lastTypingSentAt < 3000) return
-  lastTypingSentAt = now
-  ws.sendMessage({
-    type: 'typing',
-    from: String(auth.user.id),
-    to: String(chat.id),
-    content: '',
-    timestamp: now,
-    messageId: '',
-    messageType: 0,
-    senderName: '',
-    senderAvatar: null
-  })
 }
 
 // ==================== 历史加载与滚动 ====================
@@ -297,9 +157,7 @@ let historyReady: Promise<void> = Promise.resolve()
 watch(() => props.chat, (chat, prev) => {
   if (prev) chatStore.clearUnreadAnchor(chatStore.sessionKey(prev.type, prev.id))
   if (!chat) return
-  replyTarget.value = null
-  sendHint.value = ''
-  clearSearch()
+  highlightKeyword.value = ''
   // 切会话退出多选：选中的是上一个会话的消息，留着只会误操作
   exitSelectMode()
   // 输入提示属于上一个会话，切走就清；节流计时也重置，新会话第一条消息立刻能提示
@@ -308,7 +166,6 @@ watch(() => props.chat, (chat, prev) => {
     clearTimeout(peerTypingTimer)
     peerTypingTimer = null
   }
-  lastTypingSentAt = 0
   const anchor = chatStore.unreadAnchorOf(chatStore.sessionKey(chat.type, chat.id))
   historyReady = (async () => {
     await chatStore.loadHistory(chat.type, chat.id, 1, auth.user?.id)
@@ -321,13 +178,23 @@ watch(() => props.chat, (chat, prev) => {
 }, { immediate: true })
 
 /** 新消息到达时：接近底部才滚动（用户正在上翻历史时不打扰） */
+/** MessageBubble 的「回复」：转发给输入区挂引用 */
+function onReply(msg: WsMessage) {
+  composerRef.value?.reply(msg)
+}
+
+/** 发送失败消息的「重试」：同样交给输入区（发送逻辑只有一份） */
+function onRetry(msg: ChatMessage) {
+  composerRef.value?.retry(msg)
+}
+
 function scrollToBottomIfNear() {
   if (isNearBottom()) scrollToBottom()
 }
 
-/** 设置输入栏提示（如"对方已将你拉黑"） */
+/** 设置输入栏提示（如"对方已将你拉黑"）：转发给输入区显示 */
 function setHint(text: string) {
-  sendHint.value = text
+  composerRef.value?.setHint(text)
 }
 
 /** 定位消息：已加载则滚动到该行并高亮；否则继续翻更早的历史（最多 10 页） */
@@ -348,183 +215,15 @@ async function scrollToMessage(messageId: string) {
   }
 }
 
-/** 撤回后「重新编辑」：把原内容填回输入框并聚焦（草稿按会话存，不会串到别的会话） */
+/** 撤回后「重新编辑」：把原内容交回输入区（草稿按会话存，不会串会话） */
 function reeditMessage(content: string) {
-  activeText.value = content
-  nextTick(() => {
-    inputEl.value?.focus()
-    const len = content.length
-    inputEl.value?.setSelectionRange(len, len)
-  })
+  composerRef.value?.reedit(content)
 }
 
 defineExpose({ scrollToBottomIfNear, setHint, scrollToMessage, setPeerTyping })
 
-// ==================== 表情 ====================
-const showEmojiPanel = ref(false)
-const emojiPanelRef = ref<HTMLElement | null>(null)
-const emojiBtnRef = ref<HTMLElement | null>(null)
-
-function toggleEmojiPanel() {
-  showEmojiPanel.value = !showEmojiPanel.value
-}
-
-/** 在输入框光标位置插入表情，并恢复焦点与光标 */
-function insertEmoji(emoji: string) {
-  const el = inputEl.value
-  if (!el) return
-  const start = el.selectionStart ?? activeText.value.length
-  const end = el.selectionEnd ?? activeText.value.length
-  const text = activeText.value
-  activeText.value = text.slice(0, start) + emoji + text.slice(end)
-  nextTick(() => {
-    const pos = start + emoji.length
-    el.focus()
-    el.setSelectionRange(pos, pos)
-  })
-}
-
-function onDocClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (!emojiPanelRef.value?.contains(target) && !emojiBtnRef.value?.contains(target)) {
-    showEmojiPanel.value = false
-  }
-}
-onMounted(() => {
-  document.addEventListener('click', onDocClick)
-  window.addEventListener('keydown', onSelectKeydown)
-})
-onUnmounted(() => {
-  document.removeEventListener('click', onDocClick)
-  window.removeEventListener('keydown', onSelectKeydown)
-})
-
-// ==================== @ 提及 ====================
-const mentionOpen = ref(false)
-const mentionQuery = ref('')
-
-const mentionFiltered = computed(() => {
-  const q = mentionQuery.value.trim().toLowerCase()
-  const list = groupStore.members.filter(m => !q || m.nickname.toLowerCase().includes(q))
-  return list.slice(0, 8)
-})
-
-const inputPlaceholder = computed(() => {
-  if (markdownMode.value) return 'Markdown：支持 # 标题、**粗体**、`代码`、- 列表（Ctrl+Enter 发送）'
-  return props.chat?.type === 'group' ? '输入消息… 输入 @ 可提及成员' : '输入消息…'
-})
-
-/** 接近上限才显示字数：平时不打扰，快满了才有存在感 */
-const showLengthHint = computed(() => activeText.value.length >= MAX_MESSAGE_LENGTH * 0.8)
-
-/** 超限就禁止发送（服务端同样会拒，这里是为了不让人白等一下） */
-const isOverLengthLimit = computed(() => activeText.value.length > MAX_MESSAGE_LENGTH)
-
-/**
- * 输入框按键：@ 键直接打开成员面板（双保险，避免 input 事件异常）。
- * 普通模式 Enter 发送；Markdown 模式 Enter 是换行（多行语法得能敲出来），Ctrl/Cmd+Enter 才发送。
- */
-function onInputKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') {
-    if (markdownMode.value && !(e.ctrlKey || e.metaKey)) return
-    send()
-    return
-  }
-  if ((e.key === '@' || e.key === '＠') && props.chat?.type === 'group') {
-    mentionOpen.value = true
-    mentionQuery.value = ''
-    if (groupStore.members.length === 0) {
-      groupStore.fetchMembers(props.chat.id)
-    }
-  }
-}
-
-/** 输入变化时检测 @ 触发成员选择（仅群聊），兼容全角 ＠；顺便给对方一个"正在输入"信号 */
-function onInputChange() {
-  notifyTyping()
-  const el = inputEl.value
-  if (!el || props.chat?.type !== 'group') {
-    mentionOpen.value = false
-    return
-  }
-  const text = el.value
-  const caret = el.selectionStart ?? text.length
-  // 向前找最近的非邮箱 @（前面是空白或开头；兼容全角 ＠）
-  const atIdx = Math.max(
-    text.lastIndexOf('@', caret - 1),
-    text.lastIndexOf('＠', caret - 1)
-  )
-  if (atIdx >= 0 && (atIdx === 0 || /\s/.test(text[atIdx - 1]))) {
-    const token = text.slice(atIdx + 1, caret)
-    if (!token.includes(' ')) {
-      mentionOpen.value = true
-      mentionQuery.value = token
-      if (groupStore.members.length === 0) {
-        groupStore.fetchMembers(props.chat.id)
-      }
-      return
-    }
-  }
-  mentionOpen.value = false
-}
-
-function pickMention(m: GroupMemberInfo) {
-  const el = inputEl.value
-  if (!el) return
-  const text = el.value
-  const caret = el.selectionStart ?? text.length
-  const atIdx = Math.max(text.lastIndexOf('@', caret - 1), text.lastIndexOf('＠', caret - 1))
-  const insert = `@${m.nickname} `
-  const start = atIdx >= 0 ? atIdx : caret
-  activeText.value = text.slice(0, start) + insert + text.slice(caret)
-  nextTick(() => {
-    const pos = start + insert.length
-    el.focus()
-    el.setSelectionRange(pos, pos)
-  })
-  mentionOpen.value = false
-}
-
-function openMentionPicker() {
-  if (!props.chat) return
-  const el = inputEl.value
-  mentionOpen.value = true
-  mentionQuery.value = ''
-  if (el) {
-    const caret = el.selectionStart ?? activeText.value.length
-    const end = el.selectionEnd ?? caret
-    activeText.value = `${activeText.value.slice(0, caret)}@${activeText.value.slice(end)}`
-    nextTick(() => {
-      const pos = caret + 1
-      el.focus()
-      el.setSelectionRange(pos, pos)
-    })
-  }
-  if (groupStore.members.length === 0) {
-    groupStore.fetchMembers(props.chat.id)
-  }
-}
-
-/** 解析消息中的 @提及：返回被提及成员的账号 ID 列表（仅群聊） */
-function parseMentions(text: string): number[] {
-  const ids: number[] = []
-  for (const m of groupStore.members) {
-    if (text.includes(`@${m.nickname}`)) ids.push(m.userId)
-  }
-  return ids
-}
-
-// ==================== 引用回复 ====================
-const replyTarget = ref<{ messageId: string; content: string; senderName: string } | null>(null)
-
-function startReply(msg: WsMessage) {
-  replyTarget.value = {
-    messageId: msg.messageId,
-    content: (msg.content || '').slice(0, 50),
-    senderName: msg.senderName || '对方'
-  }
-  inputEl.value?.focus()
-}
+onMounted(() => window.addEventListener('keydown', onSelectKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onSelectKeydown))
 
 // ==================== 多选 / 批量转发 ====================
 const selectMode = ref(false)
@@ -602,7 +301,7 @@ function doForward(targets: ForwardTarget[]) {
       to: String(target.id),
       content: bundle,
       timestamp: Date.now(),
-      messageId: genId(),
+      messageId: genMessageId(),
       messageType: 4,
       senderName: auth.user.nickname,
       senderAvatar: auth.user.avatar,
@@ -610,7 +309,7 @@ function doForward(targets: ForwardTarget[]) {
       status: 'sending'
     }
     chatStore.addMessage(msg, auth.user.id)
-    if (sendWs(msg)) sent++
+    if (sendMessage(ws, msg)) sent++
     else chatStore.setMessageStatus(chatStore.sessionKey(target.type, target.id), msg.messageId, 'failed')
   }
   forwardOpen.value = false
@@ -633,146 +332,6 @@ function onSelectKeydown(e: KeyboardEvent) {
   exitSelectMode()
 }
 
-// ==================== 发送 ====================
-function genId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-}
-
-/** 发送前剥离本地字段（status 只用于本地渲染，不进 WS 协议体） */
-function toPayload(msg: ChatMessage): WsMessage {
-  const { status: _status, ...payload } = msg
-  return payload
-}
-
-/**
- * 写入 WS 连接，返回是否真的发出（true = 连接已打开并已写入）。
- * websocket store 的 sendMessage 返回 boolean；这里用宽签名兼容返回 void 的实现，
- * 避免两侧类型未同步时构建失败（void 视为"未报告失败"）。
- */
-function sendWs(msg: ChatMessage): boolean {
-  const sender = ws.sendMessage as (m: WsMessage) => boolean | void
-  return sender(toPayload(msg)) !== false
-}
-
-function send() {
-  if (!props.chat || !auth.user) return
-  // 只取当前模式那一份草稿（普通文本 / Markdown 各自独立暂存）
-  const text = activeText.value.trim()
-  if (!text) return
-  // 超长不发出去：服务端会拒（回 message_failed），但没必要让用户等那一下，草稿也留着
-  if (text.length > MAX_MESSAGE_LENGTH) {
-    toast(`消息内容不能超过 ${MAX_MESSAGE_LENGTH} 字（当前 ${text.length} 字）`)
-    return
-  }
-  // 断线时不再直接丢弃消息：照常乐观上屏，由 sendMessage 的返回值决定是否标记"发送失败"（可重试）
-  sendHint.value = ws.connected
-    ? ''
-    : (ws.reconnectExhausted ? '实时连接已断开，请点顶部「重新连接」' : '连接已断开，正在重连，请稍候…')
-  const key = chatStore.sessionKey(props.chat.type, props.chat.id)
-  const msg: ChatMessage = {
-    type: props.chat.type === 'private' ? 'private_message' : 'group_message',
-    from: String(auth.user.id),
-    to: String(props.chat.id),
-    content: text,
-    timestamp: Date.now(),
-    messageId: genId(),
-    messageType: markdownMode.value ? 3 : 0,
-    senderName: auth.user.nickname,
-    senderAvatar: auth.user.avatar,
-    mentions: parseMentions(text),
-    replyTo: replyTarget.value?.messageId,
-    replyContent: replyTarget.value?.content,
-    replySender: replyTarget.value?.senderName,
-    status: 'sending'
-  }
-  chatStore.addMessage(msg, auth.user.id)
-  if (!sendWs(msg)) chatStore.setMessageStatus(key, msg.messageId, 'failed')
-  // 只清当前会话当前模式的草稿：另一种模式、以及别的会话的草稿都留着
-  chatStore.setDraft(key, markdownMode.value ? { markdownText: '' } : { text: '' })
-  replyTarget.value = null
-  scrollToBottom()
-}
-
-/**
- * 重试发送失败的消息：沿用原 messageId（服务端按它幂等去重，不会产生重复消息），
- * 只有真正写入连接才回到"发送中"，否则保持失败态并把提示留给用户。
- */
-function retryMessage(msg: ChatMessage) {
-  if (!props.chat || !auth.user) return
-  // 重发不会让超长内容变合法：直接说清楚，别让它再被服务端拒一次
-  if ((msg.content || '').length > MAX_MESSAGE_LENGTH) {
-    toast(`这条消息超过 ${MAX_MESSAGE_LENGTH} 字，无法重发（请精简后重新发送）`)
-    return
-  }
-  const key = chatStore.sessionKey(props.chat.type, props.chat.id)
-  if (sendWs(msg)) {
-    chatStore.setMessageStatus(key, msg.messageId, 'sending')
-    sendHint.value = ''
-  } else {
-    sendHint.value = '发送失败，请检查网络后重试'
-  }
-}
-
-// ==================== 图片消息 ====================
-const imageInputRef = ref<HTMLInputElement | null>(null)
-const sendingImage = ref(false)
-
-async function onImageSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  if (!props.chat || !auth.user) return
-  if (!ws.connected) {
-    sendHint.value = '连接已断开，正在重连，请稍候…'
-    return
-  }
-  if (!file.type.startsWith('image/')) {
-    toast('请选择图片文件')
-    return
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    toast('发送图片太大，发送失败（最大 5MB）')
-    return
-  }
-
-  sendingImage.value = true
-  sendHint.value = ''
-  try {
-    // 先压缩（长边 ≤1600px、WebP）：气泡里最多只渲染到 260px，
-    // 没必要让每个接收者都把手机原图整份下下来
-    const compressed = await compressChatImage(file)
-    const res = await messageApi.uploadImage(compressed)
-    if (!res.success || !res.data?.url) {
-      const msg = res.message || ''
-      toast(msg.includes('5MB') || msg.includes('大小')
-        ? '发送图片太大，发送失败（最大 5MB）'
-        : `图片发送失败：${msg || '请重试'}`)
-      return
-    }
-    const msg: ChatMessage = {
-      type: props.chat.type === 'private' ? 'private_message' : 'group_message',
-      from: String(auth.user.id),
-      to: String(props.chat.id),
-      content: res.data.url,
-      timestamp: Date.now(),
-      messageId: genId(),
-      messageType: 1,
-      senderName: auth.user.nickname,
-      senderAvatar: auth.user.avatar,
-      status: 'sending'
-    }
-    chatStore.addMessage(msg, auth.user.id)
-    if (!sendWs(msg)) chatStore.setMessageStatus(chatStore.sessionKey(props.chat.type, props.chat.id), msg.messageId, 'failed')
-    scrollToBottom()
-  } catch (err: any) {
-    toast('图片发送失败，请重试')
-  } finally {
-    sendingImage.value = false
-  }
-}
-
 function openLightbox(url: string) {
   lightboxUrl.value = url
 }
@@ -788,58 +347,10 @@ function openLightbox(url: string) {
 
     <!-- 聊天窗口 -->
     <template v-else>
-      <div class="chat-header">
-        <button class="back-btn" @click="emit('back')" title="返回">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-        <Avatar :name="chat.name" :url="chatAvatar" size="sm" />
-        <div class="chat-title">
-          <div class="chat-title-row">
-            <span class="chat-type-tag" v-if="chat.type === 'group'">群</span>
-            <span class="chat-name">{{ chat.name }}</span>
-          </div>
-          <span class="chat-sub" :class="{ typing: peerTyping }">{{ peerTyping ? '正在输入…' : chatSub }}</span>
-        </div>
-        <div class="header-spacer"></div>
-        <button v-if="chat.type === 'group'" class="icon-btn" @click="emit('members')" title="群成员">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-        </button>
-        <button class="icon-btn" :class="{ active: searchOpen }" @click="toggleSearch" title="搜索会话内消息">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-        </button>
-      </div>
+      <ChatHeader :chat="chat" :typing="peerTyping" :search-open="searchOpen"
+        @back="emit('back')" @members="emit('members')" @toggle-search="toggleSearch" />
 
-      <!-- 会话内搜索条 -->
-      <div class="chat-search-bar" v-if="searchOpen">
-        <input ref="searchInputRef" v-model="searchKeyword" class="input search-input"
-          placeholder="搜索当前会话的消息…" maxlength="50" />
-        <button class="search-close" @click="toggleSearch" title="关闭搜索">✕</button>
-      </div>
-
-      <!-- 搜索结果下拉 -->
-      <div class="chat-search-results" v-if="searchOpen && (searchResults.length > 0 || searching || searchKeyword.trim())">
-        <button v-for="r in searchResults" :key="r.messageId || `${r.sessionId}-${r.sentAt}`"
-          class="search-result-item" @click="locateSearchResult(r)">
-          <span class="contact-name">{{ r.senderName }}</span>
-          <span class="search-content">{{ messagePreview(r.content, r.messageType) }}</span>
-          <span class="search-time">{{ formatMsgTime(new Date(r.sentAt).getTime()) }}</span>
-        </button>
-        <div class="search-state" v-if="searching">搜索中…</div>
-        <div class="search-state" v-else-if="!searchResults.length && searchKeyword.trim()">未找到相关消息</div>
-        <div class="search-state" v-else-if="searchResults.length && !searchNoMore">
-          <button class="search-more-btn" @click="loadMoreSearchResults">加载更多</button>
-        </div>
-      </div>
+      <ChatSearchPanel :chat="chat" :open="searchOpen" @close="closeSearch" @locate="onSearchLocate" />
 
       <!-- 群公告横幅 -->
       <div class="announce-bar" v-if="chat.type === 'group' && currentAnnouncement" @click="emit('announcement')" title="查看群公告">
@@ -866,68 +377,14 @@ function openLightbox(url: string) {
             :chat-type="chat.type" :chat-id="chat.id" :chat-name="chat.name"
             :highlight="highlightKeyword"
             :select-mode="selectMode" :selected="selectedIds.has(msg.messageId)"
-            @reply="startReply" @retry="retryMessage" @image-click="openLightbox"
+            @reply="onReply" @retry="onRetry" @image-click="openLightbox"
             @reedit="reeditMessage" @select="enterSelectMode(msg)" @toggle-select="toggleSelect(msg)"
             @open-forward="openForwardViewer" />
         </template>
       </div>
 
+      <MessageComposer ref="composerRef" :chat="chat" @sent="scrollToBottom" />
       <!-- 引用回复横幅 -->
-      <div class="reply-bar" v-if="replyTarget">
-        <span class="reply-bar-text">回复 {{ replyTarget.senderName }}：{{ replyTarget.content }}</span>
-        <button class="reply-cancel" @click="replyTarget = null">✕</button>
-      </div>
-
-      <div class="chat-input-bar">
-        <!-- @ 成员选择浮层 -->
-        <div class="mention-panel" v-if="mentionOpen && mentionFiltered.length" @click.stop>
-          <button v-for="m in mentionFiltered" :key="m.userId" class="mention-item" @click="pickMention(m)">
-            <Avatar :name="m.nickname" :url="m.avatar" size="sm" />
-            <span class="contact-name">{{ m.nickname }}</span>
-            <span class="mention-role" v-if="m.role === 0">群主</span>
-          </button>
-        </div>
-        <!-- 表情面板 -->
-        <div class="emoji-panel" ref="emojiPanelRef" v-if="showEmojiPanel" @click.stop>
-          <div class="emoji-group" v-for="g in emojiGroups" :key="g.name">
-            <div class="emoji-group-title">{{ g.name }}</div>
-            <div class="emoji-grid">
-              <button v-for="e in g.list" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
-            </div>
-          </div>
-        </div>
-        <button class="emoji-btn md-btn" :class="{ active: markdownMode }" @click.stop="markdownMode = !markdownMode"
-          :title="markdownMode ? '退出 Markdown 模式' : 'Markdown 模式（Ctrl+Enter 发送）'">
-          <span class="md-symbol">MD</span>
-        </button>
-        <button v-if="chat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionPicker" title="提及成员">
-          <span class="at-symbol">@</span>
-        </button>
-        <button class="emoji-btn" :disabled="sendingImage" @click="imageInputRef?.click()" title="发送图片">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
-          </svg>
-        </button>
-        <input ref="imageInputRef" type="file" accept="image/*" class="hidden-file" @change="onImageSelect" />
-        <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-            <line x1="9" y1="9" x2="9.01" y2="9" />
-            <line x1="15" y1="9" x2="15.01" y2="9" />
-          </svg>
-        </button>
-        <input ref="inputEl" v-if="!markdownMode" v-model="activeText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
-        <textarea v-else ref="inputEl" v-model="activeText" class="input md-input" :placeholder="inputPlaceholder"
-          rows="3" @keydown="onInputKeydown" @input="onInputChange"></textarea>
-        <span class="input-counter" v-if="showLengthHint" :class="{ over: isOverLengthLimit }">
-          {{ activeText.length }} / {{ MAX_MESSAGE_LENGTH }}
-        </span>
-        <button class="send-btn" @click="send" :disabled="!activeText.trim() || isOverLengthLimit">发送</button>
-      </div>
-      <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
     </template>
 
     <!-- 图片放大预览 -->
@@ -965,75 +422,6 @@ function openLightbox(url: string) {
   gap: 12px;
   color: var(--text-secondary);
   font-size: 15px;
-}
-
-.chat-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 18px;
-  background: var(--bg-white);
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.04);
-  z-index: 1;
-}
-
-.back-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  background: var(--bg-hover);
-  border-radius: 50%;
-  cursor: pointer;
-  color: var(--text);
-  flex-shrink: 0;
-}
-
-.back-btn:active {
-  background: var(--border);
-}
-
-.chat-title {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.chat-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.chat-type-tag {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 8px;
-  background: var(--active-bg);
-  color: var(--primary);
-}
-
-.header-spacer {
-  flex: 1;
-}
-
-.chat-name {
-  font-weight: 600;
-  font-size: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-sub {
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 
 .chat-messages {
@@ -1100,11 +488,6 @@ function openLightbox(url: string) {
 }
 
 /* 对方正在输入：用弱化的文字，别抢消息本身的注意力 */
-.chat-sub.typing {
-  color: var(--primary, #3b82f6);
-}
-
-/* 群公告横幅 */
 .announce-bar {
   display: flex;
   align-items: center;
@@ -1130,379 +513,6 @@ function openLightbox(url: string) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* 会话内搜索条 */
-.chat-search-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-white);
-  flex-shrink: 0;
-}
-
-.search-input {
-  flex: 1;
-  margin: 0;
-  font-size: 13px;
-}
-
-.search-close {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-}
-
-.search-close:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-/* 搜索结果下拉 */
-.chat-search-results {
-  position: absolute;
-  top: 56px;
-  right: 14px;
-  width: 340px;
-  max-width: calc(100% - 28px);
-  max-height: 320px;
-  overflow-y: auto;
-  background: var(--bg-white);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-}
-
-.search-result-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 8px 10px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.search-result-item:hover {
-  background: var(--bg-hover);
-}
-
-.search-content {
-  font-size: 13px;
-  color: var(--text);
-  width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.search-time {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.search-state {
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  padding: 10px 0;
-}
-
-.search-more-btn {
-  border: 1px solid var(--border);
-  background: var(--bg-hover);
-  color: var(--primary);
-  font-size: 12px;
-  padding: 5px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.search-more-btn:hover {
-  background: var(--active-bg);
-}
-
-.icon-btn {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: 50%;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.icon-btn.active {
-  color: var(--primary);
-  background: var(--active-bg);
-}
-
-/* 引用回复横幅 */
-.reply-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  background: var(--bg-hover);
-  border-top: 1px solid var(--border);
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-
-.reply-bar-text {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.reply-cancel {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  flex-shrink: 0;
-}
-
-/* 输入栏 */
-.chat-input-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  background: var(--bg-white);
-  border-top: 1px solid var(--border);
-  position: relative;
-}
-
-.emoji-btn {
-  width: 38px;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: var(--bg-hover);
-  border-radius: 50%;
-  cursor: pointer;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-  transition: all 0.2s;
-}
-
-.emoji-btn:hover:not(:disabled) {
-  background: var(--active-bg);
-  color: var(--primary);
-}
-
-.emoji-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.mention-btn {
-  color: var(--primary);
-  font-weight: 700;
-}
-
-/* Markdown 模式开关：开启后输入框换多行、消息按 Markdown 渲染 */
-.md-btn.active {
-  background: var(--active-bg);
-  color: var(--primary);
-}
-
-.md-symbol {
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-}
-
-/* 字数提示：接近上限才出现，超限变红（此时发送按钮同时禁用） */
-.input-counter {
-  flex-shrink: 0;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.input-counter.over {
-  color: var(--danger);
-  font-weight: 600;
-}
-
-/* 多行输入：Enter 换行，Ctrl/Cmd+Enter 发送 */
-.md-input {
-  resize: none;
-  min-height: 62px;
-  max-height: 160px;
-  line-height: 1.5;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 13.5px;
-  overflow-y: auto;
-}
-
-.at-symbol {
-  font-size: 18px;
-}
-
-.hidden-file {
-  display: none;
-}
-
-.input {
-  flex: 1;
-  min-width: 0;
-}
-
-.send-btn {
-  padding: 9px 22px;
-  border: none;
-  border-radius: 10px;
-  background: var(--mine-bubble);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(91, 108, 255, 0.3);
-}
-
-.send-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-.send-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.send-hint {
-  padding: 0 20px 10px;
-  font-size: 12px;
-  color: var(--danger);
-  background: var(--bg-white);
-}
-
-/* @ 成员选择浮层 */
-.mention-panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 16px;
-  right: 16px;
-  max-height: 240px;
-  overflow-y: auto;
-  background: var(--bg-white);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  z-index: 20;
-  padding: 6px;
-}
-
-.mention-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-}
-
-.mention-item:hover {
-  background: var(--bg-hover);
-}
-
-.mention-role {
-  font-size: 11px;
-  color: var(--primary);
-  background: var(--active-bg);
-  border-radius: 8px;
-  padding: 0 6px;
-  line-height: 16px;
-  flex-shrink: 0;
-}
-
-/* 表情面板 */
-.emoji-panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 16px;
-  width: 340px;
-  max-height: 260px;
-  overflow-y: auto;
-  background: var(--bg-white);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  z-index: 20;
-  padding: 12px;
-}
-
-.emoji-group {
-  margin-bottom: 10px;
-}
-
-.emoji-group-title {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
-.emoji-grid {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 2px;
-}
-
-.emoji-item {
-  font-size: 20px;
-  padding: 4px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.emoji-item:hover {
-  background: var(--bg-hover);
 }
 
 /* 图片放大预览 */
@@ -1542,28 +552,9 @@ function openLightbox(url: string) {
     display: flex;
   }
 
-  .back-btn {
-    display: flex;
-  }
-
   .chat-messages {
     padding: 14px 12px;
   }
 
-  .emoji-panel {
-    left: 8px;
-    right: 8px;
-    width: auto;
-  }
-
-  .emoji-grid {
-    grid-template-columns: repeat(7, 1fr);
-  }
-}
-
-@media (min-width: 721px) {
-  .back-btn {
-    display: none;
-  }
 }
 </style>
