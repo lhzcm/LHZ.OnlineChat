@@ -28,6 +28,12 @@ public class ForwardBundleTests
         ForwardBundle.EnsureValid(Bundle(("张三", "你好", 0), ("李四", "# 标题", 3), ("王五", "/uploads/a.png", 1)));
     }
 
+    [Fact(DisplayName = "语音明细可以转发（t=5，内容是音频地址）")]
+    public void EnsureValid_VoiceItem_Passes()
+    {
+        ForwardBundle.EnsureValid(Bundle(("张三", "/uploads/voices/a.webm", 5)));
+    }
+
     [Fact(DisplayName = "单条转发同样合法（卡片里只有一条也算一次转发）")]
     public void EnsureValid_SingleItem_Passes()
     {

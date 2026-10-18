@@ -29,7 +29,7 @@ async function copyGroupId() {
     toast('群号已复制')
     setTimeout(() => (copied.value = false), 1500)
   } else {
-    toast('复制失败，请手动选择复制')
+    toast('复制失败，请手动选择复制', 'error')
   }
 }
 

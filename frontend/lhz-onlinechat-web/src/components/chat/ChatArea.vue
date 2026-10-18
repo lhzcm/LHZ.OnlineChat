@@ -281,7 +281,7 @@ async function copySelected() {
   const list = selectedMessages.value
   if (list.length === 0) return
   const ok = await copyText(buildBatchCopyText(list))
-  toast(ok ? `已复制 ${list.length} 条` : '复制失败，请手动选中文本复制')
+  toast(ok ? `已复制 ${list.length} 条` : '复制失败，请手动选中文本复制', ok ? 'info' : 'error')
 }
 
 /**

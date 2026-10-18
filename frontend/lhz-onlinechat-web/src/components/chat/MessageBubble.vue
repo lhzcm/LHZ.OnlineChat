@@ -5,6 +5,7 @@ import ImageMessage from './messages/ImageMessage.vue'
 import MarkdownMessage from './messages/MarkdownMessage.vue'
 import ForwardMessage from './messages/ForwardMessage.vue'
 import TextMessage from './messages/TextMessage.vue'
+import VoiceMessage from './messages/VoiceMessage.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
@@ -165,7 +166,7 @@ function onRowTouchStart(e: TouchEvent) {
 
 async function copyMessage(msg: ChatMessage) {
   const ok = await copyText(msg.content || '')
-  toast(ok ? '已复制' : '复制失败，请手动选中文本复制')
+  toast(ok ? '已复制' : '复制失败，请手动选中文本复制', ok ? 'info' : 'error')
   closeMenu(true)
 }
 
@@ -204,12 +205,16 @@ onUnmounted(() => {
         <span class="reply-sender">{{ msg.replySender || '引用' }}</span>
         <span class="reply-text">{{ msg.replyContent }}</span>
       </div>
-      <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, 'is-forward': msg.messageType === 4, recalled: msg.isDeleted }">
+      <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, 'is-forward': msg.messageType === 4, 'is-voice': msg.messageType === 5, recalled: msg.isDeleted }">
         <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
-        <!-- 消息体按类型拆成子组件：文本 / 图片 / Markdown / 聊天记录卡片 -->
+        <!-- 消息体按类型拆成子组件：文本 / 图片 / Markdown / 聊天记录卡片 / 语音 -->
         <ImageMessage v-else-if="msg.messageType === 1" :src="msg.content" @click="onImageClick" />
         <MarkdownMessage v-else-if="msg.messageType === 3" :content="msg.content" :highlight="highlight" />
         <ForwardMessage v-else-if="msg.messageType === 4" :content="msg.content" @open="onForwardOpen" />
+        <!-- 多选模式下语音不参与播放：pointer-events 关掉，点击落到整行上用于勾选 -->
+        <div v-else-if="msg.messageType === 5" :class="{ 'voice-static': selectMode }">
+          <VoiceMessage :src="msg.content" />
+        </div>
         <TextMessage v-else :content="msg.content" :highlight="highlight" />
       </div>
       <div class="msg-actions">
@@ -584,6 +589,11 @@ html[data-theme='dark'] .msg-bubble :deep(.search-mark) {
 }
 
 /* 被 @ 的消息主色描边 */
+/* 多选模式：语音按钮不接收点击，整行点击用于勾选 */
+.msg-bubble.is-voice .voice-static {
+  pointer-events: none;
+}
+
 .msg-bubble.mentioned {
   box-shadow: 0 0 0 1.5px var(--primary-light);
 }

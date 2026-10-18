@@ -110,7 +110,7 @@ function robotPushUrl(token: string): string {
 /** 复制机器人调用链接（Clipboard API + execCommand 降级，兼容 http 站点） */
 async function copyRobotToken(url: string) {
   const ok = await copyText(url)
-  toast(ok ? '调用链接已复制' : '复制失败，请手动选择复制')
+  toast(ok ? '调用链接已复制' : '复制失败，请手动选择复制', ok ? 'info' : 'error')
 }
 </script>
 

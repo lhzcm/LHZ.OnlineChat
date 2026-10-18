@@ -36,5 +36,11 @@ export const messageApi = {
     const form = new FormData()
     form.append('file', file)
     return request.post('/uploads/image', form, { headers: { 'Content-Type': undefined } })
+  },
+  /** 上传语音（webm/ogg/m4a…；服务端按扩展名白名单 + 10MB 上限校验） */
+  uploadVoice(file: File): Promise<ApiResponse<{ url: string }>> {
+    const form = new FormData()
+    form.append('file', file)
+    return request.post('/uploads/voice', form, { headers: { 'Content-Type': undefined } })
   }
 }

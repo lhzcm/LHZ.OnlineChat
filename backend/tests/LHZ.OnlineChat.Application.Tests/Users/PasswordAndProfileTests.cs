@@ -435,6 +435,28 @@ public class UpdateProfileTests
         Assert.Equal("图片大小不能超过 5MB", ex.Message);
     }
 
+    [Fact(DisplayName = "语音上传存到voices子目录")]
+    public async Task UploadChatVoice_StoredInVoicesSubdirectory()
+    {
+        var result = await new UploadChatVoiceHandler(_ctx.Files).Handle(
+            new UploadChatVoiceCommand { File = Upload("voice.webm", 64 * 1024) }, default);
+
+        Assert.True(result.Success);
+        Assert.Equal("voices", _ctx.Files.Saved[0].Subdirectory);
+        Assert.StartsWith("/uploads/voices/", result.Data!.Url, StringComparison.Ordinal);
+    }
+
+    [Fact(DisplayName = "语音超过10MB被拒")]
+    public async Task UploadChatVoice_Exceeds10Mb_IsRejected()
+    {
+        var ex = await Assert.ThrowsAsync<DomainException>(
+            () => new UploadChatVoiceHandler(_ctx.Files).Handle(
+                new UploadChatVoiceCommand { File = Upload("voice.webm", UploadRules.MaxVoiceBytes + 1) },
+                default));
+
+        Assert.Equal("语音大小不能超过 10MB", ex.Message);
+    }
+
     private static FileUpload Upload(string fileName, long length)
         => new() { FileName = fileName, Length = length, Content = new MemoryStream(new byte[1]) };
 }

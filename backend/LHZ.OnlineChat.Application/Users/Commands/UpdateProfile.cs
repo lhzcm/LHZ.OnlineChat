@@ -149,3 +149,27 @@ internal sealed class UploadChatImageHandler : IRequestHandler<UploadChatImageCo
         return ApiResponse<UploadResponse>.Ok(new UploadResponse { Url = url }, "上传成功");
     }
 }
+
+/// <summary>上传语音消息</summary>
+public sealed class UploadChatVoiceCommand : ICommand<ApiResponse<UploadResponse>>
+{
+    public FileUpload? File { get; set; }
+}
+
+internal sealed class UploadChatVoiceHandler : IRequestHandler<UploadChatVoiceCommand, ApiResponse<UploadResponse>>
+{
+    private const string VoiceSubdirectory = "voices";
+
+    private readonly IFileStorage _storage;
+
+    public UploadChatVoiceHandler(IFileStorage storage) => _storage = storage;
+
+    public async Task<ApiResponse<UploadResponse>> Handle(UploadChatVoiceCommand command, CancellationToken ct)
+    {
+        // 时长由客户端限制（最长 60 秒）：服务端不解码音频，只守格式与体积
+        UploadRules.EnsureValidVoice(command.File);
+
+        var url = await _storage.SaveAsync(command.File!, VoiceSubdirectory, ct).ConfigureAwait(false);
+        return ApiResponse<UploadResponse>.Ok(new UploadResponse { Url = url }, "上传成功");
+    }
+}

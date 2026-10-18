@@ -31,12 +31,13 @@ public static class ForwardBundle
     /// <summary>来源昵称长度上限（与昵称本身的限制同量级）</summary>
     public const int MaxSenderNameLength = 64;
 
-    /// <summary>卡片里允许出现的消息类型：文字 / 图片 / Markdown（不允许嵌套转发、不允许文件）</summary>
+    /// <summary>卡片里允许出现的消息类型：文字 / 图片 / Markdown / 语音（不允许嵌套转发、不允许文件）</summary>
     private static readonly int[] AllowedItemTypes =
     [
         (int)MessageKind.Text,
         (int)MessageKind.Image,
-        (int)MessageKind.Markdown
+        (int)MessageKind.Markdown,
+        (int)MessageKind.Voice
     ];
 
     /// <summary>校验转发载荷；不合法时抛 <see cref="DomainException"/>（消息会原样回给发送者）</summary>

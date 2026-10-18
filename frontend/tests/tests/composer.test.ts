@@ -100,6 +100,17 @@ describe('MessageComposer：引用与草稿', () => {
     })
   })
 
+
+  it('引用语音消息时，引用条显示 [语音] 而不是音频地址', async () => {
+    const { wrapper, chatStore } = mountComposer()
+    const target = { messageId: 'm9', content: '/uploads/voices/a.webm', messageType: 5, senderName: '张三' } as WsMessage
+
+    ;(wrapper.vm as unknown as { reply: (msg: WsMessage) => void }).reply(target)
+    await wrapper.find('input.input').setValue('收到')
+    await wrapper.find('.send-btn').trigger('click')
+
+    expect(chatStore.messages.get('private_10002')![0].replyContent).toBe('[语音]')
+  })
   it('reedit() 把内容填回输入框（撤回后重新编辑）', async () => {
     const { wrapper } = mountComposer()
 

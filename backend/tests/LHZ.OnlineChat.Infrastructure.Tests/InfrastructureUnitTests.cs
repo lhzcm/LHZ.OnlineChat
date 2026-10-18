@@ -285,4 +285,60 @@ public class UploadRulesTests
         Assert.Equal(2 * 1024 * 1024, UploadRules.MaxAvatarBytes);
         Assert.Equal(5 * 1024 * 1024, UploadRules.MaxChatImageBytes);
     }
+
+    [Theory(DisplayName = "语音白名单扩展名通过（含浏览器与 iOS 的产出格式）")]
+    [InlineData(".webm")]
+    [InlineData(".ogg")]
+    [InlineData(".mp3")]
+    [InlineData(".m4a")]
+    [InlineData(".mp4")]
+    [InlineData(".wav")]
+    public void EnsureValidVoice_WhitelistedExtension_IsAccepted(string ext)
+    {
+        UploadRules.EnsureValidVoice(Upload($"a{ext}", 1024));
+    }
+
+    [Theory(DisplayName = "语音扩展名大小写不敏感")]
+    [InlineData(".WEBM")]
+    [InlineData(".M4A")]
+    public void EnsureValidVoice_ExtensionCase_IsIgnored(string ext)
+    {
+        UploadRules.EnsureValidVoice(Upload($"a{ext}", 1024));
+    }
+
+    [Theory(DisplayName = "非语音扩展名被拒")]
+    [InlineData(".png")]
+    [InlineData(".svg")]
+    [InlineData(".exe")]
+    [InlineData("")]
+    public void EnsureValidVoice_NonWhitelistedExtension_IsRejected(string ext)
+    {
+        var ex = Assert.Throws<Domain.Common.DomainException>(
+            () => UploadRules.EnsureValidVoice(Upload($"a{ext}", 1024)));
+
+        Assert.Equal("仅支持 webm / ogg / mp3 / m4a / mp4 / wav 格式语音", ex.Message);
+    }
+
+    [Fact(DisplayName = "语音未选文件/空文件被拒")]
+    public void EnsureValidVoice_NullOrEmpty_IsRejected()
+    {
+        Assert.Equal(
+            "请先录音再发送",
+            Assert.Throws<Domain.Common.DomainException>(() => UploadRules.EnsureValidVoice(null)).Message);
+        Assert.Equal(
+            "请先录音再发送",
+            Assert.Throws<Domain.Common.DomainException>(
+                () => UploadRules.EnsureValidVoice(Upload("a.webm", 0))).Message);
+    }
+
+    [Fact(DisplayName = "语音上限为10MB，超一点就拒")]
+    public void EnsureValidVoice_SizeLimit_IsEnforced()
+    {
+        UploadRules.EnsureValidVoice(Upload("a.webm", UploadRules.MaxVoiceBytes));
+
+        var ex = Assert.Throws<Domain.Common.DomainException>(
+            () => UploadRules.EnsureValidVoice(Upload("a.webm", UploadRules.MaxVoiceBytes + 1)));
+
+        Assert.Equal("语音大小不能超过 10MB", ex.Message);
+    }
 }

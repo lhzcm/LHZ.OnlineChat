@@ -21,7 +21,7 @@ export const MAX_FORWARD_ITEM_LENGTH = 2000
 /** 一次最多发往几个会话（纯客户端限制：目标越多，帧越多） */
 export const MAX_FORWARD_TARGETS = 5
 /** 卡片明细里允许出现的消息类型：文字 / 图片 / Markdown（不允许嵌套转发） */
-export type ForwardItemType = 0 | 1 | 3
+export type ForwardItemType = 0 | 1 | 3 | 5
 
 export interface ForwardTarget {
   type: ChatType
@@ -35,7 +35,7 @@ export interface ForwardedItem {
   n: string
   /** 原内容（Markdown 存源文本，图片存 URL） */
   c: string
-  /** 消息类型 0/1/3 */
+  /** 消息类型 0/1/3/5（5 = 语音，c 是音频地址） */
   t: ForwardItemType
   /** 原消息时间戳（毫秒） */
   ts: number
@@ -44,8 +44,8 @@ export interface ForwardedItem {
 /** 把选中的消息打包成卡片载荷（JSON 字符串） */
 export function buildForwardBundle(messages: ChatMessage[], now = Date.now()): string {
   const items: ForwardedItem[] = messages.slice(0, MAX_FORWARD_MESSAGES).map(m => {
-    // 卡片里只保留三种类型：图片/文字/Markdown；其它（文件、嵌套转发）退化成文字
-    const type: ForwardItemType = m.messageType === 1 ? 1 : m.messageType === 3 ? 3 : 0
+    // 卡片里只保留四种类型：图片/文字/Markdown/语音；其它（文件、嵌套转发）退化成文字
+    const type: ForwardItemType = m.messageType === 1 ? 1 : m.messageType === 3 ? 3 : m.messageType === 5 ? 5 : 0
     const raw = m.isDeleted ? '（消息已撤回）' : (m.content || '')
     return {
       n: (m.senderName || '').trim().slice(0, 64),
@@ -87,6 +87,7 @@ export function messagePreview(content: string, messageType: number): string {
   if (messageType === 4) return '[聊天记录]'
   if (messageType === 1) return '[图片]'
   if (messageType === 2) return '[文件]'
+  if (messageType === 5) return '[语音]'
   if (messageType === 3) return stripMarkdown(content)
   return content
 }
@@ -94,6 +95,7 @@ export function messagePreview(content: string, messageType: number): string {
 /** 卡片里某一行的摘要（图片显示 [图片]，Markdown 抹掉记号，超长截断） */
 export function forwardItemPreview(item: ForwardedItem, max = 40): string {
   if (item.t === 1) return '[图片]'
+  if (item.t === 5) return '[语音]'
   const text = item.t === 3 ? stripMarkdown(item.c) : item.c
   return text.length > max ? `${text.slice(0, max)}…` : text
 }

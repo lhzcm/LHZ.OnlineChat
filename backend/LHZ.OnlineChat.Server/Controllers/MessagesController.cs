@@ -117,4 +117,13 @@ public sealed class UploadsController : ApiControllerBase
         await using var upload = file.ToFileUpload();
         return await Send(new UploadChatImageCommand { File = upload.Value }, ct);
     }
+
+    /// <summary>上传语音消息（webm/ogg/mp3/m4a/mp4/wav，≤10MB；时长由客户端限制 60 秒）</summary>
+    [HttpPost("voice")]
+    [RequestSizeLimit(12 * 1024 * 1024)]
+    public async Task<IActionResult> UploadVoice(IFormFile? file, CancellationToken ct)
+    {
+        await using var upload = file.ToFileUpload();
+        return await Send(new UploadChatVoiceCommand { File = upload.Value }, ct);
+    }
 }

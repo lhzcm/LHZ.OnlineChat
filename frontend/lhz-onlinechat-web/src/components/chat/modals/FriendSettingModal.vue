@@ -108,7 +108,7 @@ async function deleteFriendRobot() {
 /** 复制机器人调用链接（Clipboard API + execCommand 降级，兼容 http 站点） */
 async function copyFriendRobotUrl() {
   const ok = await copyText(friendRobotUrl.value)
-  toast(ok ? '调用链接已复制' : '复制失败，请手动选择复制')
+  toast(ok ? '调用链接已复制' : '复制失败，请手动选择复制', ok ? 'info' : 'error')
 }
 </script>
 

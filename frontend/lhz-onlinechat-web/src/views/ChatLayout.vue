@@ -23,10 +23,8 @@
       <button class="startup-error-btn" @click="reconnectNow">重新连接</button>
     </div>
 
-    <!-- 轻提示 Toast -->
-    <transition name="toast-fade">
-      <div class="app-toast" v-if="toastMsg">{{ toastMsg }}</div>
-    </transition>
+    <!-- 轻提示浮层（错误/信息两档） -->
+    <AppToast />
 
     <!-- 好友设置弹窗（备注/分类） -->
     <FriendSettingModal v-if="showFriendSetting && friendSetting" :friend="friendSetting"
@@ -82,6 +80,7 @@ import { useChatStore } from '@/stores/chat'
 import { useWebSocketStore } from '@/stores/websocket'
 import { useToast } from '@/composables/useToast'
 import { inDnd, showDesktopNotify } from '@/composables/useNotify'
+import AppToast from '@/components/AppToast.vue'
 import { messagePreview } from '@/utils/forward'
 import { decideIncomingAction } from '@/utils/unread'
 import BlacklistModal from '@/components/chat/modals/BlacklistModal.vue'
@@ -98,7 +97,7 @@ import ChatSidebar from '@/components/chat/ChatSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
 import type { FriendInfo, WsMessage, ChatType, SessionInfo, MessageSearchResult } from '@/types'
 
-const { toastMsg, toast } = useToast()
+const { toast } = useToast()
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -459,7 +458,7 @@ function backToList() {
 function handleWsMessage(msg: WsMessage) {
   // 会话被踢下线（其他设备踢出本设备/修改密码/重置密码）：清理登录态并回登录页
   if (msg.type === 'kicked') {
-    toast('该设备已被踢下线，请重新登录')
+    toast('该设备已被踢下线，请重新登录', 'error')
     ws.disconnect()
     auth.logout()
     router.push('/login')
@@ -483,7 +482,7 @@ function handleWsMessage(msg: WsMessage) {
     refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     const peerId = Number(msg.from)
     if (currentChat.value?.type === 'private' && currentChat.value.id === peerId) {
-      toast('好友关系已解除')
+      toast('好友关系已解除', 'error')
       currentChat.value = null
       chatStore.setCurrentSession('private', peerId, '')
       mobileChatOpen.value = false
@@ -560,7 +559,7 @@ function handleWsMessage(msg: WsMessage) {
       chatAreaRef.value?.setHint(reason)
     } else {
       // 消息已不在内存里（例如刚刷新过）：至少把原因告诉用户
-      toast(reason)
+      toast(reason, 'error')
     }
     return
   }
@@ -576,7 +575,7 @@ function handleWsMessage(msg: WsMessage) {
 
   // 所在群被解散（管理后台操作）：刷新群/会话列表，若正在该群则退出
   if (msg.type === 'group_dissolved') {
-    toast(msg.content || '群已被解散')
+    toast(msg.content || '群已被解散', 'error')
     refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
     refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     const gid = Number(msg.to)
@@ -590,7 +589,7 @@ function handleWsMessage(msg: WsMessage) {
 
   // 被移出群（群主/管理员踢人）：与解散同样处理 —— 客户端主动退出该会话
   if (msg.type === 'group_removed') {
-    toast(msg.content || '你已被移出该群')
+    toast(msg.content || '你已被移出该群', 'error')
     refreshQuietly(groupStore.fetchGroups(), '刷新群列表')
     refreshQuietly(chatStore.fetchSessions(), '刷新会话列表')
     const gid = Number(msg.to)

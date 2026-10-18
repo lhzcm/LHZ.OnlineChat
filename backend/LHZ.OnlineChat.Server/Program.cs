@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 
@@ -266,6 +267,8 @@ app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(uploadsRootPath),
     RequestPath = "/uploads",
+    // 语音消息：默认映射没覆盖 m4a/webm 的音频 Content-Type，Safari 会拒绝播放，这里显式补齐
+    ContentTypeProvider = BuildUploadContentTypes(),
     OnPrepareResponse = ctx =>
     {
         // 上传目录是用户内容：禁止浏览器按内容嗅探类型（配合扩展名白名单才是完整防护），
@@ -317,4 +320,16 @@ static string RedactQuery(IQueryCollection query)
            || key.Contains("signature", StringComparison.OrdinalIgnoreCase)
            || key.Equals("ticket", StringComparison.OrdinalIgnoreCase)
            || key.Equals("code", StringComparison.OrdinalIgnoreCase);
+}
+/// <summary>上传目录的 Content-Type 映射：补上语音扩展名（默认映射缺 m4a/webm 的音频类型）</summary>
+static FileExtensionContentTypeProvider BuildUploadContentTypes()
+{
+    var provider = new FileExtensionContentTypeProvider();
+    provider.Mappings[".webm"] = "audio/webm";
+    provider.Mappings[".ogg"] = "audio/ogg";
+    provider.Mappings[".m4a"] = "audio/mp4";
+    provider.Mappings[".mp4"] = "audio/mp4";
+    provider.Mappings[".mp3"] = "audio/mpeg";
+    provider.Mappings[".wav"] = "audio/wav";
+    return provider;
 }

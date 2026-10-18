@@ -17,6 +17,14 @@ public enum MessageKind
     Markdown = 3,
 
     /// <summary>
+    /// 语音消息（5 是新增值，历史库表里不存在）。
+    /// content 是**音频地址**（与图片一致，不塞 JSON）：服务端只负责存取与转发，
+    /// 时长由客户端从音频元数据读取 —— 落库时长要多一个字段、多一次协议变更，
+    /// 而列表预览只需要「[语音]」这个占位。
+    /// </summary>
+    Voice = 5,
+
+    /// <summary>
     /// 「聊天记录」合并转发卡片（4 是新增值，历史库表里不存在）。
     /// content 是一段 JSON 快照（结构见 Application/Messaging/ForwardBundle.cs）：
     /// 一次转发 = 一条消息 = 一个卡片，里面最多 20 条只读明细。

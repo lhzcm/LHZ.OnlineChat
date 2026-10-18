@@ -213,7 +213,7 @@ async function onDesktopNotifyToggle(e: Event) {
     } else {
       desktopNotifyEnabled.value = false
       persistNotify()
-      toast('通知权限被拒绝，请在浏览器设置中允许后重试')
+      toast('通知权限被拒绝，请在浏览器设置中允许后重试', 'error')
     }
   } else {
     desktopNotifyEnabled.value = false

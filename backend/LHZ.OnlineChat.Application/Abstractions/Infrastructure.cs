@@ -148,6 +148,15 @@ public static class UploadRules
     public const long MaxAvatarBytes = 2 * 1024 * 1024;
     public const long MaxChatImageBytes = 5 * 1024 * 1024;
 
+    /// <summary>语音上限 10MB（60 秒 webm/opus 通常只有几百 KB，余量留给高码率设备）</summary>
+    public const long MaxVoiceBytes = 10 * 1024 * 1024;
+
+    /// <summary>
+    /// 语音白名单：浏览器 MediaRecorder 产出 webm/ogg，iOS Safari 产出 mp4/m4a；
+    /// 服务端不转码，只按扩展名放行（转码会引入 ffmpeg 依赖与异步处理链路）。
+    /// </summary>
+    public static readonly string[] AllowedVoiceExtensions = { ".webm", ".ogg", ".mp3", ".m4a", ".mp4", ".wav" };
+
     public static void EnsureValidImage(FileUpload? upload, long maxBytes, string sizeHint)
     {
         Domain.Common.DomainException.Ensure(upload is not null && upload.Length > 0, "请选择图片文件");
@@ -155,6 +164,21 @@ public static class UploadRules
         Domain.Common.DomainException.Ensure(
             AllowedImageExtensions.Contains(upload.Extension),
             "仅支持 jpg / png / gif / webp 格式图片");
+    }
+
+    /// <summary>
+    /// 校验语音文件。时长不在这里判（服务端不解码音频），由客户端限制最长 60 秒；
+    /// 这里只守住「能存进静态目录、能被浏览器播放」的边界。
+    /// </summary>
+    public static void EnsureValidVoice(FileUpload? upload)
+    {
+        Domain.Common.DomainException.Ensure(upload is not null && upload.Length > 0, "请先录音再发送");
+        Domain.Common.DomainException.Ensure(
+            upload!.Length <= MaxVoiceBytes,
+            $"语音大小不能超过 {MaxVoiceBytes / 1024 / 1024}MB");
+        Domain.Common.DomainException.Ensure(
+            AllowedVoiceExtensions.Contains(upload.Extension),
+            "仅支持 webm / ogg / mp3 / m4a / mp4 / wav 格式语音");
     }
 }
 

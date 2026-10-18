@@ -53,6 +53,12 @@ describe('buildForwardBundle', () => {
     expect(parsed.items[0].n).toBe('张三')
   })
 
+  it('语音消息在卡片里保留音频地址（t=5）', () => {
+    const parsed = JSON.parse(buildForwardBundle([msg({ content: '/uploads/voices/a.webm', messageType: 5 })]))
+
+    expect(parsed.items[0]).toMatchObject({ t: 5, c: '/uploads/voices/a.webm' })
+  })
+
   it('撤回的消息在快照里写成占位文案，不复制原文', () => {
     const json = buildForwardBundle([msg({ content: '机密原文', isDeleted: true })])
 
@@ -125,6 +131,10 @@ describe('单行预览', () => {
     expect(messagePreview('/uploads/a.zip', 2)).toBe('[文件]')
   })
 
+  it('语音显示占位而不是 URL', () => {
+    expect(messagePreview('/uploads/voices/a.webm', 5)).toBe('[语音]')
+  })
+
   it('Markdown 抹掉记号，普通文字原样返回', () => {
     expect(messagePreview('# 标题 **粗**', 3)).not.toContain('#')
     expect(messagePreview('普通文字', 0)).toBe('普通文字')
@@ -132,6 +142,7 @@ describe('单行预览', () => {
 
   it('卡片行摘要：图片显示占位、Markdown 抹记号、超长截断', () => {
     expect(forwardItemPreview({ n: '张三', c: '/uploads/a.png', t: 1, ts: 0 })).toBe('[图片]')
+    expect(forwardItemPreview({ n: '张三', c: '/uploads/voices/a.webm', t: 5, ts: 0 })).toBe('[语音]')
     expect(forwardItemPreview({ n: '张三', c: '# 标题', t: 3, ts: 0 })).toBe('标题')
     expect(forwardItemPreview({ n: '张三', c: 'A'.repeat(80), t: 0, ts: 0 }, 10)).toBe('AAAAAAAAAA…')
   })

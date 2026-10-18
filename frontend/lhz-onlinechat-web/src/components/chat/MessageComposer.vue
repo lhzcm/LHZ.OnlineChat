@@ -9,6 +9,9 @@ import { MAX_MESSAGE_LENGTH } from '@/constants/limits'
 import { useToast } from '@/composables/useToast'
 import { genMessageId, sendMessage } from '@/utils/messageSend'
 import { compressChatImage } from '@/utils/image'
+import { useVoiceRecorder, type VoiceRecording } from '@/composables/useVoiceRecorder'
+import { messagePreview } from '@/utils/forward'
+import { formatVoiceDuration } from '@/utils/voice'
 import EmojiPanel from './composer/EmojiPanel.vue'
 import MentionPanel from './composer/MentionPanel.vue'
 import type { WsMessage, ChatType, GroupMemberInfo } from '@/types'
@@ -231,7 +234,8 @@ const replyTarget = ref<{ messageId: string; content: string; senderName: string
 function reply(msg: WsMessage) {
   replyTarget.value = {
     messageId: msg.messageId,
-    content: (msg.content || '').slice(0, 50),
+    // 引用条是给人看的：语音/图片别显示 URL，转发别显示 JSON
+    content: messagePreview(msg.content || '', msg.messageType).slice(0, 50),
     senderName: msg.senderName || '对方'
   }
   inputEl.value?.focus()
@@ -245,7 +249,7 @@ function send() {
   if (!text) return
   // 超长不发出去：服务端会拒（回 message_failed），但没必要让用户等那一下，草稿也留着
   if (text.length > MAX_MESSAGE_LENGTH) {
-    toast(`消息内容不能超过 ${MAX_MESSAGE_LENGTH} 字（当前 ${text.length} 字）`)
+    toast(`消息内容不能超过 ${MAX_MESSAGE_LENGTH} 字（当前 ${text.length} 字）`, 'error')
     return
   }
   // 断线时不再直接丢弃消息：照常乐观上屏，由 sendMessage 的返回值决定是否标记"发送失败"（可重试）
@@ -285,7 +289,7 @@ function retryMessage(msg: ChatMessage) {
   if (!auth.user) return
   // 重发不会让超长内容变合法：直接说清楚，别让它再被服务端拒一次
   if ((msg.content || '').length > MAX_MESSAGE_LENGTH) {
-    toast(`这条消息超过 ${MAX_MESSAGE_LENGTH} 字，无法重发（请精简后重新发送）`)
+    toast(`这条消息超过 ${MAX_MESSAGE_LENGTH} 字，无法重发（请精简后重新发送）`, 'error')
     return
   }
   const key = chatStore.sessionKey(props.chat.type, props.chat.id)
@@ -311,11 +315,11 @@ async function onImageSelect(e: Event) {
     return
   }
   if (!file.type.startsWith('image/')) {
-    toast('请选择图片文件')
+    toast('请选择图片文件', 'error')
     return
   }
   if (file.size > 5 * 1024 * 1024) {
-    toast('发送图片太大，发送失败（最大 5MB）')
+    toast('发送图片太大，发送失败（最大 5MB）', 'error')
     return
   }
 
@@ -330,7 +334,7 @@ async function onImageSelect(e: Event) {
       const message = res.message || ''
       toast(message.includes('5MB') || message.includes('大小')
         ? '发送图片太大，发送失败（最大 5MB）'
-        : `图片发送失败：${message || '请重试'}`)
+        : `图片发送失败：${message || '请重试'}`, 'error')
       return
     }
     const msg: ChatMessage = {
@@ -351,9 +355,77 @@ async function onImageSelect(e: Event) {
     }
     emit('sent')
   } catch {
-    toast('图片发送失败，请重试')
+    toast('图片发送失败，请重试', 'error')
   } finally {
     sendingImage.value = false
+  }
+}
+
+// ==================== 语音消息 ====================
+const sendingVoice = ref(false)
+
+/**
+ * 录音 → 上传 → 发送。录制与上传分开：`useVoiceRecorder` 只产出 File，
+ * 这里才碰网络与 store（与图片上传同一套发送路径）。
+ */
+// 解构成顶层 ref：模板里才会自动解包（嵌套在对象里的 ref 在模板中不会解包）
+const {
+  supported: voiceSupported,
+  recording: voiceRecording,
+  seconds: voiceSeconds,
+  maxSeconds: voiceMaxSeconds,
+  start: startVoiceRecording,
+  stop: stopVoiceRecording,
+  cancel: cancelVoiceRecording
+} = useVoiceRecorder({
+  onComplete: (recording) => { void uploadAndSendVoice(recording) },
+  onError: (message) => toast(message, 'error')
+})
+
+function onMicClick() {
+  if (voiceRecording.value) {
+    stopVoiceRecording()
+    return
+  }
+  if (sendingVoice.value) return
+  void startVoiceRecording()
+}
+
+async function uploadAndSendVoice(recording: VoiceRecording) {
+  if (!auth.user) return
+  if (!ws.connected) {
+    sendHint.value = '连接已断开，正在重连，请稍候…'
+    return
+  }
+  sendingVoice.value = true
+  sendHint.value = ''
+  try {
+    const res = await messageApi.uploadVoice(recording.file)
+    if (!res.success || !res.data?.url) {
+      toast(`语音发送失败：${res.message || '请重试'}`, 'error')
+      return
+    }
+    const msg: ChatMessage = {
+      type: props.chat.type === 'private' ? 'private_message' : 'group_message',
+      from: String(auth.user.id),
+      to: String(props.chat.id),
+      content: res.data.url,
+      timestamp: Date.now(),
+      messageId: genMessageId(),
+      messageType: 5,
+      senderName: auth.user.nickname,
+      senderAvatar: auth.user.avatar,
+      status: 'sending'
+    }
+    chatStore.addMessage(msg, auth.user.id)
+    if (!sendMessage(ws, msg)) {
+      chatStore.setMessageStatus(chatStore.sessionKey(props.chat.type, props.chat.id), msg.messageId, 'failed')
+    }
+    emit('sent')
+  } catch {
+    toast('语音发送失败，请重试', 'error')
+  } finally {
+    sendingVoice.value = false
   }
 }
 
@@ -386,6 +458,7 @@ watch(() => props.chat.id, () => {
   showEmojiPanel.value = false
   mentionOpen.value = false
   lastTypingSentAt = 0
+  cancelVoiceRecording()
 })
 
 onMounted(() => document.addEventListener('click', onDocClick))
@@ -429,13 +502,33 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
         <line x1="15" y1="9" x2="15.01" y2="9" />
       </svg>
     </button>
-    <input ref="inputEl" v-if="!markdownMode" v-model="activeText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
-    <textarea v-else ref="inputEl" v-model="activeText" class="input md-input" :placeholder="inputPlaceholder"
-      rows="3" @keydown="onInputKeydown" @input="onInputChange"></textarea>
-    <span class="input-counter" v-if="showLengthHint" :class="{ over: isOverLengthLimit }">
-      {{ activeText.length }} / {{ MAX_MESSAGE_LENGTH }}
-    </span>
-    <button class="send-btn" @click="send" :disabled="!activeText.trim() || isOverLengthLimit">发送</button>
+    <!-- 语音：没录音时点一下开始，录音中点一下结束并发送（不支持 MediaRecorder 的浏览器直接不显示） -->
+    <button v-if="voiceSupported" class="emoji-btn voice-btn" :class="{ recording: voiceRecording }"
+      :disabled="sendingVoice" @click.stop="onMicClick"
+      :title="voiceRecording ? '结束并发送语音' : '录语音（最长 60 秒）'">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+        <line x1="12" y1="19" x2="12" y2="22" />
+      </svg>
+    </button>
+    <template v-if="voiceRecording">
+      <span class="voice-rec">
+        <span class="voice-dot"></span>
+        录音中 {{ formatVoiceDuration(voiceSeconds) }} / {{ formatVoiceDuration(voiceMaxSeconds) }}
+      </span>
+      <button class="voice-cancel-btn" @click.stop="cancelVoiceRecording()">取消</button>
+      <button class="send-btn" @click.stop="stopVoiceRecording()">发送</button>
+    </template>
+    <template v-else>
+      <input ref="inputEl" v-if="!markdownMode" v-model="activeText" class="input" :placeholder="inputPlaceholder" @keydown="onInputKeydown" @input="onInputChange" />
+      <textarea v-else ref="inputEl" v-model="activeText" class="input md-input" :placeholder="inputPlaceholder"
+        rows="3" @keydown="onInputKeydown" @input="onInputChange"></textarea>
+      <span class="input-counter" v-if="showLengthHint" :class="{ over: isOverLengthLimit }">
+        {{ activeText.length }} / {{ MAX_MESSAGE_LENGTH }}
+      </span>
+      <button class="send-btn" @click="send" :disabled="!activeText.trim() || isOverLengthLimit">发送</button>
+    </template>
   </div>
   <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
 </template>
@@ -585,6 +678,49 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.voice-btn.recording {
+  background: var(--danger);
+  color: #fff;
+}
+
+.voice-rec {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.voice-cancel-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.voice-cancel-btn:hover {
+  background: var(--bg-hover);
 }
 
 .send-hint {

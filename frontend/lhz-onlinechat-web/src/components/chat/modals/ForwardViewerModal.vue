@@ -17,8 +17,8 @@ const emit = defineEmits<{ close: [] }>()
 
 const total = computed(() => props.items.length)
 
-/** 图片地址只放行站内路径与 http(s)，避免 javascript:/data: 之类被塞进 src */
-function imageSrc(url: string): string {
+/** 图片/音频地址只放行站内路径与 http(s)，避免 javascript:/data: 之类被塞进 src */
+function mediaSrc(url: string): string {
   const value = (url || '').trim()
   if (value.startsWith('/') || /^https?:\/\//i.test(value)) return value
   return ''
@@ -38,9 +38,11 @@ function imageSrc(url: string): string {
             <span class="viewer-time" v-if="it.ts">{{ new Date(it.ts).toLocaleString() }}</span>
           </div>
           <div class="viewer-content">
-            <img v-if="it.t === 1 && imageSrc(it.c)" :src="imageSrc(it.c)" class="viewer-image" alt="图片" loading="lazy" />
+            <img v-if="it.t === 1 && mediaSrc(it.c)" :src="mediaSrc(it.c)" class="viewer-image" alt="图片" loading="lazy" />
+            <audio v-else-if="it.t === 5 && mediaSrc(it.c)" :src="mediaSrc(it.c)" class="viewer-audio"
+              controls preload="metadata"></audio>
             <div v-else-if="it.t === 3" class="viewer-markdown" v-html="renderMarkdownMessage(it.c)"></div>
-            <span v-else class="viewer-text">{{ it.t === 1 ? '[图片]' : it.c }}</span>
+            <span v-else class="viewer-text">{{ it.t === 1 ? '[图片]' : it.t === 5 ? '[语音]' : it.c }}</span>
           </div>
         </div>
         <div class="viewer-empty" v-if="items.length === 0">这条记录是空的</div>
@@ -115,6 +117,12 @@ function imageSrc(url: string): string {
 
 .viewer-text {
   white-space: pre-wrap;
+}
+
+.viewer-audio {
+  width: 100%;
+  max-width: 320px;
+  height: 36px;
 }
 
 .viewer-image {
