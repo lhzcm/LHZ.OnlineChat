@@ -304,7 +304,9 @@ export const useChatStore = defineStore('chat', () => {
    * 拉取会话列表（服务端聚合），并同步未读数
    */
   async function fetchSessions() {
+    const startEpoch = epoch
     const res = await messageApi.getSessions()
+    if (startEpoch !== epoch) return
     if (res.success && res.data) {
       // 会话列表本身也可能很长（大量群/机器人）：超出上限时只保留最近活跃的部分
       sessions.value = boundSessions(res.data)
@@ -337,6 +339,10 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** 获取（或初始化）会话的历史分页元数据 */
+  // 会话代数：clearAll（登出 / 换账号）时 +1。在途请求返回后发现代数变了，说明它属于上一个账号，
+  // 结果必须丢弃 —— 否则上一个账号的历史 / 会话列表 / 离线消息会写进新账号的 store。
+  let epoch = 0
+
   function historyMetaOf(key: string): { page: number; hasMore: boolean; loading: boolean } {
     let meta = historyMeta.value.get(key)
     if (!meta) {
@@ -358,10 +364,15 @@ export const useChatStore = defineStore('chat', () => {
     // 否则并发调用会重复拉取同一页并在 mergeList 里交错写入
     if (meta.loading) return meta.hasMore
     meta.loading = true
+    const startEpoch = epoch
     let hasMore = false
+    // 只有拿到了这一页才推进页码 / hasMore：请求失败（网络抖动、5xx）时若也写 hasMore=false，
+    // 这个会话就再也翻不了更早的历史了
+    let loaded = false
     try {
       if (type === 'private') {
         const res = await messageApi.getPrivateHistory(id, page)
+        if (startEpoch !== epoch) return false
         if (res.success && res.data) {
           const newMsgs = res.data.items.map(m => ({
             type: 'private_message',
@@ -391,9 +402,11 @@ export const useChatStore = defineStore('chat', () => {
             trimReadByPeer()
           }
           hasMore = res.data.page * res.data.pageSize < res.data.total
+          loaded = true
         }
       } else {
         const res = await messageApi.getGroupHistory(id, page)
+        if (startEpoch !== epoch) return false
         if (res.success && res.data) {
           const newMsgs = res.data.items.map(m => ({
             type: 'group_message',
@@ -415,15 +428,18 @@ export const useChatStore = defineStore('chat', () => {
           messages.value.set(key, mergeList(existing, newMsgs))
           touchSession(key)
           hasMore = res.data.page * res.data.pageSize < res.data.total
+          loaded = true
         }
       }
     } finally {
-      meta.page = page
-      meta.hasMore = hasMore
+      if (loaded) {
+        meta.page = page
+        meta.hasMore = hasMore
+      }
       meta.loading = false
-      evictStaleEntries()
+      if (startEpoch === epoch) evictStaleEntries()
     }
-    return hasMore
+    return loaded ? hasMore : meta.hasMore
   }
 
   /**
@@ -441,7 +457,9 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function loadOfflineMessages(userId: number): Promise<Map<string, number>> {
     const counts = new Map<string, number>()
+    const startEpoch = epoch
     const res = await messageApi.getOfflineMessages()
+    if (startEpoch !== epoch) return counts
     if (!res.success || !res.data?.length) return counts
 
     const bySender = new Map<number, WsMessage[]>()
@@ -478,6 +496,7 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 清空全部本地聊天缓存（登出 / 切换账号时调用，避免内存残留与串号） */
   function clearAll() {
+    epoch++
     sessions.value = []
     messages.value = new Map()
     unreadCounts.value = new Map()

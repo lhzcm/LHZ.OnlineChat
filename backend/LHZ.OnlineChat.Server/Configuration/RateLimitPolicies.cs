@@ -25,6 +25,18 @@ internal static class RateLimitPolicies
     /// <summary>机器人主动推送（第三方调用，按令牌分区而非按 IP）</summary>
     internal const string RobotReply = "robot-reply";
 
+    /// <summary>匿名的注册 / 忘记密码（要先发码，所以阈值与 SendCode 同量级；按 IP 分区）</summary>
+    internal const string AuthAnonymous = "auth-anonymous";
+
+    /// <summary>刷新令牌（匿名可达，但真人会在同一出口下频繁触发，阈值比 AuthAnonymous 宽；按 IP 分区）</summary>
+    internal const string TokenRefresh = "token-refresh";
+
+    /// <summary>头像 / 聊天图片 / 语音上传：每次最多落盘 10MB，按登录用户分区</summary>
+    internal const string Upload = "upload";
+
+    /// <summary>消息搜索：走 LIKE + trgm 扫描，是登录后最贵的查询，按登录用户分区</summary>
+    internal const string Search = "search";
+
     /// <summary>
     /// 调用方标识：优先真实客户端 IP。
     /// X-Forwarded-For 已在管道最前面解析（见 Program.cs 的 UseForwardedHeaders），
@@ -32,4 +44,16 @@ internal static class RateLimitPolicies
     /// </summary>
     internal static string ClientKey(HttpContext context)
         => context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    /// <summary>
+    /// 登录用户标识，用于「按用户」分区的策略。
+    /// 必须在 UseAuthentication 之后才能读到身份（见 Program.cs 的中间件顺序）；
+    /// 读不到（未登录 / 令牌无效）时退回 IP，这类请求随后会被授权拦成 401。
+    /// 身份只来自已验签的 JWT，不读请求体或请求头里的自称。
+    /// </summary>
+    internal static string UserKey(HttpContext context)
+    {
+        var id = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return string.IsNullOrEmpty(id) ? ClientKey(context) : $"user:{id}";
+    }
 }

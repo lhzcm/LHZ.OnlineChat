@@ -265,9 +265,50 @@ public class GroupMessageTests
     [InlineData(MessageKind.Voice)]
     public void Send_SupportsAllMessageKinds(MessageKind kind)
     {
-        var message = GroupMessage.Send(5, 10001, "x", kind, null, MentionList.Empty, null, T.Now);
+        // 图片 / 语音的内容必须是站内上传地址，其它类型随意
+        var content = kind switch
+        {
+            MessageKind.Image => "/uploads/images/a.png",
+            MessageKind.Voice => "/uploads/voices/a.webm",
+            _ => "x"
+        };
+
+        var message = GroupMessage.Send(5, 10001, content, kind, null, MentionList.Empty, null, T.Now);
 
         Assert.Equal(kind, message.Kind);
+    }
+
+    [Theory(DisplayName = "Send_图片语音只接受站内上传地址")]
+    [InlineData(MessageKind.Image, "https://evil.example/t.png")]
+    [InlineData(MessageKind.Image, "//evil.example/t.png")]
+    [InlineData(MessageKind.Image, "/uploads/a.png")]
+    [InlineData(MessageKind.Image, "/uploads/voices/a.webm")]
+    [InlineData(MessageKind.Image, "/uploads/images/../a.png")]
+    [InlineData(MessageKind.Image, "/uploads/images/sub/a.png")]
+    [InlineData(MessageKind.Image, "/uploads/images/a.png?x=1")]
+    [InlineData(MessageKind.Image, "/uploads/images/")]
+    [InlineData(MessageKind.Voice, "https://evil.example/t.webm")]
+    [InlineData(MessageKind.Voice, "/uploads/images/a.png")]
+    [InlineData(MessageKind.Voice, "/uploads/voices/a b.webm")]
+    [InlineData(MessageKind.Voice, "javascript:alert(1)")]
+    public void Send_MediaOutsideUploads_IsRejected(MessageKind kind, string content)
+    {
+        // 外链会让每个接收者的浏览器替发送者去请求它：泄露 IP / 已读状态，或当跟踪像素
+        var ex = Assert.Throws<DomainException>(() => PrivateMessage.Send(
+            10001, 10002, content, kind, null, null, T.Now));
+
+        Assert.Equal("图片或语音地址不合法", ex.Message);
+    }
+
+    [Theory(DisplayName = "Send_文字与Markdown内容不受站内地址限制")]
+    [InlineData(MessageKind.Text)]
+    [InlineData(MessageKind.Markdown)]
+    public void Send_TextKinds_MayContainAnyUrl(MessageKind kind)
+    {
+        var message = PrivateMessage.Send(
+            10001, 10002, "https://example.com/a.png", kind, null, null, T.Now);
+
+        Assert.Equal("https://example.com/a.png", message.Content);
     }
 
     [Fact(DisplayName = "Recall_规则与私聊一致")]

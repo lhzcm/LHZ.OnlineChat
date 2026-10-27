@@ -13,10 +13,20 @@ public class WsContentGuardTests
     [Theory(DisplayName = "DescribeRejection_合法内容不返回原因")]
     [InlineData("你好", MessageKind.Text)]
     [InlineData("# 标题\n\n- 列表", MessageKind.Markdown)]
-    [InlineData("https://example.com/a.png", MessageKind.Image)]
+    [InlineData("/uploads/images/a.png", MessageKind.Image)]
+    [InlineData("/uploads/voices/a.webm", MessageKind.Voice)]
     public void DescribeRejection_ValidContent_ReturnsNull(string content, MessageKind kind)
     {
         Assert.Null(WsContentGuard.DescribeRejection(content, (int)kind));
+    }
+
+    [Theory(DisplayName = "DescribeRejection_图片语音的外链被拒")]
+    [InlineData("https://example.com/a.png", MessageKind.Image)]
+    [InlineData("https://example.com/a.webm", MessageKind.Voice)]
+    public void DescribeRejection_ExternalMediaUrl_ReturnsReason(string content, MessageKind kind)
+    {
+        // 原用例把外链图片当作合法：那是 WS 入口尚无站内地址约束时的口径，现已收紧
+        Assert.Equal("图片或语音地址不合法", WsContentGuard.DescribeRejection(content, (int)kind));
     }
 
     [Fact(DisplayName = "DescribeRejection_超过上限时返回原因并带上限数字")]

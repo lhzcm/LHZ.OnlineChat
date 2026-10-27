@@ -229,7 +229,7 @@ public class SendPrivateMessageTests
     public async Task Send_AllMessageKinds_AreSupported(MessageKind kind)
     {
         var (a, b) = _ctx.GivenFriends();
-        var command = Command(a.Id, b.Id);
+        var command = Command(a.Id, b.Id, kind == MessageKind.Image ? "/uploads/images/a.png" : "你好");
         command.Kind = kind;
 
         await Handler().Handle(command, default);

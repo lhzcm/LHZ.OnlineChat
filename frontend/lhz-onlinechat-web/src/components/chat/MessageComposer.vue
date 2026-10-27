@@ -301,6 +301,11 @@ function retryMessage(msg: ChatMessage) {
   }
 }
 // ==================== 图片消息 ====================
+/** 上传返回时，用户是否还停在发起上传的那个会话（决定要不要通知父级滚到底部） */
+function isCurrentChat(target: { type: string; id: number }): boolean {
+  return props.chat.type === target.type && props.chat.id === target.id
+}
+
 const imageInputRef = ref<HTMLInputElement | null>(null)
 const sendingImage = ref(false)
 
@@ -323,6 +328,11 @@ async function onImageSelect(e: Event) {
     return
   }
 
+  // 上传是异步的，期间用户可能已切到别的会话 / 登出：目标与身份必须在 await 之前定下来，
+  // 否则图片会发进「现在打开的」那个会话
+  const target = { type: props.chat.type, id: props.chat.id }
+  const me = auth.user
+
   sendingImage.value = true
   sendHint.value = ''
   try {
@@ -338,22 +348,22 @@ async function onImageSelect(e: Event) {
       return
     }
     const msg: ChatMessage = {
-      type: props.chat.type === 'private' ? 'private_message' : 'group_message',
-      from: String(auth.user.id),
-      to: String(props.chat.id),
+      type: target.type === 'private' ? 'private_message' : 'group_message',
+      from: String(me.id),
+      to: String(target.id),
       content: res.data.url,
       timestamp: Date.now(),
       messageId: genMessageId(),
       messageType: 1,
-      senderName: auth.user.nickname,
-      senderAvatar: auth.user.avatar,
+      senderName: me.nickname,
+      senderAvatar: me.avatar,
       status: 'sending'
     }
-    chatStore.addMessage(msg, auth.user.id)
+    chatStore.addMessage(msg, me.id)
     if (!sendMessage(ws, msg)) {
-      chatStore.setMessageStatus(chatStore.sessionKey(props.chat.type, props.chat.id), msg.messageId, 'failed')
+      chatStore.setMessageStatus(chatStore.sessionKey(target.type, target.id), msg.messageId, 'failed')
     }
-    emit('sent')
+    if (isCurrentChat(target)) emit('sent')
   } catch {
     toast('图片发送失败，请重试', 'error')
   } finally {
@@ -397,6 +407,10 @@ async function uploadAndSendVoice(recording: VoiceRecording) {
     sendHint.value = '连接已断开，正在重连，请稍候…'
     return
   }
+  // 同图片：目标与身份在 await 之前定下来，上传期间切会话不能让语音串到新会话
+  const target = { type: props.chat.type, id: props.chat.id }
+  const me = auth.user
+
   sendingVoice.value = true
   sendHint.value = ''
   try {
@@ -406,22 +420,22 @@ async function uploadAndSendVoice(recording: VoiceRecording) {
       return
     }
     const msg: ChatMessage = {
-      type: props.chat.type === 'private' ? 'private_message' : 'group_message',
-      from: String(auth.user.id),
-      to: String(props.chat.id),
+      type: target.type === 'private' ? 'private_message' : 'group_message',
+      from: String(me.id),
+      to: String(target.id),
       content: res.data.url,
       timestamp: Date.now(),
       messageId: genMessageId(),
       messageType: 5,
-      senderName: auth.user.nickname,
-      senderAvatar: auth.user.avatar,
+      senderName: me.nickname,
+      senderAvatar: me.avatar,
       status: 'sending'
     }
-    chatStore.addMessage(msg, auth.user.id)
+    chatStore.addMessage(msg, me.id)
     if (!sendMessage(ws, msg)) {
-      chatStore.setMessageStatus(chatStore.sessionKey(props.chat.type, props.chat.id), msg.messageId, 'failed')
+      chatStore.setMessageStatus(chatStore.sessionKey(target.type, target.id), msg.messageId, 'failed')
     }
-    emit('sent')
+    if (isCurrentChat(target)) emit('sent')
   } catch {
     toast('语音发送失败，请重试', 'error')
   } finally {

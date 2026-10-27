@@ -25,13 +25,31 @@ public class ForwardBundleTests
     [Fact(DisplayName = "合法的转发载荷通过校验")]
     public void EnsureValid_ValidBundle_Passes()
     {
-        ForwardBundle.EnsureValid(Bundle(("张三", "你好", 0), ("李四", "# 标题", 3), ("王五", "/uploads/a.png", 1)));
+        ForwardBundle.EnsureValid(Bundle(("张三", "你好", 0), ("李四", "# 标题", 3), ("王五", "/uploads/images/a.png", 1)));
     }
 
     [Fact(DisplayName = "语音明细可以转发（t=5，内容是音频地址）")]
     public void EnsureValid_VoiceItem_Passes()
     {
         ForwardBundle.EnsureValid(Bundle(("张三", "/uploads/voices/a.webm", 5)));
+    }
+
+    [Theory(DisplayName = "卡片里的图片与语音只认站内地址（外链不能借转发绕过）")]
+    [InlineData("https://evil.example/t.png", 1)]
+    [InlineData("/uploads/a.png", 1)]
+    [InlineData("https://evil.example/t.webm", 5)]
+    [InlineData("/uploads/images/a.png", 5)]
+    public void EnsureValid_MediaItemOutsideUploads_Throws(string content, int type)
+    {
+        var ex = Assert.Throws<DomainException>(() => ForwardBundle.EnsureValid(Bundle(("张三", content, type))));
+
+        Assert.Equal("图片或语音地址不合法", ex.Message);
+    }
+
+    [Fact(DisplayName = "卡片里的文字明细可以含外链")]
+    public void EnsureValid_TextItemWithUrl_Passes()
+    {
+        ForwardBundle.EnsureValid(Bundle(("张三", "https://example.com/a.png", 0)));
     }
 
     [Fact(DisplayName = "单条转发同样合法（卡片里只有一条也算一次转发）")]

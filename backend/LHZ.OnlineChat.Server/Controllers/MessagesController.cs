@@ -1,8 +1,10 @@
 using LHZ.OnlineChat.Application.Messaging.Commands;
 using LHZ.OnlineChat.Application.Messaging.Queries;
 using LHZ.OnlineChat.Application.Users.Commands;
+using LHZ.OnlineChat.Server.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LHZ.OnlineChat.Server.Controllers;
 
@@ -52,6 +54,7 @@ public sealed class MessagesController : ApiControllerBase
     /// 空关键词被模型校验拦在用例之外，返回 ValidationProblemDetails 而不是统一的 ApiResponse 形状。
     /// </summary>
     [HttpGet("search")]
+    [EnableRateLimiting(RateLimitPolicies.Search)]
     public Task<IActionResult> SearchMessages(
         [FromQuery] string? keyword,
         [FromQuery] int page = 1,
@@ -111,6 +114,7 @@ public sealed class UploadsController : ApiControllerBase
 {
     /// <summary>上传聊天图片</summary>
     [HttpPost("image")]
+    [EnableRateLimiting(RateLimitPolicies.Upload)]
     [RequestSizeLimit(8 * 1024 * 1024)]
     public async Task<IActionResult> UploadImage(IFormFile? file, CancellationToken ct)
     {
@@ -120,6 +124,7 @@ public sealed class UploadsController : ApiControllerBase
 
     /// <summary>上传语音消息（webm/ogg/mp3/m4a/mp4/wav，≤10MB；时长由客户端限制 60 秒）</summary>
     [HttpPost("voice")]
+    [EnableRateLimiting(RateLimitPolicies.Upload)]
     [RequestSizeLimit(12 * 1024 * 1024)]
     public async Task<IActionResult> UploadVoice(IFormFile? file, CancellationToken ct)
     {

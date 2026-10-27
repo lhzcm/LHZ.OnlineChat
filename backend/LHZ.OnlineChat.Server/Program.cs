@@ -162,6 +162,52 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
+
+    // 注册 / 忘记密码：都要先过 SendCode，这里是第二道闸，阈值同量级。
+    options.AddPolicy(RateLimitPolicies.AuthAnonymous, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitPolicies.ClientKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
+            }));
+
+    // 刷新令牌：真人在同一出口（公司 / 校园 NAT）下会成片触发，所以比注册宽得多。
+    options.AddPolicy(RateLimitPolicies.TokenRefresh, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitPolicies.ClientKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
+            }));
+
+    // 上传：每次最多落盘 10MB，按用户分区。每分钟 20 次对真人（连发几张图）足够，
+    // 也把「单账号一分钟写 200MB」的磁盘消耗上限压下来。
+    options.AddPolicy(RateLimitPolicies.Upload, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitPolicies.UserKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // 搜索：输入框防抖后每次击键停顿都可能触发一次，30 次 / 分钟留出余量。
+    options.AddPolicy(RateLimitPolicies.Search, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitPolicies.UserKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
     // 被限流时也回 ApiResponse 形状，前端能按统一契约提示，而不是解析空响应体
     options.OnRejected = async (context, ct) =>
     {
@@ -297,8 +343,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseRouting();
 app.UseCors();
-app.UseRateLimiter();
+// 限流在认证之后：按用户分区的策略（上传 / 搜索）要读已验签的身份；
+// 匿名接口按 IP 分区，不受这个顺序影响
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");

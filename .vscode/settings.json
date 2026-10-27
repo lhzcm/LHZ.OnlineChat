@@ -1,3 +1,6 @@
 {
-    "dotnet.defaultSolution": "backend/LHZ.OnlineChat.slnx"
+    "dotnet.defaultSolution": "backend/LHZ.OnlineChat.slnx",
+    "vssolution.altSolutionFolders": [
+        "backend"
+    ]
 }

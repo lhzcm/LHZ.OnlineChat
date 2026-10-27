@@ -14,6 +14,7 @@ import { useMessageMenu } from '@/composables/useMessageMenu'
 import { copyText } from '@/utils/clipboard'
 import type { ForwardedItem } from '@/utils/forward'
 import { formatMsgTime } from '@/utils/format'
+import { localMediaSrc } from '@/utils/media'
 import type { WsMessage, ChatType } from '@/types'
 import type { ChatMessage } from '@/stores/chat'
 
@@ -55,7 +56,7 @@ function onImageClick() {
     emit('toggle-select')
     return
   }
-  emit('image-click', props.msg.content)
+  emit('image-click', localMediaSrc(props.msg.content))
 }
 
 /** 「聊天记录」卡片点击：多选模式下是勾选，否则打开只读明细 */
@@ -208,12 +209,13 @@ onUnmounted(() => {
       <div class="msg-bubble" :class="{ mentioned: isMentioned(msg), 'is-image': msg.messageType === 1, 'is-markdown': msg.messageType === 3, 'is-forward': msg.messageType === 4, 'is-voice': msg.messageType === 5, recalled: msg.isDeleted }">
         <span v-if="msg.isDeleted" class="msg-recalled-text">消息已撤回</span>
         <!-- 消息体按类型拆成子组件：文本 / 图片 / Markdown / 聊天记录卡片 / 语音 -->
-        <ImageMessage v-else-if="msg.messageType === 1" :src="msg.content" @click="onImageClick" />
+        <ImageMessage v-else-if="msg.messageType === 1 && localMediaSrc(msg.content)" :src="localMediaSrc(msg.content)" @click="onImageClick" />
+        <span v-else-if="msg.messageType === 1 || (msg.messageType === 5 && !localMediaSrc(msg.content))" class="msg-recalled-text">[{{ msg.messageType === 1 ? '图片' : '语音' }}不可用]</span>
         <MarkdownMessage v-else-if="msg.messageType === 3" :content="msg.content" :highlight="highlight" />
         <ForwardMessage v-else-if="msg.messageType === 4" :content="msg.content" @open="onForwardOpen" />
         <!-- 多选模式下语音不参与播放：pointer-events 关掉，点击落到整行上用于勾选 -->
         <div v-else-if="msg.messageType === 5" :class="{ 'voice-static': selectMode }">
-          <VoiceMessage :src="msg.content" />
+          <VoiceMessage :src="localMediaSrc(msg.content)" />
         </div>
         <TextMessage v-else :content="msg.content" :highlight="highlight" />
       </div>

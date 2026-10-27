@@ -28,8 +28,12 @@ const noMore = ref(false)
 const page = ref(1)
 const inputRef = ref<HTMLInputElement | null>(null)
 let timer: number | null = null
+// 搜索代数：关键词变化 / 换会话 / 关闭都会 +1，在途请求返回时代数不符就丢弃，
+// 否则旧关键词（或上一个会话）的慢响应会盖掉新结果
+let seq = 0
 
 function reset() {
+  seq++
   if (timer) {
     clearTimeout(timer)
     timer = null
@@ -52,6 +56,7 @@ watch(() => props.chat.id, () => reset())
 
 /** 输入防抖 300ms 搜索 */
 watch(keyword, (kw) => {
+  seq++
   if (timer) clearTimeout(timer)
   const q = kw.trim()
   if (!q) {
@@ -62,10 +67,12 @@ watch(keyword, (kw) => {
     return
   }
   timer = window.setTimeout(async () => {
+    const mySeq = seq
     page.value = 1
     searching.value = true
     try {
       const res = await messageApi.searchMessages(q, 1, 20, props.chat.type, props.chat.id)
+      if (mySeq !== seq) return
       if (res.success && res.data) {
         results.value = res.data.items || []
         noMore.value = results.value.length >= (res.data.total || 0)
@@ -74,9 +81,9 @@ watch(keyword, (kw) => {
         noMore.value = true
       }
     } catch {
-      results.value = []
+      if (mySeq === seq) results.value = []
     } finally {
-      searching.value = false
+      if (mySeq === seq) searching.value = false
     }
   }, 300)
 })
@@ -85,10 +92,12 @@ watch(keyword, (kw) => {
 async function loadMore() {
   const q = keyword.value.trim()
   if (!q || searching.value || noMore.value) return
+  const mySeq = seq
   searching.value = true
   try {
     const nextPage = page.value + 1
     const res = await messageApi.searchMessages(q, nextPage, 20, props.chat.type, props.chat.id)
+    if (mySeq !== seq) return
     if (res.success && res.data) {
       const seen = new Set(results.value.map(r => r.messageId))
       const fresh = (res.data.items || []).filter(r => !r.messageId || !seen.has(r.messageId))
@@ -99,9 +108,9 @@ async function loadMore() {
       noMore.value = true
     }
   } catch {
-    noMore.value = true
+    if (mySeq === seq) noMore.value = true
   } finally {
-    searching.value = false
+    if (mySeq === seq) searching.value = false
   }
 }
 

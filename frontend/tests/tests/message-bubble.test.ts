@@ -58,10 +58,23 @@ describe('MessageBubble：内容分支', () => {
   })
 
   it('图片消息渲染 img（点开走 lightbox 事件）', () => {
-    const html = mountBubble(makeMsg({ content: '/uploads/a.png', messageType: 1 })).html()
+    const html = mountBubble(makeMsg({ content: '/uploads/images/a.png', messageType: 1 })).html()
 
     expect(html).toContain('<img')
-    expect(html).toContain('/uploads/a.png')
+    expect(html).toContain('/uploads/images/a.png')
+  })
+
+  it.each([
+    [1, 'https://evil.example/t.png', '[图片不可用]'],
+    [5, 'https://evil.example/t.webm', '[语音不可用]'],
+    [1, '/uploads/images/../../etc/passwd', '[图片不可用]']
+  ])('messageType=%i 的外链 / 越界地址不渲染媒体标签（%s）', (messageType, content, placeholder) => {
+    const html = mountBubble(makeMsg({ content, messageType })).html()
+
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('<audio')
+    expect(html).not.toContain(content)
+    expect(html).toContain(placeholder)
   })
 
   it('已撤回：只显示占位文案，不渲染原文', () => {

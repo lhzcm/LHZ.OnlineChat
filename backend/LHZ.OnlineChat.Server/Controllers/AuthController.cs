@@ -26,6 +26,7 @@ public sealed class AuthController : ApiControllerBase
 
     /// <summary>用户注册</summary>
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimitPolicies.AuthAnonymous)]
     public Task<IActionResult> Register([FromBody] RegisterUserCommand command, CancellationToken ct)
         => Send(command, ct);
 
@@ -40,11 +41,13 @@ public sealed class AuthController : ApiControllerBase
 
     /// <summary>刷新访问令牌</summary>
     [HttpPost("refresh")]
+    [EnableRateLimiting(RateLimitPolicies.TokenRefresh)]
     public Task<IActionResult> RefreshToken([FromBody] RefreshTokenCommand command, CancellationToken ct)
         => Send(command, ct);
 
     /// <summary>忘记密码（邮箱验证码重置）</summary>
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitPolicies.AuthAnonymous)]
     public Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordCommand command, CancellationToken ct)
         => Send(command, ct);
 
@@ -102,6 +105,7 @@ public sealed class AuthController : ApiControllerBase
     /// <summary>上传头像</summary>
     [HttpPost("avatar")]
     [Authorize]
+    [EnableRateLimiting(RateLimitPolicies.Upload)]
     [RequestSizeLimit(MaxAvatarBytes)]
     public async Task<IActionResult> UploadAvatar(IFormFile? file, CancellationToken ct)
     {

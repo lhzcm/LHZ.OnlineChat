@@ -53,6 +53,17 @@ public static class MessageContentRules
     /// </summary>
     public const int MaxLength = 50000;
 
+    /// <summary>
+    /// 聊天图片 / 语音的站内地址前缀（与 LocalFileStorage 的默认公开前缀 + 子目录一致）。
+    /// Domain 不能引用 Infrastructure，所以这里是协议常量；上传目录改名时两处要一起改。
+    /// </summary>
+    public const string ImagePathPrefix = "/uploads/images/";
+
+    public const string VoicePathPrefix = "/uploads/voices/";
+
+    /// <summary>站内媒体文件名长度上限（服务端生成的是 32 位 GUID + 扩展名，留足余量即可）</summary>
+    private const int MaxMediaFileNameLength = 100;
+
     public static void EnsureValid(string? content, MessageKind kind)
     {
         DomainException.Ensure(Enum.IsDefined(kind), "不支持的消息类型");
@@ -62,6 +73,43 @@ public static class MessageContentRules
         DomainException.Ensure(
             normalized.Length <= MaxLength,
             $"消息内容不能超过 {MaxLength} 字");
+        EnsureLocalMedia(normalized, kind);
+    }
+
+    /// <summary>
+    /// 图片 / 语音的 content 必须是本站上传接口返回的地址。
+    /// 放行任意 URL 会让每个接收者的浏览器去请求发送者指定的外链（泄露 IP、已读状态，还可做跟踪像素），
+    /// 而机器人只能发文字 / Markdown，所以没有任何合法来源需要外链。其它类型不受影响。
+    /// </summary>
+    public static void EnsureLocalMedia(string? content, MessageKind kind)
+    {
+        var prefix = kind switch
+        {
+            MessageKind.Image => ImagePathPrefix,
+            MessageKind.Voice => VoicePathPrefix,
+            _ => null
+        };
+        if (prefix is null) return;
+
+        DomainException.Ensure(IsLocalMediaPath(content, prefix), "图片或语音地址不合法");
+    }
+
+    /// <summary>前缀之后只能是一个文件名（字母数字 . _ -），不允许子目录、查询串与 ".."</summary>
+    private static bool IsLocalMediaPath(string? content, string prefix)
+    {
+        if (content is null || !content.StartsWith(prefix, StringComparison.Ordinal)) return false;
+
+        var fileName = content.AsSpan(prefix.Length);
+        if (fileName.Length == 0 || fileName.Length > MaxMediaFileNameLength) return false;
+        if (fileName.Contains("..", StringComparison.Ordinal)) return false;
+
+        foreach (var ch in fileName)
+        {
+            var allowed = ch is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '.' or '_' or '-';
+            if (!allowed) return false;
+        }
+
+        return true;
     }
 }
 

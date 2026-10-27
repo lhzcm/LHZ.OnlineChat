@@ -31,6 +31,10 @@ export function useVoiceRecorder(options: {
   let chunks: BlobPart[] = []
   let timer: number | null = null
   let cancelled = false
+  // 正在等 getUserMedia（授权弹窗可能开很久）：recording 要等拿到流才为 true，
+  // 这段时间里再点一次或卸载组件，都不能让第二路/无主的麦克风流漏出去
+  let starting = false
+  let abortStart = false
 
   function stopTracks() {
     stream?.getTracks().forEach(track => track.stop())
@@ -48,10 +52,19 @@ export function useVoiceRecorder(options: {
   }
 
   async function start() {
-    if (!supported || recording.value) return
+    if (!supported || recording.value || starting) return
+    starting = true
+    abortStart = false
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const acquired = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (abortStart) {
+        // 等授权期间被取消 / 组件已卸载：拿到的流没人接手，必须在这里关掉
+        acquired.getTracks().forEach(track => track.stop())
+        return
+      }
+      stream = acquired
     } catch (err) {
+      if (abortStart) return
       const name = (err as { name?: string })?.name || ''
       options.onError(
         name === 'NotAllowedError' || name === 'SecurityError'
@@ -62,6 +75,8 @@ export function useVoiceRecorder(options: {
       )
       reset()
       return
+    } finally {
+      starting = false
     }
 
     const mime = pickVoiceMimeType()
@@ -108,12 +123,14 @@ export function useVoiceRecorder(options: {
   /** 取消：不产生录音、不回调 onComplete */
   function cancel() {
     cancelled = true
+    abortStart = starting
     if (recorder && recorder.state === 'recording') recorder.stop()
     else reset()
   }
 
   onUnmounted(() => {
     cancelled = true
+    abortStart = starting
     if (recorder && recorder.state === 'recording') recorder.stop()
     else reset()
   })

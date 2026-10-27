@@ -99,6 +99,9 @@ public static class ForwardBundle
                     ? kindValue
                     : (int)MessageKind.Text;
                 DomainException.Ensure(AllowedItemTypes.Contains(kind), "转发的消息类型不支持");
+
+                // 卡片里的图片 / 语音同样只认站内地址，否则外链可以借转发卡片绕过单条消息的校验
+                MessageContentRules.EnsureLocalMedia(text.Trim(), (MessageKind)kind);
             }
         }
     }

@@ -347,12 +347,17 @@ watch(() => ws.connected, (connected) => {
   refreshQuietly(syncOfflineUnread(), '重连后补拉离线消息')
 })
 
+// 在 await 期间被卸载（快速登出 / 路由切走）后，onUnmounted 已经跑完：
+// 之后才注册的监听与订阅没人清理，会一直活着并把上一个账号的消息写进当前 store
+let unmounted = false
+
 onMounted(async () => {
   if (!auth.isLoggedIn) {
     router.push('/login')
     return
   }
   await auth.fetchUser()
+  if (unmounted) return
 
   // 桌面通知点击：跳转到对应会话
   window.addEventListener('oc:open-session', handleOpenSession)
@@ -377,12 +382,14 @@ onMounted(async () => {
 
   ws.connect(auth.token)
   await loadInitialData()
+  if (unmounted) return
 
   // 拉取离线消息并计入未读角标
   await syncOfflineUnread()
 })
 
 onUnmounted(() => {
+  unmounted = true
   offMessage?.()
   offStatusChange?.()
   window.removeEventListener('oc:open-session', handleOpenSession)

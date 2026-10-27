@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { renderMarkdownMessage } from '@/utils/markdown'
 import type { ForwardedItem } from '@/utils/forward'
+import { localMediaSrc } from '@/utils/media'
 
 /**
  * 「聊天记录」查看器：把转发卡片里的只读快照摊开展示。
@@ -17,12 +18,8 @@ const emit = defineEmits<{ close: [] }>()
 
 const total = computed(() => props.items.length)
 
-/** 图片/音频地址只放行站内路径与 http(s)，避免 javascript:/data: 之类被塞进 src */
-function mediaSrc(url: string): string {
-  const value = (url || '').trim()
-  if (value.startsWith('/') || /^https?:\/\//i.test(value)) return value
-  return ''
-}
+/** 图片/音频地址只放行站内上传目录（与服务端同口径），外链 / javascript: / data: 一律不渲染 */
+const mediaSrc = localMediaSrc
 </script>
 
 <template>

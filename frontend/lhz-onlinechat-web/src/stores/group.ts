@@ -34,9 +34,13 @@ export const useGroupStore = defineStore('group', () => {
     return res
   }
 
+  // 只认最后发起的那次：连续切换群时，先发出的慢响应后到，会把当前群的成员列表覆盖成上一个群的
+  let membersRequestSeq = 0
+
   async function fetchMembers(groupId: number) {
+    const seq = ++membersRequestSeq
     const res = await groupApi.getMembers(groupId)
-    if (res.success && res.data) {
+    if (res.success && res.data && seq === membersRequestSeq) {
       members.value = res.data
     }
     return res

@@ -254,6 +254,10 @@ npm run dev        # http://localhost:3000，/api 代理到 5000
 | 入口 | 阈值 | 维度 |
 |---|---:|---|
 | `POST /api/auth/send-code` | 20 次 / 10 分钟 | 来源 IP(反代后取真实客户端 IP) |
+| `POST /api/auth/register` / `/api/auth/forgot-password` | 20 次 / 10 分钟 | 来源 IP |
+| `POST /api/auth/refresh` | 120 次 / 10 分钟 | 来源 IP(同一出口下真人会成片刷新,所以比注册宽) |
+| `POST /api/uploads/image` / `/api/uploads/voice` / `/api/auth/avatar` | 20 次 / 分钟 | 登录用户(三个上传共用一个计数) |
+| `GET /api/messages/search` | 30 次 / 分钟 | 登录用户 |
 | `POST /api/robots/{令牌}/reply` | 120 次 / 分钟 | 机器人令牌 |
 | `POST /api/auth/login` / `/api/admin/auth/login` | 账号 10 次 / 15 分钟;IP 50 次 / 15 分钟 | 账号 + IP,只统计失败 |
 
@@ -450,6 +454,7 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 - **群离线补发**:`GroupMember.LastReadMessageId` 已读游标,上线推送游标之后的消息(每群 ≤100 条),打开群聊推进游标
 - **会话列表**:`GET /api/messages/sessions` 聚合私聊 + 群聊(最后消息及其类型/时间/未读数;私聊名优先显示我的备注)
 - **Markdown 消息**:`messageType=3` 时 `content` 是 Markdown **源文本**(不存渲染后的 HTML),客户端用 marked 解析、DOMPurify 消毒后渲染;外链强制新窗口打开,图片语法会被剥掉(防跟踪像素,要发图请用图片消息)。输入框的「MD」开关与机器人主动推送 / Webhook 同步回复都能发这种消息
+- **图片 / 语音只认站内地址**:`messageType=1` 的 `content` 必须是 `/uploads/images/<文件名>`,`messageType=5` 必须是 `/uploads/voices/<文件名>`(文件名只含字母数字与 `. _ -`,无子目录与查询串),否则服务端拒收并回 `message_failed`("图片或语音地址不合法");合并转发卡片里 `t=1/5` 的明细同样校验。外链会让每个接收者的浏览器替发送者去请求它(泄露 IP、已读状态,或当跟踪像素)。只约束新发送的消息,库里已有的不迁移
 - **语音消息**:`messageType=5` 时 `content` 是**音频地址**(`/uploads/voices/xxx.webm`),不塞 JSON、不落库时长 —— 渲染时从 `<audio>` 元数据读时长,列表预览只需占位。上传走 `POST /api/uploads/voice`(扩展名白名单 + 10MB 上限,服务端不解码所以也不判时长),时长上限 60 秒由客户端强制(到点自动停止并发送)。静态目录对 `webm/m4a/ogg` 显式声明音频 `Content-Type`,否则 Safari 拒绝播放;机器人只能发 0/3,发不出语音
 - **聊天记录(合并转发)**:`messageType=4` 时 `content` 是一段 JSON 快照 `{"v":1,"ts":…,"items":[{"n":"张三","c":"内容","t":0,"ts":…}]}` —— **一次转发 = 一条消息 = 一张卡片**,卡片里最多 20 条只读明细(每条 ≤ 2000 字,`t` 只允许 0/1/3/5(5=语音),不允许嵌套转发)。为什么存快照而不是引用:原消息可能被撤回/删除、历史第一页不该为只读卡片多一次 JOIN、且 Redis 最近消息缓存存的就是 `content` 原样。服务端在应用层校验结构(`ForwardBundle`),畸形载荷回 `message_failed`;机器人只能发 0/3,发不出卡片。代价:关键词搜索会匹配到 JSON 文本,列表与搜索结果的预览统一显示为 `[聊天记录]`
 - **群邀请链接 / 入群审批**:链接 = `https://<站点>/join/<token>`,token 是 32 字节 CSPRNG 的 base64url(43 字符,约 192 bit),**服务端只存 token 不知道域名**,所以链接与二维码由浏览器用当前 origin 拼。有效期 7 天,重置/关闭即刻失效;失效与不存在统一提示「邀请链接已失效,请让群主重新生成」,不泄露群是否存在。审批只作用于链接入口(「开放加入」语义不变);待审批每群 ≤200、每用户跨群 ≤20,`GET|POST /api/groups/join/{token}` 走 `group-join` 限流(按 IP 30 次/分)。免审批加入时读游标 = 群最新消息,不补发入群前的历史
