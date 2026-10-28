@@ -21,7 +21,7 @@
   "devDependencies": {
     "@types/qrcode": "^1.5.5",
     "@vitejs/plugin-vue": "^5.2.0",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.2",
     "vite": "^6.1.0",
     "vue-tsc": "^2.2.0"
   },
