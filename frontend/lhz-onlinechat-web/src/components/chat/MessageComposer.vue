@@ -88,7 +88,53 @@ const emojiPanelRef = ref<HTMLElement | null>(null)
 const emojiBtnRef = ref<HTMLElement | null>(null)
 
 function toggleEmojiPanel() {
+  // 表情面板与「更多」面板占同一块浮层位置，互斥
+  showMorePanel.value = false
   showEmojiPanel.value = !showEmojiPanel.value
+}
+
+// ==================== 移动端「更多」折叠面板 ====================
+/**
+ * 手机上把 MD / @ / 图片 / 文件 / 语音 收进「+」面板，把宽度让给输入框；
+ * 桌面端这组按钮始终内联（「+」按钮只在 ≤720px 显示，见样式）。
+ */
+const showMorePanel = ref(false)
+const moreBtnRef = ref<HTMLElement | null>(null)
+const actionsRef = ref<HTMLElement | null>(null)
+
+function toggleMorePanel() {
+  showEmojiPanel.value = false
+  showMorePanel.value = !showMorePanel.value
+}
+
+function closeMorePanel() {
+  showMorePanel.value = false
+}
+
+/** 面板里的动作执行完就收起，免得挡住输入框 */
+function toggleMarkdown() {
+  closeMorePanel()
+  markdownMode.value = !markdownMode.value
+}
+
+function pickImage() {
+  closeMorePanel()
+  imageInputRef.value?.click()
+}
+
+function pickFile() {
+  closeMorePanel()
+  fileInputRef.value?.click()
+}
+
+function openMentionFromActions() {
+  closeMorePanel()
+  openMentionPicker()
+}
+
+function startVoiceFromActions() {
+  closeMorePanel()
+  onMicClick()
 }
 
 /** 在输入框光标位置插入表情，并恢复焦点与光标 */
@@ -106,11 +152,14 @@ function insertEmoji(emoji: string) {
   })
 }
 
-/** 点面板与按钮以外的区域收起表情面板（面板的 DOM 引用在本组件，才能判断内外） */
+/** 点面板与按钮以外的区域收起浮层（面板的 DOM 引用在本组件，才能判断内外） */
 function onDocClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!emojiPanelRef.value?.contains(target) && !emojiBtnRef.value?.contains(target)) {
     showEmojiPanel.value = false
+  }
+  if (!actionsRef.value?.contains(target) && !moreBtnRef.value?.contains(target)) {
+    showMorePanel.value = false
   }
 }
 
@@ -574,44 +623,58 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     <div ref="emojiPanelRef">
       <EmojiPanel v-if="showEmojiPanel" @pick="insertEmoji" />
     </div>
-    <button class="emoji-btn md-btn" :class="{ active: markdownMode }" @click.stop="markdownMode = !markdownMode"
-      :title="markdownMode ? '退出 Markdown 模式' : 'Markdown 模式（Ctrl+Enter 发送）'">
-      <span class="md-symbol">MD</span>
-    </button>
-    <button v-if="chat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionPicker" title="提及成员">
-      <span class="at-symbol">@</span>
-    </button>
-    <button class="emoji-btn" :disabled="sendingImage" @click="imageInputRef?.click()" title="发送图片">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <polyline points="21 15 16 10 5 21" />
-      </svg>
-    </button>
+    <!--
+      移动端折叠：MD / @ / 图片 / 文件 / 语音 收进「+」面板，把宽度让给输入框；
+      桌面端这组按钮始终内联显示（「+」按钮在桌面端隐藏）。
+    -->
+    <div ref="actionsRef" class="composer-actions" :class="{ open: showMorePanel }">
+      <button class="emoji-btn md-btn" :class="{ active: markdownMode }" @click.stop="toggleMarkdown"
+        :title="markdownMode ? '退出 Markdown 模式' : 'Markdown 模式（Ctrl+Enter 发送）'">
+        <span class="md-symbol">MD</span>
+      </button>
+      <button v-if="chat.type === 'group'" class="emoji-btn mention-btn" @click.stop="openMentionFromActions"
+        title="提及成员">
+        <span class="at-symbol">@</span>
+      </button>
+      <button class="emoji-btn" :disabled="sendingImage" @click.stop="pickImage" title="发送图片">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      </button>
+      <!-- 文件：点选或把文件拖进输入区（≤50MB，类型由服务端白名单兜底） -->
+      <button class="emoji-btn" :disabled="sendingFile" @click.stop="pickFile" title="发送文件（≤50MB）">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+        </svg>
+      </button>
+      <!-- 语音：没录音时点一下开始，录音中点一下结束并发送（不支持 MediaRecorder 的浏览器直接不显示） -->
+      <button v-if="voiceSupported" class="emoji-btn voice-btn" :class="{ recording: voiceRecording }"
+        :disabled="sendingVoice" @click.stop="startVoiceFromActions"
+        :title="voiceRecording ? '结束并发送语音' : '录语音（最长 60 秒）'">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="22" />
+        </svg>
+      </button>
+    </div>
     <input ref="imageInputRef" type="file" accept="image/*" class="hidden-file" @change="onImageSelect" />
-    <!-- 文件：点选或把文件拖进输入区（≤50MB，类型由服务端白名单兜底） -->
-    <button class="emoji-btn" :disabled="sendingFile" @click="fileInputRef?.click()" title="发送文件（≤50MB）">
+    <input ref="fileInputRef" type="file" class="hidden-file" @change="onFileSelect" />
+    <button ref="moreBtnRef" class="emoji-btn more-btn" :class="{ active: showMorePanel }"
+      @click.stop="toggleMorePanel" title="更多（Markdown / 图片 / 文件 / 语音）">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
       </svg>
     </button>
-    <input ref="fileInputRef" type="file" class="hidden-file" @change="onFileSelect" />
     <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10" />
         <path d="M8 14s1.5 2 4 2 4-2 4-2" />
         <line x1="9" y1="9" x2="9.01" y2="9" />
         <line x1="15" y1="9" x2="15.01" y2="9" />
-      </svg>
-    </button>
-    <!-- 语音：没录音时点一下开始，录音中点一下结束并发送（不支持 MediaRecorder 的浏览器直接不显示） -->
-    <button v-if="voiceSupported" class="emoji-btn voice-btn" :class="{ recording: voiceRecording }"
-      :disabled="sendingVoice" @click.stop="onMicClick"
-      :title="voiceRecording ? '结束并发送语音' : '录语音（最长 60 秒）'">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-        <line x1="12" y1="19" x2="12" y2="22" />
       </svg>
     </button>
     <template v-if="voiceRecording">
@@ -680,6 +743,70 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   background: var(--bg-white);
   border-top: 1px solid var(--border);
   position: relative;
+}
+
+/* 桌面端：MD / @ / 图片 / 文件 / 语音 内联显示 */
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 「+」只在手机端出现（把上面那组按钮折进浮层） */
+.more-btn {
+  display: none;
+}
+
+.more-btn.active {
+  background: var(--active-bg);
+  color: var(--primary);
+}
+
+/*
+ * 手机端：这组按钮改成输入框上方的浮层，默认收起 ——
+ * 375px 宽时它们会占掉一半宽度，输入框只剩一百多像素。
+ */
+@media (max-width: 720px) {
+  .composer-actions {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: calc(100% + 8px);
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px;
+    background: var(--bg-white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    z-index: 25;
+  }
+
+  .composer-actions.open {
+    display: flex;
+  }
+
+  .more-btn {
+    display: flex;
+  }
+
+  .chat-input-bar {
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+
+  /* 手机端按钮收小一圈，把宽度进一步让给输入框 */
+  .chat-input-bar .emoji-btn,
+  .composer-actions .emoji-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .chat-input-bar .send-btn {
+    padding: 8px 14px;
+  }
 }
 
 .emoji-btn {

@@ -29,9 +29,7 @@ EXPOSE 5000
 # uploads 目录必须在这里创建并 chown：Docker 初始化具名卷时会继承镜像内该路径的属主，
 # 若属主是 root，卷挂载后非 root 进程写头像会直接 Permission denied。
 # curl 仅用于 HEALTHCHECK：aspnet 运行镜像(debian-slim)不含任何 HTTP 客户端。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
+RUN rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 appuser \
     && useradd --uid 10001 --gid 10001 --shell /usr/sbin/nologin --create-home appuser \
     && mkdir -p /app/uploads \
