@@ -26,7 +26,7 @@ public class WsContentGuardTests
     public void DescribeRejection_ExternalMediaUrl_ReturnsReason(string content, MessageKind kind)
     {
         // 原用例把外链图片当作合法：那是 WS 入口尚无站内地址约束时的口径，现已收紧
-        Assert.Equal("图片或语音地址不合法", WsContentGuard.DescribeRejection(content, (int)kind));
+        Assert.Equal("图片、语音或文件地址不合法", WsContentGuard.DescribeRejection(content, (int)kind));
     }
 
     [Fact(DisplayName = "DescribeRejection_超过上限时返回原因并带上限数字")]

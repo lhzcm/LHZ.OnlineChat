@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pad, formatMsgTime } from '@/utils/format'
+import { pad, formatMsgTime, formatBytes } from '@/utils/format'
 
 /** 按文档约定的三个分支算期望值（今天 / 今年 / 更早） */
 function expected(ts: number, now = new Date()): string {
@@ -56,5 +56,20 @@ describe('formatMsgTime', () => {
 
     expect(formatMsgTime(a)).toBe('08:00')
     expect(formatMsgTime(b)).toBe('23:59')
+  })
+})
+describe('formatBytes', () => {
+  it('按 1024 进制换算并保留一位小数', () => {
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(1024)).toBe('1 KB')
+    expect(formatBytes(1536)).toBe('1.5 KB')
+    expect(formatBytes(5 * 1024 * 1024)).toBe('5 MB')
+    expect(formatBytes(50 * 1024 * 1024)).toBe('50 MB')
+  })
+
+  it('非法值按 0 B 处理（不显示 NaN）', () => {
+    expect(formatBytes(-1)).toBe('0 B')
+    expect(formatBytes(Number.NaN)).toBe('0 B')
   })
 })

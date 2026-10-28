@@ -67,6 +67,12 @@ public sealed class AvatarResponse
 public sealed class UploadResponse
 {
     public string Url { get; set; } = string.Empty;
+
+    /// <summary>原始文件名（仅文件消息返回；图片/语音为 null）</summary>
+    public string? Name { get; set; }
+
+    /// <summary>文件大小（字节，仅文件消息返回）</summary>
+    public long? Size { get; set; }
 }
 
 /// <summary>领域实体 → DTO 的映射（集中一处，避免各用例重复拼装）</summary>

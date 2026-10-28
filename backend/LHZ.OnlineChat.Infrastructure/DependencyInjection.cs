@@ -6,6 +6,7 @@ using LHZ.OnlineChat.Domain.Admins;
 using LHZ.OnlineChat.Domain.Blacklists;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Friends;
+using LHZ.OnlineChat.Domain.Files;
 using LHZ.OnlineChat.Domain.Groups;
 using LHZ.OnlineChat.Domain.Messaging;
 using LHZ.OnlineChat.Domain.Robots;
@@ -87,6 +88,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IGroupRepository, GroupRepository>();
         services.AddScoped<IGroupMemberRepository, GroupMemberRepository>();
         services.AddScoped<IGroupJoinRequestRepository, GroupJoinRequestRepository>();
+        services.AddScoped<IFileAttachmentRepository, FileAttachmentRepository>();
         services.AddScoped<IPrivateMessageRepository, PrivateMessageRepository>();
         services.AddScoped<IGroupMessageRepository, GroupMessageRepository>();
         services.AddScoped<ISessionSettingRepository, SessionSettingRepository>();

@@ -265,11 +265,12 @@ public class GroupMessageTests
     [InlineData(MessageKind.Voice)]
     public void Send_SupportsAllMessageKinds(MessageKind kind)
     {
-        // 图片 / 语音的内容必须是站内上传地址，其它类型随意
+        // 图片 / 语音 / 文件的内容必须是站内上传地址，其它类型随意
         var content = kind switch
         {
             MessageKind.Image => "/uploads/images/a.png",
             MessageKind.Voice => "/uploads/voices/a.webm",
+            MessageKind.File => "/uploads/files/a.pdf",
             _ => "x"
         };
 
@@ -297,7 +298,7 @@ public class GroupMessageTests
         var ex = Assert.Throws<DomainException>(() => PrivateMessage.Send(
             10001, 10002, content, kind, null, null, T.Now));
 
-        Assert.Equal("图片或语音地址不合法", ex.Message);
+        Assert.Equal("图片、语音或文件地址不合法", ex.Message);
     }
 
     [Theory(DisplayName = "Send_文字与Markdown内容不受站内地址限制")]

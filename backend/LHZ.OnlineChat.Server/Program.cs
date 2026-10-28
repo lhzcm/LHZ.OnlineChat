@@ -197,6 +197,17 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
 
+    // 文件上传：单件 50MB，10 次/分钟对真人足够，也把「单账号一分钟写 500MB」压下来。
+    options.AddPolicy(RateLimitPolicies.FileUpload, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitPolicies.UserKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
     // 搜索：输入框防抖后每次击键停顿都可能触发一次，30 次 / 分钟留出余量。
     options.AddPolicy(RateLimitPolicies.Search, context =>
         RateLimitPartition.GetFixedWindowLimiter(
@@ -332,6 +343,13 @@ app.UseStaticFiles(new StaticFileOptions
         // 并声明长期缓存 —— 文件名带 GUID，内容不会变
         ctx.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
         ctx.Context.Response.Headers["Cache-Control"] = "public, max-age=604800, immutable";
+
+        // 文件消息一律下载而不是内联打开：上传目录与站点同源，html/svg 之类内联执行
+        // 等于一个存储型 XSS。下载名由前端的 <a download> 指定，这里不需要 filename。
+        if (ctx.Context.Request.Path.StartsWithSegments("/uploads/files"))
+        {
+            ctx.Context.Response.Headers["Content-Disposition"] = "attachment";
+        }
     }
 });
 

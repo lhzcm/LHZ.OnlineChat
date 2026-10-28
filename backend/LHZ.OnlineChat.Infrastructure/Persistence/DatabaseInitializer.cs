@@ -284,6 +284,12 @@ public sealed class DatabaseInitializer
             """CREATE UNIQUE INDEX IF NOT EXISTS "ux_joinrequest_pending" ON "GroupJoinRequest" ("GroupId", "UserId") WHERE "Status" = 0;""",
             duplicatesPossible: true);
 
+        // 文件元数据按 URL 唯一：同一个落盘文件只该有一条记录（前端按 URL 批量取）
+        Execute(
+            "文件地址唯一",
+            """CREATE UNIQUE INDEX IF NOT EXISTS "ux_fileattachment_url" ON "FileAttachment" ("Url");""",
+            duplicatesPossible: true);
+
         // 邀请 token 全局唯一（部分索引排除 NULL：未开启链接的群没有 token）
         Execute(
             "邀请链接 token 唯一",

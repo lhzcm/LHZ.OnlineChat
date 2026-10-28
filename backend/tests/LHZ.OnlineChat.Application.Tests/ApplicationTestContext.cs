@@ -25,6 +25,8 @@ internal sealed class ApplicationTestContext
 
     internal InMemoryGroupJoinRequestRepository JoinRequests { get; } = new();
 
+    internal InMemoryFileAttachmentRepository FileAttachments { get; } = new();
+
     internal InMemoryPrivateMessageRepository PrivateMessages { get; } = new();
 
     internal InMemoryGroupMessageRepository GroupMessages { get; }

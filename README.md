@@ -58,6 +58,7 @@
 - **消息操作菜单**:右键 / 移动端长按 → 复制、引用、撤回(Markdown 消息也可直接复制原文);自己撤回的消息可「重新编辑」回填输入框
 - **转发 + 多选批量**:菜单「多选」进入选择模式(最多 20 条),可批量**转发**到最多 5 个会话(会话/好友/群,没聊过的好友也能选)或批量**复制**;转发是**合并转发卡片**(`messageType=4`):一次转发只产生一条「聊天记录」消息,卡片显示条数与前 3 行摘要,点开看完整明细(Markdown/图片原样保留),原消息之后被撤回也不影响已发出的卡片
 - **语音消息**:输入区麦克风按钮录音(最长 60 秒,可取消),松手/点结束即上传发送;气泡内播放/暂停带进度与时长,同一时刻只播一条;`messageType=5`,`content` 是音频地址(≤10MB,`webm`/`ogg`/`mp3`/`m4a`/`mp4`/`wav`);会话列表与搜索结果预览显示 `[语音]`
+- **文件传输**:输入区「📎」选择文件或把文件拖进输入区,带上传进度;气泡显示**原始文件名 + 大小 + 类型图标**,点一下即下载(浏览器另存为原始文件名);`messageType=2`,`content` 是文件地址(≤50MB,文档/表格/压缩包/文本代码/图片/音视频;**html/svg/js/可执行文件禁止发送**);文件名与大小存 `FileAttachment` 表,按 URL 批量解析;会话列表与搜索预览显示 `[文件]`,合并转发卡片里也可以带文件
 - **键盘操作**:`Ctrl/Cmd+K` 聚焦搜索、`Esc` 关闭弹窗/图片预览、`Alt+↑/↓` 上一个/下一个会话;弹窗支持 `Esc` 与 Tab 焦点锁定(`role="dialog"`)
 - 群消息离线补发(已读游标之后,每群上限 100 条)
 
@@ -456,6 +457,7 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 - **Markdown 消息**:`messageType=3` 时 `content` 是 Markdown **源文本**(不存渲染后的 HTML),客户端用 marked 解析、DOMPurify 消毒后渲染;外链强制新窗口打开,图片语法会被剥掉(防跟踪像素,要发图请用图片消息)。输入框的「MD」开关与机器人主动推送 / Webhook 同步回复都能发这种消息
 - **图片 / 语音只认站内地址**:`messageType=1` 的 `content` 必须是 `/uploads/images/<文件名>`,`messageType=5` 必须是 `/uploads/voices/<文件名>`(文件名只含字母数字与 `. _ -`,无子目录与查询串),否则服务端拒收并回 `message_failed`("图片或语音地址不合法");合并转发卡片里 `t=1/5` 的明细同样校验。外链会让每个接收者的浏览器替发送者去请求它(泄露 IP、已读状态,或当跟踪像素)。只约束新发送的消息,库里已有的不迁移
 - **语音消息**:`messageType=5` 时 `content` 是**音频地址**(`/uploads/voices/xxx.webm`),不塞 JSON、不落库时长 —— 渲染时从 `<audio>` 元数据读时长,列表预览只需占位。上传走 `POST /api/uploads/voice`(扩展名白名单 + 10MB 上限,服务端不解码所以也不判时长),时长上限 60 秒由客户端强制(到点自动停止并发送)。静态目录对 `webm/m4a/ogg` 显式声明音频 `Content-Type`,否则 Safari 拒绝播放;机器人只能发 0/3,发不出语音
+- **文件消息**:`messageType=2` 时 `content` 是**文件地址**(`/uploads/files/xxx.pdf`),不塞 JSON;原始文件名/大小存在 `FileAttachment` 表,前端按屏批量取(`POST /api/uploads/files/meta`,单次 ≤50 个)并在本地缓存。上传走 `POST /api/uploads/file`(扩展名白名单 + 50MB 上限 + 危险类型拒绝),落盘名由服务端生成 GUID,`/uploads/files/` 静态响应强制 `Content-Disposition: attachment`(否则 html/svg 内联执行等于存储型 XSS);文件消息不补发历史、不支持分片/秒传;nginx `client_max_body_size` 需 ≥64m
 - **聊天记录(合并转发)**:`messageType=4` 时 `content` 是一段 JSON 快照 `{"v":1,"ts":…,"items":[{"n":"张三","c":"内容","t":0,"ts":…}]}` —— **一次转发 = 一条消息 = 一张卡片**,卡片里最多 20 条只读明细(每条 ≤ 2000 字,`t` 只允许 0/1/3/5(5=语音),不允许嵌套转发)。为什么存快照而不是引用:原消息可能被撤回/删除、历史第一页不该为只读卡片多一次 JOIN、且 Redis 最近消息缓存存的就是 `content` 原样。服务端在应用层校验结构(`ForwardBundle`),畸形载荷回 `message_failed`;机器人只能发 0/3,发不出卡片。代价:关键词搜索会匹配到 JSON 文本,列表与搜索结果的预览统一显示为 `[聊天记录]`
 - **群邀请链接 / 入群审批**:链接 = `https://<站点>/join/<token>`,token 是 32 字节 CSPRNG 的 base64url(43 字符,约 192 bit),**服务端只存 token 不知道域名**,所以链接与二维码由浏览器用当前 origin 拼。有效期 7 天,重置/关闭即刻失效;失效与不存在统一提示「邀请链接已失效,请让群主重新生成」,不泄露群是否存在。审批只作用于链接入口(「开放加入」语义不变);待审批每群 ≤200、每用户跨群 ≤20,`GET|POST /api/groups/join/{token}` 走 `group-join` 限流(按 IP 30 次/分)。免审批加入时读游标 = 群最新消息,不补发入群前的历史
 - **发送被拒回执**:内容校验失败(超长/为空/类型非法)时服务端回 `message_failed`,`messageId` 是客户端消息 ID、`content` 是原因,前端把那条气泡标成「发送失败」(可重试)并提示原因 —— 改造前这类消息会被静默丢弃,气泡永远停在「未读」、刷新后连痕迹都没有。不含内容问题的失败(不是好友/不在群里/被拉黑)仍按 `blocked`/`muted` 语义处理或静默
@@ -473,6 +475,7 @@ dsh plugin --profile web add file:<本仓库>/plugins/dsh-bot-notify
 | `Group_` | `Group` | 群组(OwnerId;JoinPolicy: 0仅限邀请/1开放加入;公告三列 Announcement/At/By;**邀请链接 InviteToken / InviteTokenExpiresAt,JoinApprovalRequired 凭链接进群是否需审批**) |
 | `GroupMember` | `GroupMember` | 群成员(Role: 0群主/1管理员/2成员;LastReadMessageId 已读游标;MutedUntil 禁言) |
 | `GroupJoinRequest` | `GroupJoinRequest` | 入群申请(GroupId/UserId/Status: 0待审批 1通过 2拒绝/Message 附言/CreatedAt/HandledAt/HandledBy;`(GroupId,UserId) WHERE Status=0` 唯一) |
+| `FileAttachment` | `FileAttachment` | 上传文件元数据(Url 唯一/OriginalName/SizeBytes/ContentType/UploaderId/CreatedAt;消息 content 只有 URL,名字与大小在这里) |
 | `PrivateMessage` | `PrivateMessage` | 私聊消息(ClientMessageId 去重键;IsRead;IsDeleted 撤回;引用三列) |
 | `GroupMessage` | `GroupMessage` | 群聊消息(Mentions 逗号分隔的 @ 列表;IsDeleted;引用三列) |
 | `SessionSetting` | `SessionSetting` | 会话设置(用户 × 会话维度的置顶 IsPinned / 免打扰 Muted) |

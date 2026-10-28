@@ -34,6 +34,12 @@ internal static class RateLimitPolicies
     /// <summary>头像 / 聊天图片 / 语音上传：每次最多落盘 10MB，按登录用户分区</summary>
     internal const string Upload = "upload";
 
+    /// <summary>
+    /// 文件上传：单件最大 50MB，按登录用户分区。
+    /// 与图片/语音分开命名是为了能单独调阈值——一份 50MB 的写盘成本是 5MB 图片的十倍。
+    /// </summary>
+    internal const string FileUpload = "file-upload";
+
     /// <summary>消息搜索：走 LIKE + trgm 扫描，是登录后最贵的查询，按登录用户分区</summary>
     internal const string Search = "search";
 

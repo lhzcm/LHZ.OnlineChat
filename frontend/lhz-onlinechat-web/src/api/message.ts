@@ -1,5 +1,6 @@
 import request from './request'
-import type { ApiResponse, MessageDto, GroupMessageDto, PagedResult, SessionInfo, MessageSearchResult } from '@/types'
+import type { AxiosProgressEvent } from 'axios'
+import type { ApiResponse, FileMeta, MessageDto, GroupMessageDto, PagedResult, SessionInfo, MessageSearchResult } from '@/types'
 
 export const messageApi = {
   getPrivateHistory(friendId: number, page = 1, pageSize = 50): Promise<ApiResponse<PagedResult<MessageDto>>> {
@@ -42,5 +43,30 @@ export const messageApi = {
     const form = new FormData()
     form.append('file', file)
     return request.post('/uploads/voice', form, { headers: { 'Content-Type': undefined } })
+  },
+
+  /**
+   * 上传聊天文件（≤50MB；服务端按扩展名白名单校验）
+   * onProgress 用于输入区进度条：大文件没有反馈时用户会以为卡死。
+   */
+  uploadFile(
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<ApiResponse<{ url: string; name: string; size: number }>> {
+    const form = new FormData()
+    form.append('file', file)
+    return request.post('/uploads/file', form, {
+      headers: { 'Content-Type': undefined },
+      onUploadProgress: (e: AxiosProgressEvent) => {
+        if (onProgress && e.total) {
+          onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)))
+        }
+      }
+    })
+  },
+
+  /** 按 URL 批量取文件元数据（原始文件名 + 大小），一次最多 50 个 */
+  getFileMeta(urls: string[]): Promise<ApiResponse<FileMeta[]>> {
+    return request.post('/uploads/files/meta', { urls })
   }
 }

@@ -40,15 +40,16 @@ describe('buildForwardBundle', () => {
       msg({ messageId: 'a', content: '文字', messageType: 0 }),
       msg({ messageId: 'b', content: '/uploads/x.png', messageType: 1 }),
       msg({ messageId: 'c', content: '# 标题', messageType: 3 }),
-      // 其它类型（文件/嵌套转发）在卡片里退化成文字
-      msg({ messageId: 'd', content: '未知类型', messageType: 2 })
+      // 文件保留为 t=2，嵌套转发退化成文字
+      msg({ messageId: 'd', content: '/uploads/files/a.pdf', messageType: 2 }),
+      msg({ messageId: 'e', content: '嵌套转发', messageType: 4 })
     ], 1_800_000_000_000)
 
     const parsed = JSON.parse(json)
 
     expect(parsed.v).toBe(FORWARD_BUNDLE_VERSION)
-    expect(parsed.items).toHaveLength(4)
-    expect(parsed.items.map((i: ForwardedItem) => i.t)).toEqual([0, 1, 3, 0])
+    expect(parsed.items).toHaveLength(5)
+    expect(parsed.items.map((i: ForwardedItem) => i.t)).toEqual([0, 1, 3, 2, 0])
     expect(parsed.items[0].c).toBe('文字')
     expect(parsed.items[0].n).toBe('张三')
   })
@@ -143,6 +144,7 @@ describe('单行预览', () => {
   it('卡片行摘要：图片显示占位、Markdown 抹记号、超长截断', () => {
     expect(forwardItemPreview({ n: '张三', c: '/uploads/a.png', t: 1, ts: 0 })).toBe('[图片]')
     expect(forwardItemPreview({ n: '张三', c: '/uploads/voices/a.webm', t: 5, ts: 0 })).toBe('[语音]')
+    expect(forwardItemPreview({ n: '张三', c: '/uploads/files/a.pdf', t: 2, ts: 0 })).toBe('[文件]')
     expect(forwardItemPreview({ n: '张三', c: '# 标题', t: 3, ts: 0 })).toBe('标题')
     expect(forwardItemPreview({ n: '张三', c: 'A'.repeat(80), t: 0, ts: 0 }, 10)).toBe('AAAAAAAAAA…')
   })

@@ -61,6 +61,22 @@ public static class MessageContentRules
 
     public const string VoicePathPrefix = "/uploads/voices/";
 
+    public const string FilePathPrefix = "/uploads/files/";
+
+    /// <summary>
+    /// 文件消息禁止的扩展名：这些类型在浏览器里打开会被**内联执行**（HTML/SVG）或直接是可执行程序，
+    /// 上传目录又是同源静态服务，等于给站点开一个存储型 XSS / 恶意软件分发口。
+    /// 静态服务的 Content-Disposition: attachment 是第二道防线，这里是第一道。
+    /// </summary>
+    private static readonly string[] DangerousFileExtensions =
+    {
+        ".html", ".htm", ".xhtml", ".shtml", ".svg", ".svgz",
+        ".js", ".mjs", ".cjs", ".htc", ".hta", ".swf",
+        ".exe", ".dll", ".com", ".bat", ".cmd", ".msi", ".scr", ".pif", ".cpl",
+        ".ps1", ".psm1", ".vbs", ".vbe", ".wsf", ".wsh", ".jar", ".sh", ".bash",
+        ".php", ".phtml", ".asp", ".aspx", ".jsp", ".cgi", ".pl", ".py", ".rb"
+    };
+
     /// <summary>站内媒体文件名长度上限（服务端生成的是 32 位 GUID + 扩展名，留足余量即可）</summary>
     private const int MaxMediaFileNameLength = 100;
 
@@ -74,6 +90,21 @@ public static class MessageContentRules
             normalized.Length <= MaxLength,
             $"消息内容不能超过 {MaxLength} 字");
         EnsureLocalMedia(normalized, kind);
+
+        if (kind == MessageKind.File) EnsureSafeFileExtension(normalized);
+    }
+
+    /// <summary>
+    /// 文件消息的扩展名守卫：拒绝「打开即执行」的类型。
+    /// 放行任意扩展名会让上传目录变成恶意 HTML/SVG/可执行文件的分发口 ——
+    /// 同源访问时脚本能直接读到登录态。
+    /// </summary>
+    public static void EnsureSafeFileExtension(string? content)
+    {
+        var extension = Path.GetExtension((content ?? string.Empty).Trim()).ToLowerInvariant();
+        DomainException.Ensure(
+            !DangerousFileExtensions.Contains(extension),
+            "该类型的文件不允许发送");
     }
 
     /// <summary>
@@ -87,11 +118,12 @@ public static class MessageContentRules
         {
             MessageKind.Image => ImagePathPrefix,
             MessageKind.Voice => VoicePathPrefix,
+            MessageKind.File => FilePathPrefix,
             _ => null
         };
         if (prefix is null) return;
 
-        DomainException.Ensure(IsLocalMediaPath(content, prefix), "图片或语音地址不合法");
+        DomainException.Ensure(IsLocalMediaPath(content, prefix), "图片、语音或文件地址不合法");
     }
 
     /// <summary>前缀之后只能是一个文件名（字母数字 . _ -），不允许子目录、查询串与 ".."</summary>

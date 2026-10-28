@@ -1,6 +1,7 @@
 using LHZ.OnlineChat.Domain.Admins;
 using LHZ.OnlineChat.Domain.Blacklists;
 using LHZ.OnlineChat.Domain.Common;
+using LHZ.OnlineChat.Domain.Files;
 using LHZ.OnlineChat.Domain.Friends;
 using LHZ.OnlineChat.Domain.Groups;
 using LHZ.OnlineChat.Domain.Messaging;
@@ -655,6 +656,32 @@ internal sealed class InMemoryGroupJoinRequestRepository
     public Task DeleteAllOfGroupAsync(long groupId, CancellationToken ct = default)
     {
         RemoveWhere(r => r.GroupId == groupId);
+        return Task.CompletedTask;
+    }
+}
+// ==================================================================
+// 上传文件元数据
+// ==================================================================
+
+internal sealed class InMemoryFileAttachmentRepository
+    : InMemoryStore<FileAttachment, long>, IFileAttachmentRepository
+{
+    protected override long ToId(long identity) => identity;
+
+    public Task<IReadOnlyList<FileAttachment>> ListByUrlsAsync(
+        IEnumerable<string> urls, CancellationToken ct = default)
+    {
+        var set = urls.ToHashSet(StringComparer.Ordinal);
+        IReadOnlyList<FileAttachment> items = Where(a => set.Contains(a.Url)).ToList();
+        return Task.FromResult(items);
+    }
+
+    public Task<FileAttachment?> FindByUrlAsync(string url, CancellationToken ct = default)
+        => Task.FromResult(Where(a => a.Url == url).FirstOrDefault());
+
+    public Task AddAsync(FileAttachment attachment, CancellationToken ct = default)
+    {
+        Insert(attachment);
         return Task.CompletedTask;
     }
 }

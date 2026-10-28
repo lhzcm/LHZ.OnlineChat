@@ -1,6 +1,7 @@
 using LHZ.OnlineChat.Domain.Admins;
 using LHZ.OnlineChat.Domain.Blacklists;
 using LHZ.OnlineChat.Domain.Friends;
+using LHZ.OnlineChat.Domain.Files;
 using LHZ.OnlineChat.Domain.Groups;
 using LHZ.OnlineChat.Domain.Messaging;
 using LHZ.OnlineChat.Domain.Robots;
@@ -38,7 +39,8 @@ internal static class EntityConfiguration
         typeof(BlacklistEntry),
         typeof(Robot),
         typeof(Admin),
-        typeof(AdminAuditLog)
+        typeof(AdminAuditLog),
+        typeof(FileAttachment)
     };
 
     internal static void Apply(IFreeSql fsql)
@@ -51,6 +53,7 @@ internal static class EntityConfiguration
         ConfigureMessaging(fsql);
         ConfigureRobots(fsql);
         ConfigureAdmins(fsql);
+        ConfigureFiles(fsql);
     }
 
     private static void ConfigureUsers(IFreeSql fsql)
@@ -250,6 +253,21 @@ internal static class EntityConfiguration
             e.Name("AdminLog");
             e.Property(x => x.Id).IsPrimary(true).IsIdentity(true);
             e.Property(x => x.AdminId).IsNullable(false);
+            e.Property(x => x.CreatedAt).IsNullable(false);
+        });
+    }
+    /// <summary>上传文件元数据（消息 content 只放 URL，文件名/大小在这里）</summary>
+    private static void ConfigureFiles(IFreeSql fsql)
+    {
+        fsql.CodeFirst.ConfigEntity<FileAttachment>(e =>
+        {
+            e.Name("FileAttachment");
+            e.Property(x => x.Id).IsPrimary(true).IsIdentity(true);
+            e.Property(x => x.Url).IsNullable(false).StringLength(300);
+            e.Property(x => x.OriginalName).IsNullable(false).StringLength(200);
+            e.Property(x => x.SizeBytes).IsNullable(false);
+            e.Property(x => x.ContentType).IsNullable(true).StringLength(120);
+            e.Property(x => x.UploaderId).IsNullable(false);
             e.Property(x => x.CreatedAt).IsNullable(false);
         });
     }

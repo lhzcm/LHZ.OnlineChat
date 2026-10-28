@@ -129,7 +129,8 @@ internal static class FormFileExtensions
                 {
                     FileName = file.FileName,
                     Length = file.Length,
-                    Content = file.OpenReadStream()
+                    Content = file.OpenReadStream(),
+                    ContentType = file.ContentType
                 },
                 null);
 }

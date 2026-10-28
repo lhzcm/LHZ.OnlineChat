@@ -9,6 +9,7 @@ describe('localMediaSrc', () => {
   it.each([
     '/uploads/images/0123abcd.png',
     '/uploads/voices/0123abcd.webm',
+    '/uploads/files/0123abcd.pdf',
     '/uploads/images/a_b-c.1.jpg'
   ])('站内上传地址原样放行：%s', (url) => {
     expect(localMediaSrc(url)).toBe(url)
@@ -29,7 +30,6 @@ describe('localMediaSrc', () => {
     '/uploads/images/../a.png',
     '/uploads/images/sub/a.png',
     '/uploads/images/a.png?x=1',
-    '/uploads/files/a.png',
     '',
     null,
     undefined

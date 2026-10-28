@@ -229,7 +229,14 @@ public class SendPrivateMessageTests
     public async Task Send_AllMessageKinds_AreSupported(MessageKind kind)
     {
         var (a, b) = _ctx.GivenFriends();
-        var command = Command(a.Id, b.Id, kind == MessageKind.Image ? "/uploads/images/a.png" : "你好");
+        // 图片 / 文件的内容必须是站内上传地址
+        var content = kind switch
+        {
+            MessageKind.Image => "/uploads/images/a.png",
+            MessageKind.File => "/uploads/files/a.pdf",
+            _ => "你好"
+        };
+        var command = Command(a.Id, b.Id, content);
         command.Kind = kind;
 
         await Handler().Handle(command, default);

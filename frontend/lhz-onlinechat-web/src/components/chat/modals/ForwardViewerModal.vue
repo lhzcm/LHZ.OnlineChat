@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import FileMessage from '@/components/chat/messages/FileMessage.vue'
 import { renderMarkdownMessage } from '@/utils/markdown'
 import type { ForwardedItem } from '@/utils/forward'
 import { localMediaSrc } from '@/utils/media'
@@ -39,7 +40,8 @@ const mediaSrc = localMediaSrc
             <audio v-else-if="it.t === 5 && mediaSrc(it.c)" :src="mediaSrc(it.c)" class="viewer-audio"
               controls preload="metadata"></audio>
             <div v-else-if="it.t === 3" class="viewer-markdown" v-html="renderMarkdownMessage(it.c)"></div>
-            <span v-else class="viewer-text">{{ it.t === 1 ? '[图片]' : it.t === 5 ? '[语音]' : it.c }}</span>
+            <FileMessage v-else-if="it.t === 2 && mediaSrc(it.c)" :url="it.c" compact />
+            <span v-else class="viewer-text">{{ it.t === 1 ? '[图片]' : it.t === 5 ? '[语音]' : it.t === 2 ? '[文件]' : it.c }}</span>
           </div>
         </div>
         <div class="viewer-empty" v-if="items.length === 0">这条记录是空的</div>

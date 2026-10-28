@@ -43,7 +43,7 @@ public class ForwardBundleTests
     {
         var ex = Assert.Throws<DomainException>(() => ForwardBundle.EnsureValid(Bundle(("张三", content, type))));
 
-        Assert.Equal("图片或语音地址不合法", ex.Message);
+        Assert.Equal("图片、语音或文件地址不合法", ex.Message);
     }
 
     [Fact(DisplayName = "卡片里的文字明细可以含外链")]

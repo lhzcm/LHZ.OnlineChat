@@ -1,3 +1,5 @@
+using LHZ.OnlineChat.Application.Files.Commands;
+using LHZ.OnlineChat.Application.Files.Queries;
 using LHZ.OnlineChat.Application.Messaging.Commands;
 using LHZ.OnlineChat.Application.Messaging.Queries;
 using LHZ.OnlineChat.Application.Users.Commands;
@@ -131,4 +133,31 @@ public sealed class UploadsController : ApiControllerBase
         await using var upload = file.ToFileUpload();
         return await Send(new UploadChatVoiceCommand { File = upload.Value }, ct);
     }
+
+    /// <summary>上传聊天文件（文档/压缩包/代码等，≤50MB；落盘名由服务端生成）</summary>
+    [HttpPost("file")]
+    [EnableRateLimiting(RateLimitPolicies.FileUpload)]
+    [RequestSizeLimit(52 * 1024 * 1024)]
+    public async Task<IActionResult> UploadFile(IFormFile? file, CancellationToken ct)
+    {
+        await using var upload = file.ToFileUpload();
+        return await Send(new UploadChatFileCommand
+        {
+            File = upload.Value,
+            UploaderId = UserId
+        }, ct);
+    }
+
+    /// <summary>按 URL 批量取文件元数据（原始文件名 + 大小；前端按屏取）</summary>
+    [HttpPost("files/meta")]
+    public Task<IActionResult> GetFileMeta([FromBody] FileMetaRequest body, CancellationToken ct)
+        => Send(new GetFileMetaQuery { Urls = body.Urls }, ct);
+}
+
+// ==================== 请求体 ====================
+
+public sealed class FileMetaRequest
+{
+    /// <summary>要查询的文件地址（≤50 个，非本站文件目录的会被忽略）</summary>
+    public List<string> Urls { get; set; } = new();
 }

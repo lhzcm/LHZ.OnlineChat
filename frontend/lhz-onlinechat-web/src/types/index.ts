@@ -284,3 +284,9 @@ export interface JoinGroupResult {
   /** true=已直接加入；false=已提交申请 */
   joined: boolean
 }
+/** 文件消息的元数据（消息 content 里只有 URL，名字/大小从这里取） */
+export interface FileMeta {
+  url: string
+  name: string
+  size: number
+}

@@ -18,3 +18,19 @@ export function formatMsgTime(ts: number): string {
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`
 }
+/**
+ * 字节数 → 人类可读（文件气泡、上传进度用）。
+ * 用 1024 进制并保留一位小数：`1.5 MB` 比 `1572864 字节` 有用得多。
+ */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let index = 0
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024
+    index += 1
+  }
+  const rounded = index === 0 ? Math.round(value) : Math.round(value * 10) / 10
+  return `${rounded} ${units[index]}`
+}

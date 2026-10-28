@@ -135,6 +135,9 @@ public sealed class FileUpload
 
     /// <summary>扩展名（小写，含点）</summary>
     public string Extension => Path.GetExtension(FileName).ToLowerInvariant();
+
+    /// <summary>浏览器上报的 MIME（仅用于展示/排查，不作为信任依据）</summary>
+    public string? ContentType { get; init; }
 }
 
 /// <summary>
@@ -156,6 +159,25 @@ public static class UploadRules
     /// 服务端不转码，只按扩展名放行（转码会引入 ffmpeg 依赖与异步处理链路）。
     /// </summary>
     public static readonly string[] AllowedVoiceExtensions = { ".webm", ".ogg", ".mp3", ".m4a", ".mp4", ".wav" };
+
+    /// <summary>文件消息上限 50MB（再大就该用网盘；分片/断点续传不在本轮范围）</summary>
+    public const long MaxChatFileBytes = 50 * 1024 * 1024;
+
+    /// <summary>
+    /// 文件消息白名单：文档/表格/演示/文本/代码/压缩包/图片/音视频。
+    /// 刻意不含 html/svg/js 等「浏览器打开即执行」的类型与可执行文件 ——
+    /// 上传目录是同源静态服务，这类文件会变成存储型 XSS / 恶意软件分发口。
+    /// Domain 侧 MessageContentRules 还有一道同名守卫（内容可以绕过前端伪造）。
+    /// </summary>
+    public static readonly string[] AllowedFileExtensions =
+    {
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".rtf",
+        ".txt", ".md", ".csv", ".tsv", ".json", ".log", ".yaml", ".yml", ".xml", ".ini", ".conf", ".properties",
+        ".cs", ".ts", ".tsx", ".vue", ".java", ".py", ".go", ".rs", ".c", ".h", ".cpp", ".hpp", ".sql",
+        ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz",
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+        ".mp3", ".mp4", ".mov", ".avi", ".mkv", ".wav", ".ogg"
+    };
 
     public static void EnsureValidImage(FileUpload? upload, long maxBytes, string sizeHint)
     {
@@ -179,6 +201,22 @@ public static class UploadRules
         Domain.Common.DomainException.Ensure(
             AllowedVoiceExtensions.Contains(upload.Extension),
             "仅支持 webm / ogg / mp3 / m4a / mp4 / wav 格式语音");
+    }
+
+    /// <summary>
+    /// 校验聊天文件（文档/压缩包/代码等）。
+    /// 与图片/语音的区别：文件类型多、单件大，所以只做「白名单 + 单件大小」，
+    /// 不做内容嗅探（需要引入文件头解析库，留给后续病毒扫描/配额阶段）。
+    /// </summary>
+    public static void EnsureValidFile(FileUpload? upload)
+    {
+        Domain.Common.DomainException.Ensure(upload is not null && upload.Length > 0, "请选择要发送的文件");
+        Domain.Common.DomainException.Ensure(
+            upload!.Length <= MaxChatFileBytes,
+            $"文件大小不能超过 {MaxChatFileBytes / 1024 / 1024}MB");
+        Domain.Common.DomainException.Ensure(
+            AllowedFileExtensions.Contains(upload.Extension),
+            "不支持该类型的文件（支持文档、表格、压缩包、文本/代码与常见媒体）");
     }
 }
 

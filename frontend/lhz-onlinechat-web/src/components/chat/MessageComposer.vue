@@ -11,6 +11,7 @@ import { genMessageId, sendMessage } from '@/utils/messageSend'
 import { compressChatImage } from '@/utils/image'
 import { useVoiceRecorder, type VoiceRecording } from '@/composables/useVoiceRecorder'
 import { messagePreview } from '@/utils/forward'
+import { rememberFileMeta } from '@/utils/fileMeta'
 import { formatVoiceDuration } from '@/utils/voice'
 import EmojiPanel from './composer/EmojiPanel.vue'
 import MentionPanel from './composer/MentionPanel.vue'
@@ -371,6 +372,86 @@ async function onImageSelect(e: Event) {
   }
 }
 
+// ==================== 文件消息 ====================
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const sendingFile = ref(false)
+const fileProgress = ref(0)
+const uploadingFileName = ref('')
+/** 客户端上限（与服务端 UploadRules.MaxChatFileBytes 一致）：先拦一次，省得白传 50MB */
+const MAX_FILE_BYTES = 50 * 1024 * 1024
+
+function onFileSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) void uploadAndSendFile(file)
+}
+
+/** 拖拽：直接落到输入区，等同于点选文件 */
+function onDropFile(e: DragEvent) {
+  const file = e.dataTransfer?.files?.[0]
+  if (file) void uploadAndSendFile(file)
+}
+
+async function uploadAndSendFile(file: File) {
+  if (!auth.user) return
+  if (!ws.connected) {
+    sendHint.value = '连接已断开，正在重连，请稍候…'
+    return
+  }
+  if (file.size <= 0) {
+    toast('文件是空的，换一个再发', 'error')
+    return
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    toast('文件大小不能超过 50MB', 'error')
+    return
+  }
+
+  // 同图片：目标与身份在 await 之前定下来，上传期间切会话不能把文件发进新会话
+  const target = { type: props.chat.type, id: props.chat.id }
+  const me = auth.user
+
+  sendingFile.value = true
+  fileProgress.value = 0
+  uploadingFileName.value = file.name
+  sendHint.value = ''
+  try {
+    const res = await messageApi.uploadFile(file, percent => { fileProgress.value = percent })
+    if (!res.success || !res.data?.url) {
+      toast(`文件发送失败：${res.message || '请重试'}`, 'error')
+      return
+    }
+
+    // 发送方已知名字与大小，写进缓存让气泡（以及其它同 URL 气泡）不必再查一次
+    rememberFileMeta({ url: res.data.url, name: res.data.name || file.name, size: res.data.size ?? file.size })
+
+    const msg: ChatMessage = {
+      type: target.type === 'private' ? 'private_message' : 'group_message',
+      from: String(me.id),
+      to: String(target.id),
+      content: res.data.url,
+      timestamp: Date.now(),
+      messageId: genMessageId(),
+      messageType: 2,
+      senderName: me.nickname,
+      senderAvatar: me.avatar,
+      status: 'sending'
+    }
+    chatStore.addMessage(msg, me.id)
+    if (!sendMessage(ws, msg)) {
+      chatStore.setMessageStatus(chatStore.sessionKey(target.type, target.id), msg.messageId, 'failed')
+    }
+    if (isCurrentChat(target)) emit('sent')
+  } catch {
+    toast('文件发送失败，请重试', 'error')
+  } finally {
+    sendingFile.value = false
+    fileProgress.value = 0
+    uploadingFileName.value = ''
+  }
+}
+
 // ==================== 语音消息 ====================
 const sendingVoice = ref(false)
 
@@ -486,7 +567,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     <button class="reply-cancel" @click="replyTarget = null">✕</button>
   </div>
 
-  <div class="chat-input-bar">
+  <div class="chat-input-bar" @dragover.prevent @drop.prevent="onDropFile">
     <!-- @ 成员选择浮层 -->
     <MentionPanel v-if="mentionOpen && mentionFiltered.length" :members="mentionFiltered" @pick="pickMention" />
     <!-- 表情面板（包一层 div 是为了让"点外面关闭"能判断内外） -->
@@ -508,6 +589,13 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       </svg>
     </button>
     <input ref="imageInputRef" type="file" accept="image/*" class="hidden-file" @change="onImageSelect" />
+    <!-- 文件：点选或把文件拖进输入区（≤50MB，类型由服务端白名单兜底） -->
+    <button class="emoji-btn" :disabled="sendingFile" @click="fileInputRef?.click()" title="发送文件（≤50MB）">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+      </svg>
+    </button>
+    <input ref="fileInputRef" type="file" class="hidden-file" @change="onFileSelect" />
     <button class="emoji-btn" ref="emojiBtnRef" @click.stop="toggleEmojiPanel" title="表情">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -544,6 +632,12 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       <button class="send-btn" @click="send" :disabled="!activeText.trim() || isOverLengthLimit">发送</button>
     </template>
   </div>
+  <p class="file-progress" v-if="sendingFile">
+    <span class="file-progress-label">正在上传 {{ uploadingFileName }}… {{ fileProgress }}%</span>
+    <span class="file-progress-bar">
+      <span class="file-progress-fill" :style="{ width: fileProgress + '%' }"></span>
+    </span>
+  </p>
   <p class="send-hint" v-if="sendHint">{{ sendHint }}</p>
 </template>
 
@@ -735,6 +829,38 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 .voice-cancel-btn:hover {
   background: var(--bg-hover);
+}
+
+/* 文件上传进度：大文件没有反馈时用户会以为卡死 */
+.file-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 20px 8px;
+  background: var(--bg-white);
+}
+
+.file-progress-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-progress-bar {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.file-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.15s linear;
 }
 
 .send-hint {

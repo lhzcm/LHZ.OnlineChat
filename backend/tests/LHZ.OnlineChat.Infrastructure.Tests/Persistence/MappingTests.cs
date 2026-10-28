@@ -2,6 +2,7 @@ using FreeSql;
 using LHZ.OnlineChat.Domain.Admins;
 using LHZ.OnlineChat.Domain.Blacklists;
 using LHZ.OnlineChat.Domain.Friends;
+using LHZ.OnlineChat.Domain.Files;
 using LHZ.OnlineChat.Domain.Groups;
 using LHZ.OnlineChat.Domain.Messaging;
 using LHZ.OnlineChat.Domain.Robots;
@@ -32,6 +33,7 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
     [InlineData(typeof(Group), "Group_")]
     [InlineData(typeof(GroupMember), "GroupMember")]
     [InlineData(typeof(GroupJoinRequest), "GroupJoinRequest")]
+    [InlineData(typeof(FileAttachment), "FileAttachment")]
     [InlineData(typeof(PrivateMessage), "PrivateMessage")]
     [InlineData(typeof(GroupMessage), "GroupMessage")]
     [InlineData(typeof(SessionSetting), "SessionSetting")]
@@ -44,10 +46,10 @@ public class EntityMappingTests : IClassFixture<MappingFixture>
         Assert.Equal(expectedTableName, _fixture.Table(entityType).DbName);
     }
 
-    [Fact(DisplayName = "需要同步的实体共13个_与库里表数一致")]
-    public void SyncedEntityCount_IsThirteen_MatchesTableCount()
+    [Fact(DisplayName = "需要同步的实体共14个_与库里表数一致")]
+    public void SyncedEntityCount_IsFourteen_MatchesTableCount()
     {
-        Assert.Equal(13, EntityConfiguration.AllEntityTypes.Length);
+        Assert.Equal(14, EntityConfiguration.AllEntityTypes.Length);
         Assert.Equal(
             EntityConfiguration.AllEntityTypes.Length,
             EntityConfiguration.AllEntityTypes.Distinct().Count());

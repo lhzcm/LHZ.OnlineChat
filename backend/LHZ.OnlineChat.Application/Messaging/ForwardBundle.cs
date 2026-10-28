@@ -37,7 +37,8 @@ public static class ForwardBundle
         (int)MessageKind.Text,
         (int)MessageKind.Image,
         (int)MessageKind.Markdown,
-        (int)MessageKind.Voice
+        (int)MessageKind.Voice,
+        (int)MessageKind.File
     ];
 
     /// <summary>校验转发载荷；不合法时抛 <see cref="DomainException"/>（消息会原样回给发送者）</summary>
@@ -99,6 +100,14 @@ public static class ForwardBundle
                     ? kindValue
                     : (int)MessageKind.Text;
                 DomainException.Ensure(AllowedItemTypes.Contains(kind), "转发的消息类型不支持");
+
+                // 文件明细只放行站内文件地址且不得是危险扩展名（卡片是只读快照，
+                // 但接收方仍会去下载这个地址，口径必须与发送消息时一致）
+                if (kind == (int)MessageKind.File)
+                {
+                    MessageContentRules.EnsureLocalMedia(text, MessageKind.File);
+                    MessageContentRules.EnsureSafeFileExtension(text);
+                }
 
                 // 卡片里的图片 / 语音同样只认站内地址，否则外链可以借转发卡片绕过单条消息的校验
                 MessageContentRules.EnsureLocalMedia(text.Trim(), (MessageKind)kind);
