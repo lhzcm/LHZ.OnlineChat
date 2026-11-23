@@ -22,9 +22,9 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
     <!-- 宿主集成 -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="11.0.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="11.0.0" />
   </ItemGroup>
 
   <ItemGroup>
