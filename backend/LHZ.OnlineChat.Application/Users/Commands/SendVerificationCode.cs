@@ -16,8 +16,15 @@ public sealed class SendVerificationCodeCommand : ICommand<ApiResponse<SendCodeR
 {
     public string Email { get; set; } = string.Empty;
 
-    /// <summary>register（默认）/ forgot</summary>
-    public string Purpose { get; set; } = VerificationPurposes.Register;
+    /// <summary>
+    /// register（默认）/ forgot。
+    ///
+    /// 声明为可空是因为 HTTP 请求体由 LHZ.FastJson 解析，它会给每个属性赋值：
+    /// 前端不传 purpose 时这里是 null，属性初始化器上的默认值不会保留。
+    /// 用例里 null 走 register 分支（只对 forgot 做已注册校验），与原来的默认值语义一致；
+    /// 若改成非空，[ApiController] 的隐式必填会直接回 400。
+    /// </summary>
+    public string? Purpose { get; set; } = VerificationPurposes.Register;
 }
 
 /// <summary>验证码用途</summary>

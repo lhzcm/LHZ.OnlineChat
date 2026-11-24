@@ -1,4 +1,7 @@
-using System.Text.Json;
+using System.Globalization;
+using LHZ.FastJson;
+using LHZ.FastJson.Enum;
+using LHZ.FastJson.JsonClass;
 using LHZ.OnlineChat.Domain.Common;
 using LHZ.OnlineChat.Domain.Messaging;
 
@@ -11,7 +14,7 @@ namespace LHZ.OnlineChat.Application.Messaging;
 /// <code>
 /// {"v":1,"items":[{"n":"张三","c":"内容","t":0,"ts":1700000000000}]}
 /// </code>
-/// 放在应用层而不是 Domain：Domain 不允许任何 JSON 依赖（连 System.Text.Json 都不行），
+/// 放在应用层而不是 Domain：Domain 不允许任何 JSON 依赖（连 FastJson 都不行），
 /// Domain 的 <see cref="MessageContentRules"/> 只负责"非空 + 长度"。
 ///
 /// 为什么是快照而不是转发明细表：
@@ -30,6 +33,8 @@ public static class ForwardBundle
 
     /// <summary>来源昵称长度上限（与昵称本身的限制同量级）</summary>
     public const int MaxSenderNameLength = 64;
+
+    private static readonly JsonConvertOptions JsonOptions = new();
 
     /// <summary>卡片里允许出现的消息类型：文字 / 图片 / Markdown / 语音（不允许嵌套转发、不允许文件）</summary>
     private static readonly int[] AllowedItemTypes =
@@ -51,67 +56,70 @@ public static class ForwardBundle
             json.Length <= MessageContentRules.MaxLength,
             $"消息内容不能超过 {MessageContentRules.MaxLength} 字");
 
-        JsonDocument document;
+        JsonObject root;
         try
         {
-            document = JsonDocument.Parse(json);
+            root = new JsonReader(json, JsonOptions).JsonRead();
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            // 非法 JSON、重复键等都由解析器抛出；统一按用户载荷格式错误返回
             throw new DomainException("转发内容格式不正确");
         }
 
-        using (document)
+        DomainException.Ensure(root.Type == JsonType.Content, "转发内容格式不正确");
+
+        var itemsNode = root["items"];
+        DomainException.Ensure(itemsNode is { Type: JsonType.Array }, "转发内容格式不正确");
+
+        var items = (JsonArray)itemsNode!;
+        var count = items.Length;
+        DomainException.Ensure(count > 0, "转发内容不能为空");
+        DomainException.Ensure(count <= MaxItems, $"一次最多转发 {MaxItems} 条消息");
+
+        foreach (var item in items)
         {
-            var root = document.RootElement;
-            DomainException.Ensure(root.ValueKind == JsonValueKind.Object, "转发内容格式不正确");
+            DomainException.Ensure(item.Type == JsonType.Content, "转发内容格式不正确");
+
+            var contentNode = item["c"];
+            var text = contentNode is { Type: JsonType.String }
+                ? contentNode.Value as string
+                : null;
+            DomainException.Ensure(!string.IsNullOrWhiteSpace(text), "转发内容不能为空");
             DomainException.Ensure(
-                root.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array,
-                "转发内容格式不正确");
+                text!.Length <= MaxItemLength,
+                $"转发的单条内容不能超过 {MaxItemLength} 字");
 
-            var count = items.GetArrayLength();
-            DomainException.Ensure(count > 0, "转发内容不能为空");
-            DomainException.Ensure(count <= MaxItems, $"一次最多转发 {MaxItems} 条消息");
+            var nameNode = item["n"];
+            var senderName = nameNode is { Type: JsonType.String }
+                ? nameNode.Value as string
+                : null;
+            DomainException.Ensure(
+                (senderName ?? string.Empty).Length <= MaxSenderNameLength,
+                "转发来源昵称过长");
 
-            foreach (var item in items.EnumerateArray())
+            // t 缺省按文字处理（宽容老客户端）；但不允许出现协议未定义或不允许的类型
+            var kindNode = item["t"];
+            var kind = kindNode is { Type: JsonType.Number }
+                       && int.TryParse(
+                           kindNode.ToString(),
+                           NumberStyles.Integer,
+                           CultureInfo.InvariantCulture,
+                           out var kindValue)
+                ? kindValue
+                : (int)MessageKind.Text;
+            DomainException.Ensure(AllowedItemTypes.Contains(kind), "转发的消息类型不支持");
+
+            // 文件明细只放行站内文件地址且不得是危险扩展名（卡片是只读快照，
+            // 但接收方仍会去下载这个地址，口径必须与发送消息时一致）
+            if (kind == (int)MessageKind.File)
             {
-                DomainException.Ensure(item.ValueKind == JsonValueKind.Object, "转发内容格式不正确");
-
-                var text = item.TryGetProperty("c", out var contentElement)
-                           && contentElement.ValueKind == JsonValueKind.String
-                    ? contentElement.GetString()
-                    : null;
-                DomainException.Ensure(!string.IsNullOrWhiteSpace(text), "转发内容不能为空");
-                DomainException.Ensure(
-                    text!.Length <= MaxItemLength,
-                    $"转发的单条内容不能超过 {MaxItemLength} 字");
-
-                var senderName = item.TryGetProperty("n", out var nameElement)
-                                 && nameElement.ValueKind == JsonValueKind.String
-                    ? nameElement.GetString()
-                    : null;
-                DomainException.Ensure(
-                    (senderName ?? string.Empty).Length <= MaxSenderNameLength,
-                    "转发来源昵称过长");
-
-                // t 缺省按文字处理（宽容老客户端）；但不允许出现协议未定义或不允许的类型
-                var kind = item.TryGetProperty("t", out var kindElement)
-                           && kindElement.TryGetInt32(out var kindValue)
-                    ? kindValue
-                    : (int)MessageKind.Text;
-                DomainException.Ensure(AllowedItemTypes.Contains(kind), "转发的消息类型不支持");
-
-                // 文件明细只放行站内文件地址且不得是危险扩展名（卡片是只读快照，
-                // 但接收方仍会去下载这个地址，口径必须与发送消息时一致）
-                if (kind == (int)MessageKind.File)
-                {
-                    MessageContentRules.EnsureLocalMedia(text, MessageKind.File);
-                    MessageContentRules.EnsureSafeFileExtension(text);
-                }
-
-                // 卡片里的图片 / 语音同样只认站内地址，否则外链可以借转发卡片绕过单条消息的校验
-                MessageContentRules.EnsureLocalMedia(text.Trim(), (MessageKind)kind);
+                MessageContentRules.EnsureLocalMedia(text, MessageKind.File);
+                MessageContentRules.EnsureSafeFileExtension(text);
             }
+
+            // 卡片里的图片 / 语音同样只认站内地址，否则外链可以借转发卡片绕过单条消息的校验
+            MessageContentRules.EnsureLocalMedia(text.Trim(), (MessageKind)kind);
         }
     }
 }

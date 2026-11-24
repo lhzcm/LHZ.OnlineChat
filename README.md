@@ -9,7 +9,7 @@
 - 后端:ASP.NET Core (.NET 10) + **DDD 四层架构 + MediatR CQRS** + FreeSql + PostgreSQL + Redis
 - 前端:Vue 3 + TypeScript + Vite + Pinia
 - 实时通信:自研 LHZ.WebSocket 库(RFC 6455 实现)
-- JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(WS 协议 camelCase 双向兼容)
+- JSON 序列化:自研 [LHZ.FastJson](https://www.nuget.org/packages/LHZ.FastJson)(HTTP JSON 请求/响应 + WS 协议,camelCase 双向兼容)
 - 测试:1029 个后端单测(xUnit) + 72 个前端单测(vitest,独立工程),全量约 9 秒
 
 ## ✨ 功能总览
@@ -75,7 +75,7 @@
 | 后端 | .NET 10 (ASP.NET Core)、**DDD 四层架构 + MediatR CQRS**、FreeSql (PostgreSQL, CodeFirst 自动建表)、StackExchange.Redis、JWT Bearer、BCrypt、MailKit (SMTP)、Swagger |
 | 前端 | Vue 3 (Composition API) + TypeScript、Vite 6、Pinia、Vue Router、Axios |
 | 实时通信 | LHZ.WebSocket 1.3.0 (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 1.3.0 中间件 |
-| 序列化 | LHZ.FastJson 2.0.1-pre(WS 协议 camelCase,`[JsonProperty]` 标注) |
+| 序列化 | LHZ.FastJson 2.1.2(HTTP JSON 请求/响应 + WS 协议 camelCase,`[JsonProperty]` 标注;ProblemDetails 按 RFC 7807 形状输出) |
 | 测试 | 后端 xUnit 2.9 + 前端 vitest,手写内存测试替身(不依赖 mock 框架) |
 
 ## 🧱 后端架构(DDD 四层)

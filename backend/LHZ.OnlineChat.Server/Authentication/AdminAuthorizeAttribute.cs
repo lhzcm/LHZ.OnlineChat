@@ -31,18 +31,22 @@ public sealed class AdminAuthorizeAttribute : Attribute, IAuthorizationFilter
 
         if (!isAdmin)
         {
-            context.Result = new JsonResult(new { success = false, message = "未登录或无权访问管理接口" })
+            // 用 ObjectResult 而不是 JsonResult：JsonResult 自己用 System.Text.Json，
+            // 绕过了 MVC 的 OutputFormatters；这里要和其他接口一样走 FastJson。
+            context.Result = new ObjectResult(new { success = false, message = "未登录或无权访问管理接口" })
             {
-                StatusCode = StatusCodes.Status401Unauthorized
+                StatusCode = StatusCodes.Status401Unauthorized,
+                ContentTypes = { "application/json" }
             };
             return;
         }
 
         if (SuperOnly && user.FindFirst("arole")?.Value != SuperRoleValue)
         {
-            context.Result = new JsonResult(new { success = false, message = "需要超级管理员权限" })
+            context.Result = new ObjectResult(new { success = false, message = "需要超级管理员权限" })
             {
-                StatusCode = StatusCodes.Status403Forbidden
+                StatusCode = StatusCodes.Status403Forbidden,
+                ContentTypes = { "application/json" }
             };
         }
     }

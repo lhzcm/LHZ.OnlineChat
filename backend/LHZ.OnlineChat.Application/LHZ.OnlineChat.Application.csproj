@@ -3,6 +3,8 @@
     <!-- MediatR 12.5.0 是最后一个 Apache-2.0 版本（13.0 起改为商业许可） -->
     <PackageReference Include="MediatR" Version="12.5.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <!-- 合并转发快照（ForwardBundle）的 JSON 校验；与 HTTP / WS 共用 FastJson -->
+    <PackageReference Include="LHZ.FastJson" Version="2.1.2" />
   </ItemGroup>
 
   <ItemGroup>

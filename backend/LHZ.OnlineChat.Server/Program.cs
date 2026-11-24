@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
+using LHZ.FastJson;
 using LHZ.OnlineChat.Application;
 using LHZ.OnlineChat.Application.Abstractions;
 using LHZ.OnlineChat.Application.Common;
@@ -9,9 +10,11 @@ using LHZ.OnlineChat.Infrastructure.Persistence;
 using LHZ.OnlineChat.Server.Authentication;
 using LHZ.OnlineChat.Server.Configuration;
 using LHZ.OnlineChat.Server.Realtime;
+using LHZ.OnlineChat.Server.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
@@ -103,7 +106,17 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    // HTTP 的 JSON 入站/出站全部交给 LHZ.FastJson（与 WS 报文 / Redis / Webhook 共用一套实现）。
+    // ProblemDetails 由 FastJsonOutputFormatter 投影成 RFC 7807 标准形状后仍由 FastJson 序列化，
+    // 因此不再保留 System.Text.Json 的输入/输出格式化器。
+    options.InputFormatters.RemoveType<SystemTextJsonInputFormatter>();
+    options.InputFormatters.Insert(0, new FastJsonInputFormatter());
+
+    options.OutputFormatters.RemoveType<SystemTextJsonOutputFormatter>();
+    options.OutputFormatters.Insert(0, new FastJsonOutputFormatter());
+});
 
 // ==================== 反向代理头 ====================
 // nginx 反代之后 RemoteIpAddress 是 nginx 容器的地址：不限流则所有用户共用一个
@@ -219,14 +232,16 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
 
-    // 被限流时也回 ApiResponse 形状，前端能按统一契约提示，而不是解析空响应体
+    // 被限流时也回 ApiResponse 形状，前端能按统一契约提示，而不是解析空响应体。
+    // 必须显式 camelCase：LHZ.FastJson 默认保持声明名（Success/Message），
+    // 与其余接口的 success/message 不一致，前端会读不到。
     options.OnRejected = async (context, ct) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         context.HttpContext.Response.ContentType = "application/json; charset=utf-8";
-
-        await context.HttpContext.Response.WriteAsJsonAsync(
-            ApiResponse.Fail("请求过于频繁，请稍后再试"), ct);
+        await context.HttpContext.Response.WriteAsync(
+            JsonConvert.Serialize(ApiResponse.Fail("请求过于频繁，请稍后再试"), HttpJsonOptions.Value),
+            ct);
     };
 });
 
