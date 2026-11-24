@@ -9,8 +9,9 @@ namespace LHZ.OnlineChat.Infrastructure.Tests.TestDoubles;
 /// WS 客户端替身：记录发出的报文与 Close 调用，Status 可调（模拟半开/已关闭连接）。
 /// 事件故意不触发 —— Realtime 这几层的测试只驱动**出站**路径，入站解析由 dispatcher 的测试负责。
 ///
-/// 注意签名按 LHZ.WebSocket 1.2.0 的真实接口：ID 是 Guid、MaxMessageSize 是 int、
-/// 事件是 EventHandler&lt;IWebSocketClient, T&gt;、并且实现了 IDisposable。
+/// 注意签名按 LHZ.WebSocket 1.3.0 的真实接口：ID 是 Guid、MaxMessageSize 是 int、
+/// 事件是 EventHandler&lt;IWebSocketClient, T&gt;、并且实现了 IDisposable；
+/// 1.3.0 起接口新增 Close(CloseCode, string?)（带关闭码/原因的关闭）。
 /// </summary>
 internal sealed class FakeWebSocketClient : IWebSocketClient
 {
@@ -74,6 +75,9 @@ internal sealed class FakeWebSocketClient : IWebSocketClient
         CloseCalled = true;
         Status = ClientStatus.Close;
     }
+
+    /// <summary>1.3.0 新增的重载：带关闭码与原因的关闭，替身同样只记一次关闭</summary>
+    public void Close(CloseCode code, string? reason) => Close();
 
     public void Dispose() => Disposed = true;
 

@@ -74,7 +74,7 @@
 |---|---|
 | 后端 | .NET 10 (ASP.NET Core)、**DDD 四层架构 + MediatR CQRS**、FreeSql (PostgreSQL, CodeFirst 自动建表)、StackExchange.Redis、JWT Bearer、BCrypt、MailKit (SMTP)、Swagger |
 | 前端 | Vue 3 (Composition API) + TypeScript、Vite 6、Pinia、Vue Router、Axios |
-| 实时通信 | LHZ.WebSocket 1.2.0 (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 中间件 |
+| 实时通信 | LHZ.WebSocket 1.3.0 (自研 RFC 6455) + LHZ.WebSocket.AspNetCore 1.3.0 中间件 |
 | 序列化 | LHZ.FastJson 2.0.1-pre(WS 协议 camelCase,`[JsonProperty]` 标注) |
 | 测试 | 后端 xUnit 2.9 + 前端 vitest,手写内存测试替身(不依赖 mock 框架) |
 
